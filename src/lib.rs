@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{iter::Peekable, ops::Deref};
 
 mod aff;
 mod dic;
@@ -44,6 +44,52 @@ impl Deref for FlagSet {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl FlagSet {
+    pub fn intersection<'a>(&'a self, other: &'a FlagSet) -> impl Iterator<Item = Flag> + 'a {
+        FlagSetIntersection {
+            left: self.iter().copied().peekable(),
+            right: other.iter().copied().peekable(),
+        }
+    }
+}
+
+/// Since flag sets are ordered and deduplicated, we can find the intersection
+/// of two flag sets N and M in `O(|N| + |M|)` time by zipping through both.
+pub(crate) struct FlagSetIntersection<L: Iterator<Item = Flag>, R: Iterator<Item = Flag>> {
+    left: Peekable<L>,
+    right: Peekable<R>,
+}
+
+impl<L, R> Iterator for FlagSetIntersection<L, R>
+where
+    L: Iterator<Item = Flag>,
+    R: Iterator<Item = Flag>,
+{
+    type Item = Flag;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use std::cmp::Ordering::*;
+
+        loop {
+            let left = self.left.peek()?;
+            let right = self.right.peek()?;
+
+            match left.cmp(right) {
+                Equal => {
+                    let _ = self.left.next();
+                    return self.right.next();
+                }
+                Less => {
+                    let _ = self.left.next();
+                }
+                Greater => {
+                    let _ = self.right.next();
+                }
+            }
+        }
     }
 }
 
