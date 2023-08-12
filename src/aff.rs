@@ -494,6 +494,11 @@ impl FlagType {
             }
         }
     }
+
+    // #[cfg(test)]
+    // pub(crate) fn parse_flags_from_str(&self, input: &str) -> Result<FlagSet, ParseFlagError> {
+    //     self.parse_flags_from_chars(input.chars())
+    // }
 }
 
 #[derive(Debug, Default)]
@@ -651,96 +656,177 @@ impl ReplacementPattern {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum FlagPatternWildcard {
+    /// The '?' wildcard from regex, matching or ignoring the previous flag.
+    ZeroOrOne,
+    /// The '*' wildcard from regex, matching the previous flag any number
+    /// of times.
+    ZeroOrMore,
+}
+
 /// A set of formulas for combining words together via flags.
+///
+/// We can't reuse Regex here for checking matches because flags are
+/// not represented as valid strings. The pattern only needs to support
+/// '*' and '?' wildcards/rules, though, so we roll our Regex-like
+/// pattern matcher.
+///
 /// From the COMPOUNDRULE command.
 #[derive(Debug, Clone)]
 pub(crate) struct CompoundRule {
-    pub flags: FlagSet,
-    regex: Regex,
-    partial_regex: Regex,
+    /// The flags in the pattern in order along with their modifiers.
+    pattern: Vec<(Flag, Option<FlagPatternWildcard>)>,
 }
 
 // TODO rename or merge into a larger error type.
-pub(crate) enum CompoundRuleError {
+#[derive(Debug)]
+pub(crate) enum ParseCompoundRuleError {
     Flag(ParseFlagError),
-    Regex(regex::Error),
+    DanglingWildcard(char),
+    NestedParentheses,
+    DanglingParenthesis(char),
 }
 
-impl From<regex::Error> for CompoundRuleError {
-    fn from(err: regex::Error) -> Self {
-        Self::Regex(err)
-    }
-}
-
-impl From<ParseFlagError> for CompoundRuleError {
+impl From<ParseFlagError> for ParseCompoundRuleError {
     fn from(err: ParseFlagError) -> Self {
         Self::Flag(err)
     }
 }
 
 impl CompoundRule {
-    // TODO: Create a 'FlagPattern' which operates like a very simple
-    // regex that matches on flags. Move the full_match and partial_match
-    // logic into that type.
-    // That type only needs to care about '*' and '?' rules.
-    pub fn new(text: &str, flag_type: FlagType) -> Result<Self, CompoundRuleError> {
-        let (flags, parts) = if matches!(flag_type, FlagType::Long | FlagType::Numeric) {
-            // Flags are surrounded by parentheses with these flag types, for example
-            // (aa)(bb)*(cc) or (101)(102)*(103).
-            // TODO lazy statics
-            let flags: FlagSet = Regex::new(r"\((.+?)\)")
-                .unwrap()
-                .find_iter(text)
-                .map(|m| flag_type.parse_flag_from_str(m.as_str()))
-                .collect::<Result<_, _>>()?;
+    pub fn new(text: &str, flag_type: FlagType) -> Result<Self, ParseCompoundRuleError> {
+        use FlagPatternWildcard::{ZeroOrMore, ZeroOrOne};
+        use ParseCompoundRuleError::*;
 
-            let parts: Vec<_> = Regex::new(r"\([^*?]+?\)[*?]?")
-                .unwrap()
-                .find_iter(text)
-                .map(|part| Cow::from(part.as_str()))
-                .collect();
-
-            (flags, parts)
-        } else {
-            let flags: FlagSet = text
-                .chars()
-                .map(|ch| flag_type.parse_flag_from_char(ch))
-                .collect::<Result<_, _>>()?;
-
-            let parts: Vec<_> = Regex::new(r"[^*?][*?]?")
-                .unwrap()
-                .find_iter(text)
-                // `sv_*` dictionaries use `)` as flags. This is ad-hoc.
-                .map(|part| Cow::from(part.as_str().replace(')', "\\)")))
-                .collect();
-
-            (flags, parts)
+        let wildcard = |ch: char| match ch {
+            '*' => ZeroOrMore,
+            '?' => ZeroOrOne,
+            _ => unreachable!(),
         };
 
-        let regex = Regex::new(&parts.join(""))?;
-        let partial_regex_string = parts
-            .iter()
-            .rfold(String::new(), |acc, part| format!("{part}({acc})?"));
-        let partial_regex = Regex::new(&partial_regex_string)?;
+        let mut pattern = Vec::new();
+        match flag_type {
+            FlagType::Short | FlagType::Utf8 => {
+                let mut chars = text.chars().peekable();
+                while let Some(ch) = chars.next() {
+                    if ch == '?' || ch == '*' {
+                        return Err(DanglingWildcard(ch));
+                    }
 
-        Ok(Self {
-            flags,
-            regex,
-            partial_regex,
-        })
+                    let flag = flag_type.parse_flag_from_char(ch)?;
+                    let wildcard = chars.peek().copied().and_then(|ch| match ch {
+                        '*' | '?' => {
+                            chars.next();
+                            Some(wildcard(ch))
+                        }
+                        _ => None,
+                    });
+                    pattern.push((flag, wildcard));
+                }
+            }
+            // These flag types surround each flag in parens. For example
+            // `(aa)(bb)*(cc)` or `(101)(102)?(103)`.
+            FlagType::Long | FlagType::Numeric => {
+                let mut in_paren = false;
+                let mut word = String::new();
+                for ch in text.chars() {
+                    match ch {
+                        '(' if in_paren => return Err(NestedParentheses),
+                        '(' => in_paren = true,
+                        ')' if in_paren => {
+                            // parse that word as a flag
+                            let flag = flag_type.parse_flag_from_str(&word)?;
+                            word.clear();
+                            pattern.push((flag, None));
+                        }
+                        ')' => return Err(DanglingParenthesis(')')),
+                        '*' | '?' => match pattern.last_mut() {
+                            Some(atom) if atom.1.is_some() => return Err(DanglingWildcard(ch)),
+                            Some(atom) => atom.1 = Some(wildcard(ch)),
+                            None => return Err(DanglingWildcard(ch)),
+                        },
+                        _ => word.push(ch),
+                    }
+                }
+                if in_paren {
+                    return Err(DanglingParenthesis('('));
+                }
+            }
+        }
+
+        Ok(Self { pattern })
     }
 
-    pub fn full_match(&self, _flag_sets: &[&FlagSet]) -> bool {
-        unimplemented!()
+    /// Check whether the compound rule matches the guess flags
+    /// fully: so that the entire pattern matches all of the flags.
+    pub fn full_match(&self, flag_sets: &[&FlagSet]) -> bool {
+        Self::match_impl(&self.pattern, flag_sets, false, false)
     }
 
-    pub fn partial_match(&self, _flag_sets: &[&FlagSet]) -> bool {
-        unimplemented!()
+    /// Check whether the compound rule matches the guess flags
+    /// partially: so that at least some amount of the start of the
+    /// pattern matches all of the flags.
+    pub fn partial_match(&self, flag_sets: &[&FlagSet]) -> bool {
+        Self::match_impl(&self.pattern, flag_sets, false, true)
     }
 
-    // fn cartesian_product<'a, T: Copy>(vec: &'a Vec<T>) -> impl Iterator<Item = (T, T)> + 'a {
-    //     vec.iter().flat_map(|x| vec.iter().map(move |y| (*x, *y)))
-    // }
+    fn match_impl(
+        pattern: &[(Flag, Option<FlagPatternWildcard>)],
+        guess: &[&FlagSet],
+        is_partial: bool,
+        allow_partial: bool,
+    ) -> bool {
+        use FlagPatternWildcard::*;
+
+        // If we decide that the pattern doesn't match at this stage in the
+        // match, we could still return true if partial matches are allowed
+        // and we have partially matched some of the pattern.
+        let no_match = allow_partial && is_partial;
+
+        if pattern.is_empty() {
+            return if guess.is_empty() { true } else { no_match };
+        } else if guess.is_empty() {
+            return no_match;
+        }
+
+        let (flag, wildcard) = &pattern[0];
+        let pattern_rest = &pattern[1..];
+        let flag_set = &guess[0];
+        let guess_rest = &guess[1..];
+        let flag_in_set = flag_set.contains(flag);
+
+        (match (wildcard, flag_in_set) {
+            // '*'
+            (Some(ZeroOrMore), true) => {
+                // Assume that the flag doesn't consume the wildcard.
+                Self::match_impl(pattern, guess_rest, true, allow_partial)
+                    // Assume that the flag consumes the wildcard.
+                    || Self::match_impl(pattern_rest, guess_rest, true, allow_partial)
+                    // Assume that the flag matched zero times instead.
+                    || Self::match_impl(pattern_rest, guess, is_partial, allow_partial)
+            }
+            // '?'
+            (Some(ZeroOrOne), true) => {
+                // Assume that the flag consumes the '?'. Same as if the '?' wildcard
+                // wasn't present, i.e. `(None, true)`.
+                Self::match_impl(pattern_rest, guess_rest, true, allow_partial)
+                    // Assume that the zero part of the pattern was intended here instead.
+                    // Discard the part and check the remaining pattern against the guess
+                    // without advancing the guess.  Same as if the flag didn't match,
+                    // i.e. `(Some(ZeroOrOne), false)`.
+                    || Self::match_impl(pattern_rest, guess, is_partial, allow_partial)
+            }
+            // '?' or '*'
+            (Some(ZeroOrMore | ZeroOrOne), false) => {
+                // Assume that the flag matched zero times.
+                Self::match_impl(pattern_rest, guess, is_partial, allow_partial)
+            }
+            // No wildcard.
+            (None, true) => Self::match_impl(pattern_rest, guess_rest, true, allow_partial),
+            (None, false) => false,
+        }) || no_match
+    }
 }
 
 /// A pattern to check whether a compound word is correct.
@@ -859,3 +945,118 @@ impl ConversionTable {
 // pub(crate) struct PhonetTable {
 //     rules: std::collections::HashMap<String, Vec<PhonetRule>>,
 // }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn simple_flag_set(flags: &str) -> FlagSet {
+        let flag_type = FlagType::Short;
+        flag_type
+            .parse_flags_from_chars(flags.chars())
+            .expect("can parse")
+    }
+
+    fn compound_rule_guess(guess: &str) -> Vec<Rc<FlagSet>> {
+        let flag_type = FlagType::Short;
+        let mut flag_sets = Vec::new();
+        for ch in guess.chars() {
+            let mut flag_set = FlagSet::new();
+            flag_set.insert(flag_type.parse_flag_from_char(ch).unwrap());
+            flag_sets.push(Rc::new(flag_set));
+        }
+        flag_sets
+    }
+
+    fn compound_rule_pattern(pattern: &str) -> CompoundRule {
+        CompoundRule::new(pattern, FlagType::Short).unwrap()
+    }
+
+    #[test]
+    fn compound_rule_match_no_wildcards() {
+        let pattern_ab = compound_rule_pattern("ab");
+        let pattern_abc = compound_rule_pattern("abc");
+
+        let guess_a = compound_rule_guess("a");
+        let guess_a: Vec<_> = guess_a.iter().map(AsRef::as_ref).collect();
+
+        let guess_ab = compound_rule_guess("ab");
+        let guess_ab: Vec<_> = guess_ab.iter().map(AsRef::as_ref).collect();
+
+        let guess_abc = compound_rule_guess("abc");
+        let guess_abc: Vec<_> = guess_abc.iter().map(AsRef::as_ref).collect();
+
+        assert!(pattern_ab.full_match(&guess_ab));
+        assert!(pattern_ab.partial_match(&guess_abc));
+        assert!(pattern_ab.partial_match(&guess_ab));
+        assert!(pattern_ab.partial_match(&guess_a));
+
+        assert!(pattern_abc.full_match(&guess_abc));
+        assert!(pattern_abc.partial_match(&guess_abc));
+        assert!(pattern_ab.partial_match(&guess_abc));
+        assert!(pattern_ab.partial_match(&guess_ab));
+        assert!(pattern_ab.partial_match(&guess_a));
+
+        let guess_bc = compound_rule_guess("bc");
+        let guess_bc: Vec<_> = guess_bc.iter().map(AsRef::as_ref).collect();
+
+        assert!(!pattern_ab.full_match(&guess_bc));
+        assert!(!pattern_ab.partial_match(&guess_bc));
+        assert!(!pattern_abc.full_match(&guess_bc));
+        assert!(!pattern_abc.partial_match(&guess_bc));
+    }
+
+    #[test]
+    fn compound_rule_match_zero_or_one_wildcard() {
+        let pattern = compound_rule_pattern("ab?c");
+
+        let guess_ab = compound_rule_guess("ab");
+        let guess_ab: Vec<_> = guess_ab.iter().map(AsRef::as_ref).collect();
+
+        let guess_ac = compound_rule_guess("ac");
+        let guess_ac: Vec<_> = guess_ac.iter().map(AsRef::as_ref).collect();
+
+        let guess_abc = compound_rule_guess("abc");
+        let guess_abc: Vec<_> = guess_abc.iter().map(AsRef::as_ref).collect();
+
+        assert!(pattern.full_match(&guess_abc));
+        assert!(pattern.partial_match(&guess_abc));
+        assert!(pattern.full_match(&guess_ac));
+        assert!(pattern.partial_match(&guess_ac));
+        assert!(pattern.partial_match(&guess_ab));
+
+        let guess_bc = compound_rule_guess("bc");
+        let guess_bc: Vec<_> = guess_bc.iter().map(AsRef::as_ref).collect();
+        assert!(!pattern.full_match(&guess_bc));
+        assert!(!pattern.partial_match(&guess_bc));
+    }
+
+    #[test]
+    fn compound_rule_match_zero_or_many_wildcard() {
+        let pattern = compound_rule_pattern("ab*c");
+
+        let guess_ac = compound_rule_guess("ac");
+        let guess_ac: Vec<_> = guess_ac.iter().map(AsRef::as_ref).collect();
+
+        let guess_abc = compound_rule_guess("abc");
+        let guess_abc: Vec<_> = guess_abc.iter().map(AsRef::as_ref).collect();
+
+        let guess_abbc = compound_rule_guess("abbc");
+        let guess_abbc: Vec<_> = guess_abbc.iter().map(AsRef::as_ref).collect();
+
+        let guess_abbbc = compound_rule_guess("abbbc");
+        let guess_abbbc: Vec<_> = guess_abbbc.iter().map(AsRef::as_ref).collect();
+
+        assert!(pattern.full_match(&guess_ac));
+        assert!(pattern.partial_match(&guess_ac));
+
+        assert!(pattern.full_match(&guess_abc));
+        assert!(pattern.partial_match(&guess_abc));
+
+        assert!(pattern.full_match(&guess_abbc));
+        assert!(pattern.partial_match(&guess_abbc));
+
+        assert!(pattern.full_match(&guess_abbbc));
+        assert!(pattern.partial_match(&guess_abbbc));
+    }
+}
