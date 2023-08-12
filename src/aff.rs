@@ -13,7 +13,7 @@ use std::{
 
 use regex::Regex;
 
-use crate::{checker::AffixForm, Capitalization, Flag, FlagSet, FlagSetRef};
+use crate::{checker::AffixForm, Flag, FlagSet};
 
 #[derive(Debug)]
 pub(crate) struct Aff {
@@ -241,6 +241,20 @@ impl Default for Aff {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Capitalization {
+    /// Hunspell: "NO"
+    Lower,
+    /// Hunspell: "INIT"
+    Title,
+    /// Hunspell: "ALL"
+    Upper,
+    /// Hunspell: "HUH"
+    Camel,
+    /// Hunspell: "HUHINIT"
+    Pascal,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) enum Casing {
     Germanic,
@@ -437,49 +451,49 @@ impl FlagType {
         }
     }
 
-    // pub fn parse_flags_from_chars(
-    //     &self,
-    //     mut chars: std::str::Chars,
-    // ) -> Result<FlagSet, ParseFlagError> {
-    //     use ParseFlagError::*;
+    pub fn parse_flags_from_chars(
+        &self,
+        mut chars: std::str::Chars,
+    ) -> Result<FlagSet, ParseFlagError> {
+        use ParseFlagError::*;
 
-    //     match self {
-    //         Self::Long => {
-    //             let mut flags = Vec::new();
-    //             while let Some(c1) = chars.next() {
-    //                 let c2 = match chars.next() {
-    //                     Some(ch) => ch,
-    //                     None => return Err(MissingSecondChar(c1)),
-    //                 };
-    //                 flags.push(u16::from_ne_bytes([c1 as u8, c2 as u8]) as Flag);
-    //             }
-    //             Ok(flags.into())
-    //         }
-    //         Self::Numeric => {
-    //             let mut flags = Vec::new();
-    //             let mut number = String::new();
-    //             let mut separated = false;
-    //             for ch in chars.by_ref() {
-    //                 if ch.is_ascii_digit() {
-    //                     number.push(ch);
-    //                 } else if ch == ',' && separated {
-    //                     return Err(DuplicateComma);
-    //                 } else if ch == ',' {
-    //                     separated = true;
-    //                     let n = number.parse::<u16>().map_err(ParseIntError)?;
-    //                     flags.push(n as Flag);
-    //                 }
-    //             }
-    //             Ok(flags.into())
-    //         }
-    //         Self::Short | Self::Utf8 => {
-    //             let flags = chars
-    //                 .map(|ch| self.parse_flag_from_char(ch))
-    //                 .collect::<Result<Vec<Flag>, _>>()?;
-    //             Ok(flags.into())
-    //         }
-    //     }
-    // }
+        match self {
+            Self::Long => {
+                let mut flags = FlagSet::new();
+                while let Some(c1) = chars.next() {
+                    let c2 = match chars.next() {
+                        Some(ch) => ch,
+                        None => return Err(MissingSecondChar(c1)),
+                    };
+                    flags.insert(u16::from_ne_bytes([c1 as u8, c2 as u8]) as Flag);
+                }
+                Ok(flags)
+            }
+            Self::Numeric => {
+                let mut flags = FlagSet::new();
+                let mut number = String::new();
+                let mut separated = false;
+                for ch in chars.by_ref() {
+                    if ch.is_ascii_digit() {
+                        number.push(ch);
+                    } else if ch == ',' && separated {
+                        return Err(DuplicateComma);
+                    } else if ch == ',' {
+                        separated = true;
+                        let n = number.parse::<u16>().map_err(ParseIntError)?;
+                        flags.insert(n as Flag);
+                    }
+                }
+                Ok(flags)
+            }
+            Self::Short | Self::Utf8 => {
+                let flags = chars
+                    .map(|ch| self.parse_flag_from_char(ch))
+                    .collect::<Result<FlagSet, _>>()?;
+                Ok(flags)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -674,7 +688,7 @@ impl CompoundRule {
             // Flags are surrounded by parentheses with these flag types, for example
             // (aa)(bb)*(cc) or (101)(102)*(103).
             // TODO lazy statics
-            let flags: Vec<Flag> = Regex::new(r"\((.+?)\)")
+            let flags: FlagSet = Regex::new(r"\((.+?)\)")
                 .unwrap()
                 .find_iter(text)
                 .map(|m| flag_type.parse_flag_from_str(m.as_str()))
@@ -688,7 +702,7 @@ impl CompoundRule {
 
             (flags, parts)
         } else {
-            let flags: Vec<Flag> = text
+            let flags: FlagSet = text
                 .chars()
                 .map(|ch| flag_type.parse_flag_from_char(ch))
                 .collect::<Result<_, _>>()?;
@@ -710,17 +724,17 @@ impl CompoundRule {
         let partial_regex = Regex::new(&partial_regex_string)?;
 
         Ok(Self {
-            flags: flags.into(),
+            flags,
             regex,
             partial_regex,
         })
     }
 
-    pub fn full_match(&self, _flag_sets: &[FlagSetRef]) -> bool {
+    pub fn full_match(&self, _flag_sets: &[&FlagSet]) -> bool {
         unimplemented!()
     }
 
-    pub fn partial_match(&self, _flag_sets: &[FlagSetRef]) -> bool {
+    pub fn partial_match(&self, _flag_sets: &[&FlagSet]) -> bool {
         unimplemented!()
     }
 

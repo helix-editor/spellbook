@@ -1,4 +1,4 @@
-use std::{iter::Peekable, ops::Deref};
+use std::collections::BTreeSet;
 
 pub use checker::Checker;
 
@@ -32,146 +32,40 @@ impl Dictionary {
 pub(crate) type Flag = u32;
 
 /// The set of all flags on a word.
-#[derive(Debug, Default, Clone)]
-pub(crate) struct FlagSet(Vec<Flag>);
+/// Internally this is stored as an ordered set of flags backed
+/// by [std::collections::BTreeSet].
+pub(crate) type FlagSet = BTreeSet<Flag>;
 
-impl From<Vec<Flag>> for FlagSet {
-    fn from(mut flags: Vec<Flag>) -> Self {
-        flags.sort_unstable();
-        flags.dedup();
-        FlagSet(flags)
-    }
-}
+#[cfg(test)]
+mod test {
+    use crate::{aff::FlagType, FlagSet};
 
-impl From<Option<Flag>> for FlagSet {
-    fn from(maybe_flag: Option<Flag>) -> Self {
-        Self(match maybe_flag {
-            Some(flag) => vec![flag],
-            None => vec![],
-        })
-    }
-}
-
-/// A borrowed flag-set slice.
-pub(crate) type FlagSetRef<'a> = &'a [Flag];
-
-impl Deref for FlagSet {
-    type Target = Vec<Flag>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl AsRef<[Flag]> for FlagSet {
-    fn as_ref(&self) -> FlagSetRef {
-        self.as_slice()
-    }
-}
-
-impl FlagSet {
-    // TODO: this will be used by CompoundRule.
-    #[allow(dead_code)]
-    pub fn intersection<'a>(&'a self, other: FlagSetRef<'a>) -> impl Iterator<Item = Flag> + 'a {
-        FlagSetIntersection {
-            left: self.iter().copied().peekable(),
-            right: other.iter().copied().peekable(),
-        }
+    fn simple_flag_set(flags: &str) -> FlagSet {
+        let flag_type = FlagType::Short;
+        flag_type
+            .parse_flags_from_chars(flags.chars())
+            .expect("can parse")
     }
 
-    // TODO check my math on the next two.
-
-    /// Whether all flags in `other` are members of this flag set.
-    pub fn is_superset_of(&self, other: FlagSetRef) -> bool {
-        let mut left = self.iter().peekable();
-        let mut right = other.iter().peekable();
-
-        loop {
-            match (left.peek(), right.peek()) {
-                (Some(l), Some(r)) if l == r => {
-                    let _ = left.next();
-                    let _ = right.next();
-                }
-                (Some(l), Some(r)) if l < r => {
-                    let _ = left.next();
-                }
-                (Some(l), Some(r)) if l > r => {
-                    let _ = right.next();
-                }
-                (Some(_), Some(_)) => unreachable!(),
-                (None, Some(_)) => return false,
-                (_, None) => return true,
-            }
-        }
+    #[test]
+    fn simple_flag_set_invariants() {
+        let fs = simple_flag_set("zaZAa");
+        assert_eq!(fs, simple_flag_set("AZaz"));
+        assert_eq!(fs.len(), 4);
     }
 
-    /// Whether no flags in `other` are members of this flag set.
-    pub fn is_disjoint_of(&self, other: FlagSetRef) -> bool {
-        let mut left = self.iter().peekable();
-        let mut right = other.iter().peekable();
+    #[test]
+    fn flag_set_algebra() {
+        // intersection
+        let fs1 = simple_flag_set("abcxyz");
+        let fs2 = simple_flag_set("aciwxz");
+        let intersection: FlagSet = fs1.intersection(&fs2).cloned().collect();
+        assert_eq!(intersection, simple_flag_set("acxz"));
 
-        loop {
-            match (left.peek(), right.peek()) {
-                (Some(l), Some(r)) if l == r => return false,
-                (Some(l), Some(r)) if l < r => {
-                    let _ = left.next();
-                }
-                (Some(l), Some(r)) if l > r => {
-                    let _ = right.next();
-                }
-                (_, _) => return true,
-            }
-        }
+        // superset
+        assert!(simple_flag_set("abc").is_superset(&simple_flag_set("b")));
+        assert!(simple_flag_set("abc").is_superset(&simple_flag_set("abc")));
+        assert!(!simple_flag_set("abc").is_superset(&simple_flag_set("abcd")));
+        assert!(!simple_flag_set("ac").is_superset(&simple_flag_set("abc")));
     }
-}
-
-/// Since flag sets are ordered and deduplicated, we can find the intersection
-/// of two flag sets N and M in `O(|N| + |M|)` time by zipping through both.
-pub(crate) struct FlagSetIntersection<L: Iterator<Item = Flag>, R: Iterator<Item = Flag>> {
-    left: Peekable<L>,
-    right: Peekable<R>,
-}
-
-impl<L, R> Iterator for FlagSetIntersection<L, R>
-where
-    L: Iterator<Item = Flag>,
-    R: Iterator<Item = Flag>,
-{
-    type Item = Flag;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        use std::cmp::Ordering::*;
-
-        loop {
-            let left = self.left.peek()?;
-            let right = self.right.peek()?;
-
-            match left.cmp(right) {
-                Equal => {
-                    let _ = self.left.next();
-                    return self.right.next();
-                }
-                Less => {
-                    let _ = self.left.next();
-                }
-                Greater => {
-                    let _ = self.right.next();
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Capitalization {
-    /// Hunspell: "NO"
-    Lower,
-    /// Hunspell: "INIT"
-    Title,
-    /// Hunspell: "ALL"
-    Upper,
-    /// Hunspell: "HUH"
-    Camel,
-    /// Hunspell: "HUHINIT"
-    Pascal,
 }

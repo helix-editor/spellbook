@@ -5,10 +5,10 @@
 use std::{borrow::Cow, ops::Deref, rc::Rc};
 
 use crate::{
-    aff::{Aff, Affix, CompoundRule, Prefix, Suffix},
+    aff::{Aff, Affix, Capitalization, CompoundRule, Prefix, Suffix},
     dic::{Dic, Word},
     stdx::is_some_and,
-    Capitalization, FlagSet, FlagSetRef,
+    FlagSet,
 };
 
 /// A hypothesis of how some word might be split into stem, suffix(es)
@@ -33,17 +33,17 @@ impl AffixForm {
     }
 
     pub fn flags(&self) -> FlagSet {
-        let mut flags = Vec::new();
+        let mut flags = FlagSet::new();
         if let Some(word) = &self.in_dictionary {
-            flags.extend(word.flags.deref());
+            flags.extend(word.flags.iter());
         }
         if let Some(prefix) = &self.prefixes[0] {
-            flags.extend(prefix.flags.deref());
+            flags.extend(prefix.flags.iter());
         }
         if let Some(suffix) = &self.suffixes[0] {
-            flags.extend(suffix.flags.deref());
+            flags.extend(suffix.flags.iter());
         }
-        flags.into()
+        flags
     }
 
     pub fn all_affixes(&self) -> impl Iterator<Item = &Affix> {
@@ -196,8 +196,15 @@ impl<'a> Checker<'a> {
 
         for variant in variants {
             if include_affix_forms {
-                for form in self.affix_forms(variant.as_ref(), captype, &[], &[], &[], None, false)
-                {
+                for form in self.affix_forms(
+                    variant.as_ref(),
+                    captype,
+                    &Default::default(),
+                    &Default::default(),
+                    &Default::default(),
+                    None,
+                    false,
+                ) {
                     if !(self.aff.check_sharps
                         && form.stem.contains('ß')
                         && is_some_and(self.aff.keep_case_flag, |flag| {
@@ -226,9 +233,9 @@ impl<'a> Checker<'a> {
         &self,
         word: &str,
         capitalization: Capitalization,
-        prefix_flags: FlagSetRef,
-        suffix_flags: FlagSetRef,
-        forbidden_flags: FlagSetRef,
+        prefix_flags: &FlagSet,
+        suffix_flags: &FlagSet,
+        forbidden_flags: &FlagSet,
         compound_pos: Option<CompoundPosition>,
         with_forbidden: bool,
     ) -> Vec<AffixForm> {
@@ -303,9 +310,9 @@ impl<'a> Checker<'a> {
         &self,
         word: &str,
         // TODO: are these two optional?
-        prefix_flags: FlagSetRef,
-        suffix_flags: FlagSetRef,
-        forbidden_flags: FlagSetRef,
+        prefix_flags: &FlagSet,
+        suffix_flags: &FlagSet,
+        forbidden_flags: &FlagSet,
         compound_pos: Option<CompoundPosition>,
     ) -> Vec<AffixForm> {
         let mut forms = Vec::new();
@@ -348,8 +355,8 @@ impl<'a> Checker<'a> {
     fn desuffix(
         &self,
         word: &str,
-        required_flags: FlagSetRef,
-        forbidden_flags: FlagSetRef,
+        required_flags: &FlagSet,
+        forbidden_flags: &FlagSet,
         nested: bool,
         crossproduct: bool,
     ) -> Vec<AffixForm> {
@@ -363,8 +370,8 @@ impl<'a> Checker<'a> {
 
         let is_valid_suffix = |suffix: &Rc<Suffix>| {
             (!crossproduct || suffix.crossproduct)
-                && suffix.flags.is_superset_of(required_flags)
-                && suffix.flags.is_disjoint_of(forbidden_flags)
+                && suffix.flags.is_superset(required_flags)
+                && suffix.flags.is_disjoint(forbidden_flags)
         };
 
         for suffix in suffixes {
@@ -387,11 +394,8 @@ impl<'a> Checker<'a> {
             });
 
             if !nested {
-                // TODO: require required_flags to be a FlagSet and mutate it,
-                // efficiently inserting without resorting the whole vec?
-                let mut required_flags = Vec::from(required_flags);
-                required_flags.push(suffix.flag);
-                let required_flags = FlagSet::from(required_flags);
+                let mut required_flags = required_flags.clone();
+                required_flags.insert(suffix.flag);
                 forms.append(&mut self.desuffix(
                     &stem,
                     &required_flags,
@@ -408,8 +412,8 @@ impl<'a> Checker<'a> {
     fn deprefix(
         &self,
         word: &str,
-        required_flags: FlagSetRef,
-        forbidden_flags: FlagSetRef,
+        required_flags: &FlagSet,
+        forbidden_flags: &FlagSet,
         nested: bool,
         crossproduct: bool,
     ) -> Vec<AffixForm> {
@@ -422,8 +426,8 @@ impl<'a> Checker<'a> {
 
         let is_valid_prefix = |prefix: &Rc<Prefix>| {
             (!crossproduct || prefix.crossproduct)
-                && prefix.flags.is_superset_of(required_flags)
-                && prefix.flags.is_disjoint_of(forbidden_flags)
+                && prefix.flags.is_superset(required_flags)
+                && prefix.flags.is_disjoint(forbidden_flags)
         };
 
         for prefix in prefixes {
@@ -446,11 +450,8 @@ impl<'a> Checker<'a> {
             });
 
             if !nested && self.aff.complex_prefixes {
-                // TODO: require required_flags to be a FlagSet and mutate it,
-                // efficiently inserting without resorting the whole vec?
-                let mut required_flags = Vec::from(required_flags);
-                required_flags.push(prefix.flag);
-                let required_flags = FlagSet::from(required_flags);
+                let mut required_flags = required_flags.clone();
+                required_flags.insert(prefix.flag);
                 forms.append(&mut self.deprefix(
                     &stem,
                     &required_flags,
@@ -536,7 +537,15 @@ impl<'a> Checker<'a> {
 
     fn compound_forms(&self, word: &str, capitalization: Capitalization) -> Vec<CompoundForm> {
         if let Some(flag) = self.aff.forbidden_word_flag {
-            for form in self.affix_forms(word, capitalization, &[], &[], &[], None, true) {
+            for form in self.affix_forms(
+                word,
+                capitalization,
+                &Default::default(),
+                &Default::default(),
+                &Default::default(),
+                None,
+                true,
+            ) {
                 if form.flags().contains(&flag) {
                     return vec![];
                 }
@@ -564,8 +573,14 @@ impl<'a> Checker<'a> {
     }
 
     fn compounds_by_flags(&self, word: &str, capitalization: Capitalization) -> Vec<CompoundForm> {
-        let permit_flags = FlagSet::from(self.aff.compound_permit_flag);
-        let forbidden_flags = FlagSet::from(self.aff.compound_forbid_flag);
+        let mut permit_flags = FlagSet::new();
+        if let Some(flag) = self.aff.compound_permit_flag {
+            permit_flags.insert(flag);
+        }
+        let mut forbidden_flags = FlagSet::new();
+        if let Some(flag) = self.aff.compound_forbid_flag {
+            forbidden_flags.insert(flag);
+        }
         self.compounds_by_flags_impl(word, capitalization, &permit_flags, &forbidden_flags, 0)
     }
 
@@ -573,8 +588,8 @@ impl<'a> Checker<'a> {
         &self,
         word: &str,
         capitalization: Capitalization,
-        permit_flags: FlagSetRef,
-        forbidden_flags: FlagSetRef,
+        permit_flags: &FlagSet,
+        forbidden_flags: &FlagSet,
         depth: usize,
     ) -> Vec<CompoundForm> {
         // TODO: unroll recursion.
@@ -585,7 +600,7 @@ impl<'a> Checker<'a> {
                 word,
                 capitalization,
                 permit_flags,
-                &[],
+                &Default::default(),
                 forbidden_flags,
                 Some(CompoundPosition::End),
                 false,
@@ -601,8 +616,9 @@ impl<'a> Checker<'a> {
             return forms;
         }
 
+        let default_permit_flags = &Default::default();
         let (compound_pos, prefix_flags) = if depth == 0 {
-            (CompoundPosition::Begin, [].as_slice())
+            (CompoundPosition::Begin, default_permit_flags)
         } else {
             (CompoundPosition::Middle, permit_flags)
         };
@@ -684,15 +700,12 @@ impl<'a> Checker<'a> {
 
         if !prev_parts.is_empty() {
             for homonym in self.dic.homonyms(word, false) {
-                let flag_sets: Vec<FlagSetRef> = prev_parts
+                let flag_sets: Vec<&FlagSet> = prev_parts
                     .iter()
-                    .map(|part| part.flags.as_ref())
-                    .chain(std::iter::once(homonym.flags.as_ref()))
+                    .map(|part| &part.flags)
+                    .chain(std::iter::once(&homonym.flags))
                     .collect();
-                if rules
-                    .iter()
-                    .any(|rule| rule.full_match(flag_sets.as_slice()))
-                {
+                if rules.iter().any(|rule| rule.full_match(&flag_sets)) {
                     let form = AffixForm {
                         text: word.to_string(),
                         stem: word.to_string(),
@@ -717,10 +730,10 @@ impl<'a> Checker<'a> {
             let splitword: String = word.chars().take(split_pos).collect();
 
             for homonym in self.dic.homonyms(&splitword, false) {
-                let flag_sets: Vec<FlagSetRef> = prev_parts
+                let flag_sets: Vec<&FlagSet> = prev_parts
                     .iter()
-                    .map(|part| part.flags.as_ref())
-                    .chain(std::iter::once(homonym.flags.as_ref()))
+                    .map(|part| &part.flags)
+                    .chain(std::iter::once(&homonym.flags))
                     .collect();
                 let compound_rules: Vec<_> = rules
                     .iter()
@@ -779,9 +792,9 @@ impl<'a> Checker<'a> {
                 .affix_forms(
                     &format!("{left} {right}"),
                     capitalization,
-                    &[],
-                    &[],
-                    &[],
+                    &Default::default(),
+                    &Default::default(),
+                    &Default::default(),
                     None,
                     false,
                 )

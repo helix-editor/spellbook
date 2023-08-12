@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use crate::{Capitalization, Flag, FlagSet};
+use crate::{aff::Capitalization, Flag, FlagSet};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Word {
