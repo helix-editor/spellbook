@@ -1,16 +1,21 @@
 //! Configuration and rulesets for a dictionary.
 //! This comes from Hunspell `.aff` files, hence the name of the module & struct.
 
+// TODO: remove this once parsing and suggestion are done.
+#![allow(dead_code)]
+
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     ops::Deref,
+    rc::Rc,
 };
 
 use regex::Regex;
 
-use crate::{dic::Word, Flag, FlagSet};
+use crate::{checker::AffixForm, Capitalization, Flag, FlagSet, FlagSetRef};
 
+#[derive(Debug)]
 pub(crate) struct Aff {
     // General
     /// Encoding of the `.aff` and `.dic` files
@@ -26,7 +31,7 @@ pub(crate) struct Aff {
     pub language_id: Option<String>,
     /// Characters to ignore in dictionary words, affixes and input words.
     /// From the IGNORE command.
-    pub ignore_chars: String,
+    pub ignore_chars: Option<IgnoreChars>,
     /// Whether the language has sharps (ß)
     /// From the CHECKSHARPS command.
     pub check_sharps: bool,
@@ -34,16 +39,16 @@ pub(crate) struct Aff {
     /// and suggest. This is necessary because some compounding and affix rules
     /// may produce a theoretically- but not actually correct word.
     /// From the FORBIDDENWORD command.
-    pub forbidden_word_flag: Flag,
+    pub forbidden_word_flag: Option<Flag>,
     /// Flag to mark words that shouldn't be considered correct unless their case
     /// matches the dictionary exactly.
     /// From the KEEPCASE command.
-    pub keep_case_flag: Flag,
+    pub keep_case_flag: Option<Flag>,
 
     // Suggestions
     /// Flag to mark a word of affix so that it is not produced by suggest.
     /// From the NOSUGGEST command.
-    pub no_suggest_flag: Flag,
+    pub no_suggest_flag: Option<Flag>,
     /// A specification of adjacent characters on a keyboard used for typo
     /// detection.
     /// From the KEY command.
@@ -84,14 +89,14 @@ pub(crate) struct Aff {
     // Stemming
     /// Dictionary of prefixes organized by flag.
     /// From the PFX command.
-    pub prefixes: HashMap<Flag, Vec<Prefix>>,
+    pub prefixes: HashMap<Flag, Vec<Rc<Prefix>>>,
     /// Dictionary of suffixes organized by flag.
     /// From the SFX command.
-    pub suffixes: HashMap<Flag, Vec<Suffix>>,
+    pub suffixes: HashMap<Flag, Vec<Rc<Suffix>>>,
     /// From the NEEDAFFIX command.
-    pub need_affix_flag: Flag,
+    pub need_affix_flag: Option<Flag>,
     /// From the CIRCUMFIX command.
-    pub circumfix_flag: Flag,
+    pub circumfix_flag: Option<Flag>,
     /// From the COMPLEXPREFIXES command.
     pub complex_prefixes: bool,
     /// From the FULLSTRIP command.
@@ -106,21 +111,21 @@ pub(crate) struct Aff {
     /// From the COMPOUNDWORDMAX command.
     pub max_compound_word_count: Option<usize>,
     /// From the COMPOUNDFLAG command.
-    pub compound_flag: Flag,
+    pub compound_flag: Option<Flag>,
     /// From the COMPOUNDBEGIN command.
-    pub compound_begin_flag: Flag,
+    pub compound_begin_flag: Option<Flag>,
     /// From the COMPOUNDMIDDLE command.
-    pub compound_middle_flag: Flag,
+    pub compound_middle_flag: Option<Flag>,
     /// From the COMPOUNDEND command.
-    pub compound_end_flag: Flag,
+    pub compound_end_flag: Option<Flag>,
     /// From the ONLYINCOMPOUND command.
-    pub only_in_compound_flag: Flag,
+    pub only_in_compound_flag: Option<Flag>,
     /// From the COMPOUNDPERMITFLAG command.
-    pub compound_permit_flag: Flag,
+    pub compound_permit_flag: Option<Flag>,
     /// From the COMPOUNDFORBIDFLAG command.
-    pub compound_forbid_flag: Flag,
+    pub compound_forbid_flag: Option<Flag>,
     /// From the FORCEUCASE command.
-    pub force_uppercase_flag: Flag,
+    pub force_uppercase_flag: Option<Flag>,
     /// Whether to forbid capitalized characters at word boundaries in compounds.
     /// From the CHECKCOMPOUNDCASE command.
     pub check_compound_case: bool,
@@ -172,14 +177,11 @@ pub(crate) struct Aff {
     // * LEMMA_PRESENT
     // * WORDCHARS
     // ---
-    pub casing: Option<CustomCasing>,
-    // TODO: suffixes/prefixes index in a trie?
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum CustomCasing {
-    Germanic,
-    Turkic,
+    pub casing: Casing,
+    // TODO: suffixes/prefixes index in a trie? Spylls uses
+    // the 'add' part (reversed) for suffixes (forward for prefixes).
+    pub suffixes_index: HashMap<String, Vec<Rc<Suffix>>>,
+    pub prefixes_index: HashMap<String, Vec<Rc<Prefix>>>,
 }
 
 impl Default for Aff {
@@ -233,6 +235,118 @@ impl Default for Aff {
             flag_set_aliases: Default::default(),
             word_aliases: Default::default(),
             casing: Default::default(),
+            suffixes_index: Default::default(),
+            prefixes_index: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) enum Casing {
+    Germanic,
+    Turkic,
+    #[default]
+    Other,
+}
+
+impl Casing {
+    // TODO: take casings into account.
+    pub(crate) fn guess(&self, word: &str) -> Capitalization {
+        // TODO: use nuspell's 'guess' instead?
+        if word.chars().all(|ch| ch.is_lowercase()) {
+            Capitalization::Lower
+        } else if word.chars().all(|ch| ch.is_uppercase()) {
+            Capitalization::Upper
+        } else if word
+            .chars()
+            .next()
+            .expect("word is non-empty")
+            .is_uppercase()
+        {
+            if word.chars().skip(1).all(|ch| ch.is_lowercase()) {
+                Capitalization::Title
+            } else {
+                Capitalization::Pascal
+            }
+        } else {
+            Capitalization::Camel
+        }
+    }
+
+    /// Guess how the word might have been cased in the dictionary,
+    /// assuming that it is spell correctly.
+    /// For example if the word is "Kitten" guesses might be "kitten"
+    /// and "KITTEN".
+    pub(crate) fn variants<'a>(&self, word: &'a str) -> (Capitalization, Vec<Cow<'a, str>>) {
+        let capitalization = self.guess(word);
+        let mut variants = vec![Cow::Borrowed(word)];
+
+        match capitalization {
+            Capitalization::Lower | Capitalization::Camel => (),
+            Capitalization::Title => variants.append(&mut self.lower(word)),
+            Capitalization::Pascal => variants.append(&mut self.lower_first(word)),
+            Capitalization::Upper => {
+                variants.append(&mut self.lower(word));
+                variants.append(&mut self.capitalize(word));
+            }
+        }
+
+        (capitalization, variants)
+    }
+
+    pub(crate) fn lower<'a>(&self, word: &'a str) -> Vec<Cow<'a, str>> {
+        // Can't be properly downcased in non-Turkic casings.
+        if word.chars().next().expect("word is non-empty") == 'İ' {
+            return vec![];
+        }
+
+        // TODO: do we have to switch over to unicode_segmentation to make this work?
+        // Can we use chars so cavalierly?
+        vec![Cow::Owned(word.to_lowercase().replace("i̇", "i"))]
+    }
+
+    pub(crate) fn lower_first<'a>(&self, word: &'a str) -> Vec<Cow<'a, str>> {
+        self.lower(word)
+            .iter()
+            .map(|word| {
+                let ch = word.chars().next().expect("word is non-empty");
+                Cow::Owned(if ch.is_uppercase() {
+                    std::iter::once(ch)
+                        .chain(word.chars().skip(1))
+                        .collect::<String>()
+                } else {
+                    word.to_string()
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn upper<'a>(&self, word: &'a str) -> Vec<Cow<'a, str>> {
+        vec![Cow::Owned(word.to_uppercase())]
+    }
+
+    pub(crate) fn capitalize<'a>(&self, word: &'a str) -> Vec<Cow<'a, str>> {
+        let mut chars = word.chars().peekable();
+        let ch = chars.next().expect("word is non-empty");
+        if chars.peek().is_none() {
+            if ch.is_uppercase() {
+                vec![Cow::Borrowed(word)]
+            } else {
+                vec![Cow::Owned(word.to_uppercase())]
+            }
+        } else {
+            let rest: String = chars.collect();
+            self.lower(&rest)
+                .iter()
+                .flat_map(move |word| {
+                    ch.to_uppercase().map(move |ch| {
+                        let mut w2 = String::with_capacity(word.len() + 1);
+                        w2.push(ch);
+                        w2.push_str(word);
+                        Cow::Owned(w2)
+                    })
+                })
+                .collect()
         }
     }
 }
@@ -368,6 +482,21 @@ impl FlagType {
     // }
 }
 
+#[derive(Debug, Default)]
+pub(crate) struct IgnoreChars(HashSet<char>);
+
+impl IgnoreChars {
+    pub(crate) fn erase_ignored<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        let is_ignored = |ch: char| self.0.contains(&ch);
+
+        if word.chars().any(is_ignored) {
+            Cow::Owned(word.replace(is_ignored, ""))
+        } else {
+            Cow::Borrowed(word)
+        }
+    }
+}
+
 /// Rules for replacing characters at the beginning of a stem.
 #[derive(Debug)]
 pub(crate) struct Prefix(Affix);
@@ -461,9 +590,9 @@ pub(crate) struct Affix {
     /// Flags the affix has itself.
     pub flags: FlagSet,
     /// A regex that checks whether the condition matches.
-    condition_regex: Regex,
+    pub condition_regex: Regex,
     /// TODO
-    replace_regex: Regex,
+    pub replace_regex: Regex,
 }
 
 #[derive(Debug)]
@@ -478,6 +607,7 @@ impl Deref for BreakPattern {
 }
 
 impl BreakPattern {
+    // TODO: remove wrapper type?
     pub fn new(pattern: &str) -> Result<Self, regex::Error> {
         let pattern = regex::escape(pattern)
             .replace("\\^", "^")
@@ -509,7 +639,7 @@ impl ReplacementPattern {
 
 /// A set of formulas for combining words together via flags.
 /// From the COMPOUNDRULE command.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CompoundRule {
     pub flags: FlagSet,
     regex: Regex,
@@ -538,6 +668,7 @@ impl CompoundRule {
     // TODO: Create a 'FlagPattern' which operates like a very simple
     // regex that matches on flags. Move the full_match and partial_match
     // logic into that type.
+    // That type only needs to care about '*' and '?' rules.
     pub fn new(text: &str, flag_type: FlagType) -> Result<Self, CompoundRuleError> {
         let (flags, parts) = if matches!(flag_type, FlagType::Long | FlagType::Numeric) {
             // Flags are surrounded by parentheses with these flag types, for example
@@ -585,12 +716,11 @@ impl CompoundRule {
         })
     }
 
-    // That type only needs to care about '*' and '?' rules.
-    pub fn full_match(&self, _flag_sets: &[FlagSet]) -> bool {
+    pub fn full_match(&self, _flag_sets: &[FlagSetRef]) -> bool {
         unimplemented!()
     }
 
-    pub fn partial_match(&self, flag_sets: &[FlagSet]) -> bool {
+    pub fn partial_match(&self, _flag_sets: &[FlagSetRef]) -> bool {
         unimplemented!()
     }
 
@@ -615,20 +745,12 @@ pub(crate) struct CompoundPattern {
 }
 
 impl CompoundPattern {
-    pub fn new(left: &str, right: &str) -> Self {
+    pub fn new(_left: &str, _right: &str) -> Self {
         unimplemented!()
     }
 
-    pub fn r#match(&self, left: AffixForm, right: AffixForm) -> bool {
-        fn is_none_or<T, F>(opt: Option<T>, f: F) -> bool
-        where
-            F: FnOnce(T) -> bool,
-        {
-            match opt {
-                Some(val) => f(val),
-                None => true,
-            }
-        }
+    pub fn r#match(&self, left: &AffixForm, right: &AffixForm) -> bool {
+        use crate::stdx::is_none_or;
 
         left.stem.ends_with(&self.left_stem)
             && right.stem.starts_with(&self.right_stem)
@@ -663,42 +785,6 @@ impl CompoundPattern {
 //     Ok((word, flag_set))
 // }
 
-/// A hypothesis of how some word might be split into stem, suffix(es)
-/// and prefix(es).
-#[derive(Debug)]
-// TODO: move this to a lookup module? Move everything to a types module?
-pub(crate) struct AffixForm {
-    text: String,
-    stem: String,
-    prefixes: [Option<Prefix>; 2],
-    suffixes: [Option<Suffix>; 2],
-    in_dictionary: Option<Word>,
-}
-
-impl AffixForm {
-    pub fn has_affixes(&self) -> bool {
-        self.prefixes[0].is_some() || self.suffixes[0].is_some()
-    }
-
-    pub fn is_base(&self) -> bool {
-        !self.has_affixes()
-    }
-
-    pub fn flags(&self) -> FlagSet {
-        let mut flags = Vec::new();
-        if let Some(word) = &self.in_dictionary {
-            flags.extend(word.flags.deref());
-        }
-        if let Some(prefix) = &self.prefixes[0] {
-            flags.extend(prefix.flags.deref());
-        }
-        if let Some(suffix) = &self.suffixes[0] {
-            flags.extend(suffix.flags.deref());
-        }
-        flags.into()
-    }
-}
-
 /// Table of conversions that should be applied before or after processing.
 /// processing.
 ///
@@ -720,7 +806,7 @@ impl ConversionTable {
         Self { conversions }
     }
 
-    pub fn apply(&self, input: &str) -> String {
+    pub fn apply<'a>(&self, _input: &'a str) -> Cow<'a, str> {
         // TODO: See the ConvTable class in spylls.
         // We need the ability to move to the next unicode character in the
         // &str which I think we need to pull another crate in to do.

@@ -1,11 +1,15 @@
 use std::{iter::Peekable, ops::Deref};
 
+pub use checker::Checker;
+
 mod aff;
+mod checker;
 mod dic;
+mod stdx;
 
 pub struct Dictionary {
-    _dic: dic::Dic,
-    _aff: aff::Aff,
+    pub(crate) dic: dic::Dic,
+    pub(crate) aff: aff::Aff,
     // TODO: personal dictionaries & session changes
 }
 
@@ -15,8 +19,8 @@ impl Dictionary {
         unimplemented!()
     }
 
-    pub fn check(&self, _word: &str) -> bool {
-        unimplemented!()
+    pub fn check(&self, word: &str) -> bool {
+        Checker::new(&self.dic, &self.aff).check(word)
     }
 
     pub fn suggest(&self, _word: &str) -> Vec<String> {
@@ -39,6 +43,18 @@ impl From<Vec<Flag>> for FlagSet {
     }
 }
 
+impl From<Option<Flag>> for FlagSet {
+    fn from(maybe_flag: Option<Flag>) -> Self {
+        Self(match maybe_flag {
+            Some(flag) => vec![flag],
+            None => vec![],
+        })
+    }
+}
+
+/// A borrowed flag-set slice.
+pub(crate) type FlagSetRef<'a> = &'a [Flag];
+
 impl Deref for FlagSet {
     type Target = Vec<Flag>;
 
@@ -47,11 +63,64 @@ impl Deref for FlagSet {
     }
 }
 
+impl AsRef<[Flag]> for FlagSet {
+    fn as_ref(&self) -> FlagSetRef {
+        self.as_slice()
+    }
+}
+
 impl FlagSet {
-    pub fn intersection<'a>(&'a self, other: &'a FlagSet) -> impl Iterator<Item = Flag> + 'a {
+    // TODO: this will be used by CompoundRule.
+    #[allow(dead_code)]
+    pub fn intersection<'a>(&'a self, other: FlagSetRef<'a>) -> impl Iterator<Item = Flag> + 'a {
         FlagSetIntersection {
             left: self.iter().copied().peekable(),
             right: other.iter().copied().peekable(),
+        }
+    }
+
+    // TODO check my math on the next two.
+
+    /// Whether all flags in `other` are members of this flag set.
+    pub fn is_superset_of(&self, other: FlagSetRef) -> bool {
+        let mut left = self.iter().peekable();
+        let mut right = other.iter().peekable();
+
+        loop {
+            match (left.peek(), right.peek()) {
+                (Some(l), Some(r)) if l == r => {
+                    let _ = left.next();
+                    let _ = right.next();
+                }
+                (Some(l), Some(r)) if l < r => {
+                    let _ = left.next();
+                }
+                (Some(l), Some(r)) if l > r => {
+                    let _ = right.next();
+                }
+                (Some(_), Some(_)) => unreachable!(),
+                (None, Some(_)) => return false,
+                (_, None) => return true,
+            }
+        }
+    }
+
+    /// Whether no flags in `other` are members of this flag set.
+    pub fn is_disjoint_of(&self, other: FlagSetRef) -> bool {
+        let mut left = self.iter().peekable();
+        let mut right = other.iter().peekable();
+
+        loop {
+            match (left.peek(), right.peek()) {
+                (Some(l), Some(r)) if l == r => return false,
+                (Some(l), Some(r)) if l < r => {
+                    let _ = left.next();
+                }
+                (Some(l), Some(r)) if l > r => {
+                    let _ = right.next();
+                }
+                (_, _) => return true,
+            }
         }
     }
 }
@@ -93,16 +162,16 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Capitalization {
-    // Hunspell: "NO"
+    /// Hunspell: "NO"
     Lower,
-    // Hunspell: "TITLE"
+    /// Hunspell: "INIT"
     Title,
-    // Hunspell: "ALL"
+    /// Hunspell: "ALL"
     Upper,
-    // Hunspell: "HUH"
+    /// Hunspell: "HUH"
     Camel,
-    // Hunspell: "HUHINIT"
+    /// Hunspell: "HUHINIT"
     Pascal,
 }

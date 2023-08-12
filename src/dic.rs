@@ -1,6 +1,9 @@
 //! Contents of a dictionary.
 //! This comes from Hunspell `.dic` files.
 
+// TODO: remove this once parsing and suggestion are done.
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 use crate::{Capitalization, Flag, FlagSet};
@@ -53,7 +56,9 @@ impl Dic {
 
     /// Return all `Word` instances with the same stem,
     /// optionally ignoring the casing of the words.
-    pub fn homonyms(&self, stem: &str, ignore_case: bool) -> Option<impl Iterator<Item = &Word>> {
+    pub fn homonyms(&self, stem: &str, ignore_case: bool) -> impl Iterator<Item = &Word> {
+        use crate::stdx::EitherIterator::{Left, Right};
+
         let index = if ignore_case {
             &self.lowercase_index
         } else {
@@ -61,19 +66,15 @@ impl Dic {
         };
 
         if !index.contains_key(stem) {
-            return None;
+            return Left(std::iter::empty());
         }
 
-        Some(index[stem].iter().map(|idx| &self.words[*idx]))
+        Right(index[stem].iter().map(|idx| &self.words[*idx]))
     }
 
     /// Query if any or all of the homonyms of the stem contain the given flag.
     pub fn has_flag(&self, stem: &str, flag: Flag, for_all: bool) -> bool {
-        let mut homonyms = match self.homonyms(stem, false) {
-            Some(homonyms) => homonyms,
-            None => return false,
-        };
-
+        let mut homonyms = self.homonyms(stem, false);
         let has_flag = |homonym: &Word| homonym.flags.contains(&flag);
 
         if for_all {
