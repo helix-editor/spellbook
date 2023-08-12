@@ -846,6 +846,7 @@ pub(crate) struct CompoundPattern {
 
 impl CompoundPattern {
     pub fn new(_left: &str, _right: &str) -> Self {
+        // This is used by a handful of dictionaries.
         unimplemented!()
     }
 
@@ -892,21 +893,26 @@ impl CompoundPattern {
 /// test harness but not in actual dictionaries.
 ///
 /// From ICONV and/or OCONV.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct ConversionTable {
+    // Note: ignoring the hidden feature in Hunspell that `_` acts
+    // as an anchor in the patterns.
     conversions: Vec<(String, String)>,
 }
 
 impl ConversionTable {
     pub fn new(conversions: &[(&str, &str)]) -> Self {
-        let conversions: Vec<_> = conversions
+        let mut conversions: Vec<_> = conversions
             .iter()
             .map(|(pattern, replacement)| (pattern.to_string(), replacement.to_string()))
             .collect();
+        // Sort patterns by max length.
+        conversions.sort_unstable_by_key(|(pattern, _)| std::cmp::Reverse(pattern.chars().count()));
         Self { conversions }
     }
 
     pub fn apply<'a>(&self, _input: &'a str) -> Cow<'a, str> {
+        // en_US uses this for fancy apostrophe conversion.
         // TODO: See the ConvTable class in spylls.
         // We need the ability to move to the next unicode character in the
         // &str which I think we need to pull another crate in to do.
