@@ -249,7 +249,7 @@ impl<'a> Checker<'a> {
             compound_pos,
         ) {
             let mut found = false;
-            let mut homonyms = self.dic.homonyms(word, false);
+            let mut homonyms = self.dic.homonyms(&form.stem, false);
 
             if !with_forbidden
                 && (compound_pos.is_some() || form.has_affixes())
