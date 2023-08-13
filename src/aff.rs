@@ -958,20 +958,16 @@ impl ConversionTable {
 mod test {
     use super::*;
 
-    fn simple_flag_set(flags: &str) -> FlagSet {
-        let flag_type = FlagType::Short;
-        flag_type
-            .parse_flags_from_chars(flags.chars())
-            .expect("can parse")
-    }
-
-    fn compound_rule_guess(guess: &str) -> Vec<Rc<FlagSet>> {
+    // We need a `&[&FlagSet]` to match `full_match` and `partial_match`'s
+    // signatures.
+    #[allow(clippy::vec_box)]
+    fn compound_rule_guess(guess: &str) -> Vec<Box<FlagSet>> {
         let flag_type = FlagType::Short;
         let mut flag_sets = Vec::new();
         for ch in guess.chars() {
             let mut flag_set = FlagSet::new();
             flag_set.insert(flag_type.parse_flag_from_char(ch).unwrap());
-            flag_sets.push(Rc::new(flag_set));
+            flag_sets.push(Box::new(flag_set));
         }
         flag_sets
     }
