@@ -9,6 +9,7 @@ mod checker;
 mod dic;
 mod stdx;
 
+#[derive(Debug)]
 pub struct Dictionary {
     pub(crate) dic: dic::Dic,
     pub(crate) aff: aff::Aff,
@@ -70,6 +71,7 @@ pub enum ParseDictionaryErrorKind {
     MalformedRegex(regex::Error),
     MalformedMorphologicalField(String),
     MalformedAffix,
+    Empty,
 }
 
 impl From<UnknownFlagTypeError> for ParseDictionaryErrorKind {

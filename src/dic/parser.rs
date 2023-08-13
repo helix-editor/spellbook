@@ -6,9 +6,19 @@ use crate::{
 use super::Dic;
 
 pub(crate) fn parse(aff: &Aff, dic_text: &str) -> Result<Dic, ParseDictionaryError> {
-    let mut dic = Dic::default();
+    let mut lines = dic_text.lines().enumerate();
 
-    for (line_number, line) in dic_text.lines().enumerate() {
+    // The first line of the `.dic` has the number of words so we can allocate exactly.
+    let entries = match lines.next() {
+        Some((line_number, line)) => line
+            .parse::<usize>()
+            .map_err(|err| error(ParseDictionaryErrorKind::MalformedNumber(err), line_number))?,
+        None => return Err(error(ParseDictionaryErrorKind::Empty, 0)),
+    };
+
+    let mut dic = Dic::with_capacity(entries);
+
+    for (line_number, line) in lines {
         if line.is_empty() || line.starts_with(|ch: char| ch.is_whitespace()) {
             continue;
         }
