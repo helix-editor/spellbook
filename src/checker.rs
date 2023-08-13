@@ -478,6 +478,8 @@ impl<'a> Checker<'a> {
         compound_pos: Option<CompoundPosition>,
         capitalization: Capitalization,
     ) -> bool {
+        use crate::stdx::is_none_or;
+
         let word = form
             .in_dictionary
             .as_ref()
@@ -534,8 +536,8 @@ impl<'a> Checker<'a> {
 
                 is_some_and(flag, |flag| all_flags.contains(&flag))
             }
-            None => is_some_and(self.aff.only_in_compound_flag, |flag| {
-                all_flags.contains(&flag)
+            None => is_none_or(self.aff.only_in_compound_flag, |flag| {
+                !all_flags.contains(&flag)
             }),
         }
     }
