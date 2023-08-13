@@ -137,7 +137,7 @@ impl<'a> Checker<'a> {
             None => word.to_string(),
         };
 
-        // Always except numbers.
+        // Always accept numbers.
         if word.chars().all(|ch| ch.is_numeric()) {
             return true;
         }
