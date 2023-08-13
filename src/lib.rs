@@ -1,5 +1,7 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
+use aff::ParseCompoundRuleError;
+pub use aff::{ParseFlagError, UnknownFlagTypeError};
 pub use checker::Checker;
 
 mod aff;
@@ -14,13 +16,19 @@ pub struct Dictionary {
 }
 
 impl Dictionary {
-    // TODO: Result
-    pub fn compile(_aff_text: &str, _dic_text: &str) -> Self {
-        unimplemented!()
+    pub fn compile(aff_text: &str, dic_text: &str) -> Result<Self, ParseDictionaryError> {
+        let aff = aff::parser::parse(aff_text)?;
+        let dic = dic::parser::parse(&aff, dic_text)?;
+
+        Ok(Self { aff, dic })
     }
 
     pub fn check(&self, word: &str) -> bool {
-        Checker::new(&self.dic, &self.aff).check(word)
+        self.checker().check(word)
+    }
+
+    pub fn checker(&self) -> Checker {
+        Checker::new(&self.dic, &self.aff)
     }
 
     pub fn suggest(&self, _word: &str) -> Vec<String> {
@@ -35,6 +43,48 @@ pub(crate) type Flag = u32;
 /// Internally this is stored as an ordered set of flags backed
 /// by [std::collections::BTreeSet].
 pub(crate) type FlagSet = BTreeSet<Flag>;
+
+#[derive(Debug)]
+pub struct ParseDictionaryError {
+    pub kind: ParseDictionaryErrorKind,
+    pub source: ParseDictionaryErrorSource,
+    pub line_number: Option<usize>,
+}
+
+#[derive(Debug)]
+pub enum ParseDictionaryErrorSource {
+    Dic,
+    Aff,
+    // Personal, ?
+}
+
+#[derive(Debug)]
+pub enum ParseDictionaryErrorKind {
+    UnknownFlagType(UnknownFlagTypeError),
+    MalformedFlag(ParseFlagError),
+    MalformedNumber(std::num::ParseIntError),
+    UnexpectedNonWhitespace(char),
+    MismatchedArity { expected: usize, actual: usize },
+    MismatchedRowCount { expected: usize, actual: usize },
+    MalformedCompoundRule(ParseCompoundRuleError),
+    MalformedRegex(regex::Error),
+    MalformedMorphologicalField(String),
+    MalformedAffix,
+}
+
+impl From<UnknownFlagTypeError> for ParseDictionaryErrorKind {
+    fn from(err: UnknownFlagTypeError) -> Self {
+        Self::UnknownFlagType(err)
+    }
+}
+
+impl From<ParseFlagError> for ParseDictionaryErrorKind {
+    fn from(err: ParseFlagError) -> Self {
+        Self::MalformedFlag(err)
+    }
+}
+
+pub(crate) type MorphologicalFields = HashMap<[char; 2], Vec<String>>;
 
 #[cfg(test)]
 mod test {

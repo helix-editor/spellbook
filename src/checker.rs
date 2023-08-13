@@ -24,15 +24,15 @@ pub(crate) struct AffixForm {
 }
 
 impl AffixForm {
-    pub fn has_affixes(&self) -> bool {
+    pub(crate) fn has_affixes(&self) -> bool {
         self.prefixes[0].is_some() || self.suffixes[0].is_some()
     }
 
-    pub fn is_base(&self) -> bool {
+    pub(crate) fn is_base(&self) -> bool {
         !self.has_affixes()
     }
 
-    pub fn flags(&self) -> FlagSet {
+    pub(crate) fn flags(&self) -> FlagSet {
         let mut flags = FlagSet::new();
         if let Some(word) = &self.in_dictionary {
             flags.extend(word.flags.iter());
@@ -46,7 +46,7 @@ impl AffixForm {
         flags
     }
 
-    pub fn all_affixes(&self) -> impl Iterator<Item = &Affix> {
+    pub(crate) fn all_affixes(&self) -> impl Iterator<Item = &Affix> {
         self.prefixes
             .iter()
             .filter_map(|prefix| prefix.as_ref().map(|pfx| pfx.as_ref().deref()))
@@ -134,7 +134,7 @@ impl<'a> Checker<'a> {
 
         let word = match &self.aff.ignore_chars {
             Some(ignore) => ignore.erase_ignored(word.as_ref()),
-            None => word,
+            None => word.to_string(),
         };
 
         // Always except numbers.
@@ -161,7 +161,7 @@ impl<'a> Checker<'a> {
         }
         let mut parts = vec![vec![word]];
 
-        for pattern in &self.aff.break_patterns {
+        for pattern in self.aff.break_patterns.iter() {
             for capture in pattern.captures_iter(word) {
                 let match_ = capture
                     .get(1)
@@ -191,7 +191,7 @@ impl<'a> Checker<'a> {
             self.aff.casing.variants(word)
         } else {
             let captype = self.aff.casing.guess(word);
-            (captype, vec![Cow::Borrowed(word)])
+            (captype, vec![word.to_string()])
         };
 
         for variant in variants {
@@ -360,6 +360,8 @@ impl<'a> Checker<'a> {
         nested: bool,
         crossproduct: bool,
     ) -> Vec<AffixForm> {
+        use crate::stdx::is_none_or;
+
         let mut forms = Vec::new();
         let suffixes = match self.aff.suffixes_index.get(word.chars().rev()) {
             Some(suffixes) => suffixes,
@@ -378,7 +380,9 @@ impl<'a> Checker<'a> {
             }
 
             let stem = suffix.replace_regex.replace(word, &suffix.strip);
-            if !suffix.condition_regex.is_match(&stem) {
+            if !is_none_or(suffix.condition_regex.as_ref(), |regex| {
+                regex.is_match(&stem)
+            }) {
                 continue;
             }
 
@@ -415,6 +419,8 @@ impl<'a> Checker<'a> {
         nested: bool,
         crossproduct: bool,
     ) -> Vec<AffixForm> {
+        use crate::stdx::is_none_or;
+
         let mut forms = Vec::new();
         let prefixes = match self.aff.prefixes_index.get(word.chars()) {
             Some(prefixes) => prefixes,
@@ -433,7 +439,9 @@ impl<'a> Checker<'a> {
             }
 
             let stem = prefix.replace_regex.replace(word, &prefix.strip);
-            if !prefix.condition_regex.is_match(&stem) {
+            if !is_none_or(prefix.condition_regex.as_ref(), |regex| {
+                regex.is_match(&stem)
+            }) {
                 continue;
             }
 

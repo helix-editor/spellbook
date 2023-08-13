@@ -1,21 +1,20 @@
 //! Configuration and rulesets for a dictionary.
 //! This comes from Hunspell `.aff` files, hence the name of the module & struct.
 
-// TODO: remove this once parsing and suggestion are done.
-#![allow(dead_code)]
-
 mod index;
+pub(crate) mod parser;
 
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     ops::Deref,
     rc::Rc,
+    str::FromStr,
 };
 
 use regex::Regex;
 
-use crate::{checker::AffixForm, Flag, FlagSet};
+use crate::{checker::AffixForm, Flag, FlagSet, MorphologicalFields};
 
 use self::index::AffixIndex;
 
@@ -66,8 +65,9 @@ pub(crate) struct Aff {
     pub replacements: Vec<ReplacementPattern>,
     /// Sets of similar characters to try when suggesting corrections.
     /// For example `aáã`.
+    /// using paretheses.
     /// From the MAP command.
-    pub map_chars: Vec<HashSet<char>>,
+    pub map_chars: Vec<HashSet<String>>,
     /// A toggle that controls whether split words should be suggested.
     /// Required for Swedish.
     /// From the NOSPLITSUGS command.
@@ -106,7 +106,7 @@ pub(crate) struct Aff {
     /// From the FULLSTRIP command.
     pub full_strip: bool,
     /// From the BREAK command.
-    pub break_patterns: Vec<BreakPattern>,
+    pub break_patterns: Vec<Regex>,
     /// From the COMPOUNDRULE command.
     pub compound_rules: Vec<CompoundRule>,
     /// Minimum length of words used for compounding.
@@ -169,7 +169,7 @@ pub(crate) struct Aff {
     pub flag_set_aliases: Vec<FlagSet>,
     /// ?
     /// From the AM command.
-    pub word_aliases: HashMap<String, HashSet<String>>,
+    pub _word_aliases: HashMap<String, HashSet<String>>,
     // ---
     // Not implemented in Spellbook:
     // * WARN
@@ -235,7 +235,7 @@ impl Default for Aff {
             input_conversion: Default::default(),
             output_conversion: Default::default(),
             flag_set_aliases: Default::default(),
-            word_aliases: Default::default(),
+            _word_aliases: Default::default(),
             casing: Default::default(),
             suffixes_index: Default::default(),
             prefixes_index: Default::default(),
@@ -293,9 +293,9 @@ impl Casing {
     /// assuming that it is spell correctly.
     /// For example if the word is "Kitten" guesses might be "kitten"
     /// and "KITTEN".
-    pub(crate) fn variants<'a>(&self, word: &'a str) -> (Capitalization, Vec<Cow<'a, str>>) {
+    pub(crate) fn variants(&self, word: &str) -> (Capitalization, Vec<String>) {
         let capitalization = self.guess(word);
-        let mut variants = vec![Cow::Borrowed(word)];
+        let mut variants = vec![word.to_string()];
 
         match capitalization {
             Capitalization::Lower | Capitalization::Camel => (),
@@ -310,7 +310,7 @@ impl Casing {
         (capitalization, variants)
     }
 
-    pub(crate) fn lower<'a>(&self, word: &'a str) -> Vec<Cow<'a, str>> {
+    pub(crate) fn lower(&self, word: &str) -> Vec<String> {
         // Can't be properly downcased in non-Turkic casings.
         if word.chars().next().expect("word is non-empty") == 'İ' {
             return vec![];
@@ -318,37 +318,34 @@ impl Casing {
 
         // TODO: do we have to switch over to unicode_segmentation to make this work?
         // Can we use chars so cavalierly?
-        vec![Cow::Owned(word.to_lowercase().replace("i̇", "i"))]
+        vec![word.to_lowercase().replace("i̇", "i")]
     }
 
-    pub(crate) fn lower_first<'a>(&self, word: &'a str) -> Vec<Cow<'a, str>> {
-        self.lower(word)
-            .iter()
-            .map(|word| {
-                let ch = word.chars().next().expect("word is non-empty");
-                Cow::Owned(if ch.is_uppercase() {
-                    std::iter::once(ch)
-                        .chain(word.chars().skip(1))
-                        .collect::<String>()
-                } else {
-                    word.to_string()
-                })
-            })
-            .collect()
+    pub(crate) fn lower_first(&self, word: &str) -> Vec<String> {
+        let mut lower_words = self.lower(word);
+        for word in lower_words.iter_mut() {
+            let ch = word.chars().next().expect("word is non-empty");
+            if ch.is_uppercase() {
+                *word = std::iter::once(ch)
+                    .chain(word.chars().skip(1))
+                    .collect::<String>();
+            }
+        }
+        lower_words
     }
 
-    pub(crate) fn upper<'a>(&self, word: &'a str) -> Vec<Cow<'a, str>> {
-        vec![Cow::Owned(word.to_uppercase())]
+    pub(crate) fn upper(&self, word: &str) -> Vec<String> {
+        vec![word.to_uppercase()]
     }
 
-    pub(crate) fn capitalize<'a>(&self, word: &'a str) -> Vec<Cow<'a, str>> {
+    pub(crate) fn capitalize(&self, word: &str) -> Vec<String> {
         let mut chars = word.chars().peekable();
         let ch = chars.next().expect("word is non-empty");
         if chars.peek().is_none() {
             if ch.is_uppercase() {
-                vec![Cow::Borrowed(word)]
+                vec![word.to_string()]
             } else {
-                vec![Cow::Owned(word.to_uppercase())]
+                vec![word.to_uppercase()]
             }
         } else {
             let rest: String = chars.collect();
@@ -359,7 +356,7 @@ impl Casing {
                         let mut w2 = String::with_capacity(word.len() + 1);
                         w2.push(ch);
                         w2.push_str(word);
-                        Cow::Owned(w2)
+                        w2
                     })
                 })
                 .collect()
@@ -384,8 +381,30 @@ pub(crate) enum FlagType {
     Utf8,
 }
 
+#[derive(Debug, Clone)]
+pub struct UnknownFlagTypeError(String);
+
+impl FromStr for FlagType {
+    type Err = UnknownFlagTypeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "long" => Ok(Self::Long),
+            "num" => Ok(Self::Numeric),
+            "UTF-8" => Ok(Self::Utf8),
+            _ => Err(UnknownFlagTypeError(s.to_string())),
+        }
+    }
+}
+
+impl std::fmt::Display for UnknownFlagTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FLAG option must be `long`, `num` or `UTF-8` if set")
+    }
+}
+
 #[derive(Debug)]
-pub(crate) enum ParseFlagError {
+pub enum ParseFlagError {
     NonAscii(char),
     MissingSecondChar(char),
     Empty,
@@ -394,7 +413,7 @@ pub(crate) enum ParseFlagError {
 }
 
 impl FlagType {
-    pub fn parse_flag_from_str(&self, input: &str) -> Result<Flag, ParseFlagError> {
+    pub(crate) fn parse_flag_from_str(&self, input: &str) -> Result<Flag, ParseFlagError> {
         use ParseFlagError::*;
 
         if input.is_empty() {
@@ -439,7 +458,7 @@ impl FlagType {
         }
     }
 
-    pub fn parse_flag_from_char(&self, ch: char) -> Result<Flag, ParseFlagError> {
+    pub(crate) fn parse_flag_from_char(&self, ch: char) -> Result<Flag, ParseFlagError> {
         match self {
             Self::Short => {
                 if ch.is_ascii() {
@@ -453,7 +472,7 @@ impl FlagType {
         }
     }
 
-    pub fn parse_flags_from_chars(
+    pub(crate) fn parse_flags_from_chars(
         &self,
         mut chars: std::str::Chars,
     ) -> Result<FlagSet, ParseFlagError> {
@@ -507,14 +526,16 @@ impl FlagType {
 pub(crate) struct IgnoreChars(HashSet<char>);
 
 impl IgnoreChars {
-    pub(crate) fn erase_ignored<'a>(&self, word: &'a str) -> Cow<'a, str> {
+    pub(crate) fn erase_ignored(&self, word: &str) -> String {
         let is_ignored = |ch: char| self.0.contains(&ch);
 
-        if word.chars().any(is_ignored) {
-            Cow::Owned(word.replace(is_ignored, ""))
-        } else {
-            Cow::Borrowed(word)
-        }
+        word.replace(is_ignored, "")
+    }
+}
+
+impl From<&str> for IgnoreChars {
+    fn from(input: &str) -> Self {
+        Self(input.chars().collect())
     }
 }
 
@@ -523,24 +544,28 @@ impl IgnoreChars {
 pub(crate) struct Prefix(Affix);
 
 impl Prefix {
-    pub fn new(
+    pub(crate) fn new(
         flag: Flag,
         crossproduct: bool,
         strip: &str,
-        add: &str,
-        condition: &str,
+        add: String,
+        condition: Option<&str>,
         flags: FlagSet,
+        morphological_fields: MorphologicalFields,
     ) -> Result<Self, regex::Error> {
-        let condition_regex = Regex::new(&format!("^{}", condition.replace('-', "\\-")))?;
+        let condition_regex = condition
+            .map(|cond| Regex::new(&format!("^{}", cond.replace('-', "\\-"))))
+            .transpose()?;
         let replace_regex = Regex::new(&format!("^{add}"))?;
 
         Ok(Self(Affix {
             flag,
             crossproduct,
             strip: strip.to_string(),
-            add: add.to_string(),
-            condition: condition.to_string(),
+            add,
+            condition: condition.map(ToString::to_string),
             flags,
+            morphological_fields,
             condition_regex,
             replace_regex,
         }))
@@ -560,24 +585,28 @@ impl Deref for Prefix {
 pub(crate) struct Suffix(Affix);
 
 impl Suffix {
-    pub fn new(
+    pub(crate) fn new(
         flag: Flag,
         crossproduct: bool,
         strip: &str,
-        add: &str,
-        condition: &str,
+        add: String,
+        condition: Option<&str>,
         flags: FlagSet,
+        morphological_fields: MorphologicalFields,
     ) -> Result<Self, regex::Error> {
-        let condition_regex = Regex::new(&format!("{}$", condition.replace('-', "\\-")))?;
+        let condition_regex = condition
+            .map(|cond| Regex::new(&format!("{}$", cond.replace('-', "\\-"))))
+            .transpose()?;
         let replace_regex = Regex::new(&format!("{add}$"))?;
 
         Ok(Self(Affix {
             flag,
             crossproduct,
             strip: strip.to_string(),
-            add: add.to_string(),
-            condition: condition.to_string(),
+            add,
+            condition: condition.map(ToString::to_string),
             flags,
+            morphological_fields,
             condition_regex,
             replace_regex,
         }))
@@ -607,38 +636,14 @@ pub(crate) struct Affix {
     pub add: String,
     /// Condition that the stem should be checked against to query if the
     /// affix is relevant.
-    pub condition: String,
+    pub condition: Option<String>,
     /// Flags the affix has itself.
     pub flags: FlagSet,
+    pub morphological_fields: MorphologicalFields,
     /// A regex that checks whether the condition matches.
-    pub condition_regex: Regex,
+    pub condition_regex: Option<Regex>,
     /// TODO
     pub replace_regex: Regex,
-}
-
-#[derive(Debug)]
-pub(crate) struct BreakPattern(Regex);
-
-impl Deref for BreakPattern {
-    type Target = Regex;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl BreakPattern {
-    // TODO: remove wrapper type?
-    pub fn new(pattern: &str) -> Result<Self, regex::Error> {
-        let pattern = regex::escape(pattern)
-            .replace("\\^", "^")
-            .replace("\\$", "$");
-        if pattern.starts_with('^') || pattern.ends_with('$') {
-            Regex::new(&format!("({pattern})")).map(Self)
-        } else {
-            Regex::new(&format!(".({pattern}).")).map(Self)
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -648,12 +653,12 @@ pub(crate) struct ReplacementPattern {
 }
 
 impl ReplacementPattern {
-    pub fn new(pattern: &str, replacement: &str) -> Result<Self, regex::Error> {
+    pub(crate) fn new(pattern: &str, replacement: &str) -> Result<Self, regex::Error> {
         let pattern = Regex::new(pattern)?;
 
         Ok(Self {
             pattern,
-            replacement: replacement.to_string(),
+            replacement: replacement.replace('_', " "),
         })
     }
 }
@@ -683,7 +688,7 @@ pub(crate) struct CompoundRule {
 
 // TODO rename or merge into a larger error type.
 #[derive(Debug)]
-pub(crate) enum ParseCompoundRuleError {
+pub enum ParseCompoundRuleError {
     Flag(ParseFlagError),
     DanglingWildcard(char),
     NestedParentheses,
@@ -697,7 +702,7 @@ impl From<ParseFlagError> for ParseCompoundRuleError {
 }
 
 impl CompoundRule {
-    pub fn new(text: &str, flag_type: FlagType) -> Result<Self, ParseCompoundRuleError> {
+    pub(crate) fn new(text: &str, flag_type: FlagType) -> Result<Self, ParseCompoundRuleError> {
         use FlagPatternWildcard::{ZeroOrMore, ZeroOrOne};
         use ParseCompoundRuleError::*;
 
@@ -762,14 +767,14 @@ impl CompoundRule {
 
     /// Check whether the compound rule matches the guess flags
     /// fully: so that the entire pattern matches all of the flags.
-    pub fn full_match(&self, flag_sets: &[&FlagSet]) -> bool {
+    pub(crate) fn full_match(&self, flag_sets: &[&FlagSet]) -> bool {
         Self::match_impl(&self.pattern, flag_sets, false, false)
     }
 
     /// Check whether the compound rule matches the guess flags
     /// partially: so that at least some amount of the start of the
     /// pattern matches all of the flags.
-    pub fn partial_match(&self, flag_sets: &[&FlagSet]) -> bool {
+    pub(crate) fn partial_match(&self, flag_sets: &[&FlagSet]) -> bool {
         Self::match_impl(&self.pattern, flag_sets, false, true)
     }
 
@@ -847,12 +852,12 @@ pub(crate) struct CompoundPattern {
 }
 
 impl CompoundPattern {
-    pub fn new(_left: &str, _right: &str) -> Self {
+    pub(crate) fn new(_left: &str, _right: &str) -> Self {
         // This is used by a handful of dictionaries.
         unimplemented!()
     }
 
-    pub fn r#match(&self, left: &AffixForm, right: &AffixForm) -> bool {
+    pub(crate) fn r#match(&self, left: &AffixForm, right: &AffixForm) -> bool {
         use crate::stdx::is_none_or;
 
         left.stem.ends_with(&self.left_stem)
@@ -867,26 +872,6 @@ impl CompoundPattern {
 // Split a line into a word and set of flags.
 // Note that `/` can be escaped in a word with a backslash.
 // TODO: find a home for this function.
-// fn split_word_and_flags(
-//     input: &str,
-//     flag_type: FlagType,
-//     ignore_chars: &[char],
-// ) -> Result<(String, FlagSet), ParseFlagError> {
-//     let mut chars = input.chars();
-//     let mut word = String::new();
-//     let mut escape = false;
-//     for ch in chars.by_ref() {
-//         match ch {
-//             '\\' => escape = !escape,
-//             ch if ignore_chars.contains(&ch) => (),
-//             '/' if !escape => break,
-//             _ => word.push(ch),
-//         }
-//     }
-//     let flag_set = flag_type.parse_flags_from_chars(chars)?;
-//
-//     Ok((word, flag_set))
-// }
 
 /// Table of conversions that should be applied before or after processing.
 /// processing.
@@ -903,7 +888,7 @@ pub(crate) struct ConversionTable {
 }
 
 impl ConversionTable {
-    pub fn new(conversions: &[(&str, &str)]) -> Self {
+    pub(crate) fn new(conversions: &[(&str, &str)]) -> Self {
         let mut conversions: Vec<_> = conversions
             .iter()
             .map(|(pattern, replacement)| (pattern.to_string(), replacement.to_string()))
@@ -913,7 +898,7 @@ impl ConversionTable {
         Self { conversions }
     }
 
-    pub fn apply<'a>(&self, _input: &'a str) -> Cow<'a, str> {
+    pub(crate) fn apply<'a>(&self, _input: &'a str) -> Cow<'a, str> {
         // en_US uses this for fancy apostrophe conversion.
         // TODO: See the ConvTable class in spylls.
         // We need the ability to move to the next unicode character in the

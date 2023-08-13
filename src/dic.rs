@@ -4,6 +4,8 @@
 // TODO: remove this once parsing and suggestion are done.
 #![allow(dead_code)]
 
+pub(crate) mod parser;
+
 use std::collections::HashMap;
 
 use crate::{aff::Capitalization, Flag, FlagSet};
@@ -26,7 +28,7 @@ impl Word {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub(crate) struct Dic {
     pub words: Vec<Word>,
     pub index: HashMap<String, Vec<usize>>,
@@ -46,7 +48,7 @@ impl Dic {
     ///
     /// `.dic` files start with a line that gives the exact capacity
     /// of the wordlist.
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
             words: Vec::with_capacity(capacity),
             index: HashMap::with_capacity(capacity),
@@ -56,7 +58,7 @@ impl Dic {
 
     /// Return all `Word` instances with the same stem,
     /// optionally ignoring the casing of the words.
-    pub fn homonyms(&self, stem: &str, ignore_case: bool) -> impl Iterator<Item = &Word> {
+    pub(crate) fn homonyms(&self, stem: &str, ignore_case: bool) -> impl Iterator<Item = &Word> {
         use crate::stdx::EitherIterator::{Left, Right};
 
         let index = if ignore_case {
@@ -73,7 +75,7 @@ impl Dic {
     }
 
     /// Query if any or all of the homonyms of the stem contain the given flag.
-    pub fn has_flag(&self, stem: &str, flag: Flag, for_all: bool) -> bool {
+    pub(crate) fn has_flag(&self, stem: &str, flag: Flag, for_all: bool) -> bool {
         let mut homonyms = self.homonyms(stem, false);
         let has_flag = |homonym: &Word| homonym.flags.contains(&flag);
 
@@ -85,7 +87,7 @@ impl Dic {
     }
 
     /// Inserts the word into the dictionary and links any lowercase variants.
-    pub fn insert(&mut self, word: Word, lowercase_variants: Vec<String>) {
+    pub(crate) fn insert(&mut self, word: Word, lowercase_variants: Vec<String>) {
         let index = self.words.len();
         let stem = word.stem.clone(); // TODO interning could turn this into a Copy
         self.words.push(word);

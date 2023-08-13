@@ -8,7 +8,7 @@ use std::{
 // Currently this is implemented as a Trie backed by a HashMap.
 // TODO: fxhash?
 #[derive(Debug, Default, Clone)]
-pub(crate) struct AffixIndex<T> {
+pub struct AffixIndex<T> {
     table: HashMap<u64, Option<T>>,
     hasher: RandomState,
 }
@@ -21,6 +21,7 @@ impl<T> AffixIndex<T> {
     /// Insert the value into the index with `chars` as the lookup key.
     ///
     /// Takes time proportional to the cardinality of `chars`.
+    #[cfg(test)]
     pub(crate) fn insert<I: Iterator<Item = char>>(&mut self, chars: I, value: T) {
         let mut chars = chars.peekable();
         let mut hash_state = self.hasher.build_hasher();
