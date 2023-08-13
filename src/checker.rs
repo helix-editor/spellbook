@@ -301,7 +301,6 @@ impl<'a> Checker<'a> {
                 }
             }
         }
-        // XXX: I left off here, just finished translating affix_forms
 
         forms
     }
