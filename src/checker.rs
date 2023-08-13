@@ -361,9 +361,7 @@ impl<'a> Checker<'a> {
         crossproduct: bool,
     ) -> Vec<AffixForm> {
         let mut forms = Vec::new();
-        // TODO: we need a trie here to look up the word's end partially
-        // (and from the end to the beginning).
-        let suffixes = match self.aff.suffixes_index.get(word) {
+        let suffixes = match self.aff.suffixes_index.get(word.chars().rev()) {
             Some(suffixes) => suffixes,
             None => return forms,
         };
@@ -418,8 +416,7 @@ impl<'a> Checker<'a> {
         crossproduct: bool,
     ) -> Vec<AffixForm> {
         let mut forms = Vec::new();
-        // TODO: we need a trie here to look up the word's start partially.
-        let prefixes = match self.aff.prefixes_index.get(word) {
+        let prefixes = match self.aff.prefixes_index.get(word.chars()) {
             Some(prefixes) => prefixes,
             None => return forms,
         };

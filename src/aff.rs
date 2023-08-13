@@ -4,6 +4,8 @@
 // TODO: remove this once parsing and suggestion are done.
 #![allow(dead_code)]
 
+mod index;
+
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -14,6 +16,8 @@ use std::{
 use regex::Regex;
 
 use crate::{checker::AffixForm, Flag, FlagSet};
+
+use self::index::AffixIndex;
 
 #[derive(Debug)]
 pub(crate) struct Aff {
@@ -178,10 +182,8 @@ pub(crate) struct Aff {
     // * WORDCHARS
     // ---
     pub casing: Casing,
-    // TODO: suffixes/prefixes index in a trie? Spylls uses
-    // the 'add' part (reversed) for suffixes (forward for prefixes).
-    pub suffixes_index: HashMap<String, Vec<Rc<Suffix>>>,
-    pub prefixes_index: HashMap<String, Vec<Rc<Prefix>>>,
+    pub suffixes_index: AffixIndex<Vec<Rc<Suffix>>>,
+    pub prefixes_index: AffixIndex<Vec<Rc<Prefix>>>,
 }
 
 impl Default for Aff {
