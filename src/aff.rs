@@ -257,12 +257,17 @@ pub(crate) enum Capitalization {
     Pascal,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum Casing {
     Germanic,
     Turkic,
-    #[default]
     Other,
+}
+
+impl Default for Casing {
+    fn default() -> Self {
+        Self::Other
+    }
 }
 
 impl Casing {
@@ -366,10 +371,9 @@ impl Casing {
 
 /// Hunspell calls this the flag "type" but it's more about the
 /// encoding and representation of flags.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum FlagType {
     /// Each flag is a single ASCII character
-    #[default]
     Short,
     /// Each flag is two ASCII characters
     Long,
@@ -379,6 +383,12 @@ pub(crate) enum FlagType {
     Numeric,
     /// Each flag is one UTF-8 character.
     Utf8,
+}
+
+impl Default for FlagType {
+    fn default() -> Self {
+        Self::Short
+    }
 }
 
 #[derive(Debug, Clone)]

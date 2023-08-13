@@ -5,8 +5,9 @@ in
 pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
     (toolchain.override {
-      extensions = ["rust-src" "rust-analyzer" "clippy"];
+      extensions = ["rust-src" "clippy"];
     })
+    rust-analyzer
     cargo-flamegraph
   ];
   RUST_BACKTRACE = "1";
