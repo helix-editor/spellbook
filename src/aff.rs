@@ -67,7 +67,7 @@ pub(crate) struct Aff {
     /// For example `aáã`.
     /// using paretheses.
     /// From the MAP command.
-    pub map_chars: Vec<HashSet<String>>,
+    pub _map_chars: Vec<HashSet<String>>,
     /// A toggle that controls whether split words should be suggested.
     /// Required for Swedish.
     /// From the NOSPLITSUGS command.
@@ -161,7 +161,7 @@ pub(crate) struct Aff {
     pub input_conversion: Option<ConversionTable>,
     /// Conversions to make to words before returning them.
     /// From the OCONV command.
-    pub output_conversion: Option<ConversionTable>,
+    pub _output_conversion: Option<ConversionTable>,
     /// A table of flag-set aliases.
     /// The first flag-set in the vec is an alias that can replace "1", the
     /// second "2", and so on.
@@ -200,7 +200,7 @@ impl Default for Aff {
             no_suggest_flag: Default::default(),
             keep_case_flag: Default::default(),
             replacements: Default::default(),
-            map_chars: Default::default(),
+            _map_chars: Default::default(),
             no_split_suggestions: Default::default(),
             max_compound_suggestions: 3,
             max_ngram_suggestions: 4,
@@ -233,7 +233,7 @@ impl Default for Aff {
             simplified_triple: Default::default(),
             compound_more_suffixes: Default::default(),
             input_conversion: Default::default(),
-            output_conversion: Default::default(),
+            _output_conversion: Default::default(),
             flag_set_aliases: Default::default(),
             _word_aliases: Default::default(),
             casing: Default::default(),
@@ -334,9 +334,9 @@ impl Casing {
         lower_words
     }
 
-    pub(crate) fn upper(&self, word: &str) -> Vec<String> {
-        vec![word.to_uppercase()]
-    }
+    // pub(crate) fn upper(&self, word: &str) -> Vec<String> {
+    //     vec![word.to_uppercase()]
+    // }
 
     pub(crate) fn capitalize(&self, word: &str) -> Vec<String> {
         let mut chars = word.chars().peekable();
@@ -563,9 +563,9 @@ impl Prefix {
             crossproduct,
             strip: strip.to_string(),
             add,
-            condition: condition.map(ToString::to_string),
+            // condition: condition.map(ToString::to_string),
             flags,
-            morphological_fields,
+            _morphological_fields: morphological_fields,
             condition_regex,
             replace_regex,
         }))
@@ -604,9 +604,9 @@ impl Suffix {
             crossproduct,
             strip: strip.to_string(),
             add,
-            condition: condition.map(ToString::to_string),
+            // condition: condition.map(ToString::to_string),
             flags,
-            morphological_fields,
+            _morphological_fields: morphological_fields,
             condition_regex,
             replace_regex,
         }))
@@ -636,10 +636,10 @@ pub(crate) struct Affix {
     pub add: String,
     /// Condition that the stem should be checked against to query if the
     /// affix is relevant.
-    pub condition: Option<String>,
+    // pub condition: Option<String>,
     /// Flags the affix has itself.
     pub flags: FlagSet,
-    pub morphological_fields: MorphologicalFields,
+    pub _morphological_fields: MorphologicalFields,
     /// A regex that checks whether the condition matches.
     pub condition_regex: Option<Regex>,
     /// TODO
@@ -648,8 +648,8 @@ pub(crate) struct Affix {
 
 #[derive(Debug)]
 pub(crate) struct ReplacementPattern {
-    pub pattern: Regex,
-    pub replacement: String,
+    pub _pattern: Regex,
+    pub _replacement: String,
 }
 
 impl ReplacementPattern {
@@ -657,8 +657,8 @@ impl ReplacementPattern {
         let pattern = Regex::new(pattern)?;
 
         Ok(Self {
-            pattern,
-            replacement: replacement.replace('_', " "),
+            _pattern: pattern,
+            _replacement: replacement.replace('_', " "),
         })
     }
 }
@@ -852,10 +852,10 @@ pub(crate) struct CompoundPattern {
 }
 
 impl CompoundPattern {
-    pub(crate) fn new(_left: &str, _right: &str) -> Self {
-        // This is used by a handful of dictionaries.
-        unimplemented!()
-    }
+    // pub(crate) fn new(_left: &str, _right: &str) -> Self {
+    //     // This is used by a handful of dictionaries.
+    //     unimplemented!()
+    // }
 
     pub(crate) fn r#match(&self, left: &AffixForm, right: &AffixForm) -> bool {
         use crate::stdx::is_none_or;
@@ -884,19 +884,21 @@ impl CompoundPattern {
 pub(crate) struct ConversionTable {
     // Note: ignoring the hidden feature in Hunspell that `_` acts
     // as an anchor in the patterns.
-    conversions: Vec<(String, String)>,
+    _conversions: Vec<(String, String)>,
 }
 
 impl ConversionTable {
-    pub(crate) fn new(conversions: &[(&str, &str)]) -> Self {
-        let mut conversions: Vec<_> = conversions
-            .iter()
-            .map(|(pattern, replacement)| (pattern.to_string(), replacement.to_string()))
-            .collect();
-        // Sort patterns by max length.
-        conversions.sort_unstable_by_key(|(pattern, _)| std::cmp::Reverse(pattern.chars().count()));
-        Self { conversions }
-    }
+    // pub(crate) fn new(conversions: &[(&str, &str)]) -> Self {
+    //     let mut conversions: Vec<_> = conversions
+    //         .iter()
+    //         .map(|(pattern, replacement)| (pattern.to_string(), replacement.to_string()))
+    //         .collect();
+    //     // Sort patterns by max length.
+    //     conversions.sort_unstable_by_key(|(pattern, _)| std::cmp::Reverse(pattern.chars().count()));
+    //     Self {
+    //         _conversions: conversions,
+    //     }
+    // }
 
     pub(crate) fn apply<'a>(&self, _input: &'a str) -> Cow<'a, str> {
         // en_US uses this for fancy apostrophe conversion.
