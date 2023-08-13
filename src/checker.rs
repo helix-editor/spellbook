@@ -478,11 +478,11 @@ impl<'a> Checker<'a> {
         compound_pos: Option<CompoundPosition>,
         capitalization: Capitalization,
     ) -> bool {
-        let in_dictionary = form
+        let word = form
             .in_dictionary
             .as_ref()
             .expect("form word must be in the dictionary");
-        let root_flags = &in_dictionary.flags;
+        let root_flags = &word.flags;
         let all_flags = form.flags();
 
         if !self.allow_nosuggest
@@ -491,9 +491,9 @@ impl<'a> Checker<'a> {
             return false;
         }
 
-        if capitalization != in_dictionary.capitalization
+        if capitalization != word.capitalization
             && is_some_and(self.aff.keep_case_flag, |flag| root_flags.contains(&flag))
-            && !(self.aff.check_sharps && in_dictionary.stem.contains('ß'))
+            && !(self.aff.check_sharps && word.stem.contains('ß'))
         {
             return false;
         }
