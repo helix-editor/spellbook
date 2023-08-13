@@ -1,4 +1,7 @@
-use std::collections::{BTreeSet, HashMap};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fmt::Display,
+};
 
 use aff::ParseCompoundRuleError;
 pub use aff::{ParseFlagError, UnknownFlagTypeError};
@@ -45,6 +48,8 @@ pub(crate) type Flag = u32;
 /// by [std::collections::BTreeSet].
 pub(crate) type FlagSet = BTreeSet<Flag>;
 
+pub(crate) type MorphologicalFields = HashMap<[char; 2], Vec<String>>;
+
 #[derive(Debug)]
 pub struct ParseDictionaryError {
     pub kind: ParseDictionaryErrorKind,
@@ -52,11 +57,35 @@ pub struct ParseDictionaryError {
     pub line_number: Option<usize>,
 }
 
+impl Display for ParseDictionaryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.line_number {
+            Some(line) => write!(
+                f,
+                "failed to parse {} file on line {}: {}",
+                self.source, line, self.kind
+            ),
+            None => write!(f, "failed to parse {} file: {}", self.source, self.kind),
+        }
+    }
+}
+
+impl std::error::Error for ParseDictionaryError {}
+
 #[derive(Debug)]
 pub enum ParseDictionaryErrorSource {
     Dic,
     Aff,
     // Personal, ?
+}
+
+impl Display for ParseDictionaryErrorSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Dic => write!(f, ".dic"),
+            Self::Aff => write!(f, ".aff"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -86,7 +115,35 @@ impl From<ParseFlagError> for ParseDictionaryErrorKind {
     }
 }
 
-pub(crate) type MorphologicalFields = HashMap<[char; 2], Vec<String>>;
+impl Display for ParseDictionaryErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseDictionaryErrorKind::UnknownFlagType(err) => err.fmt(f),
+            ParseDictionaryErrorKind::MalformedFlag(err) => {
+                write!(f, "flag '{}' is malformed", err)
+            }
+            ParseDictionaryErrorKind::MalformedNumber(err) => err.fmt(f),
+            ParseDictionaryErrorKind::UnexpectedNonWhitespace(ch) => {
+                write!(f, "unexpected non-whitespace character '{}'", ch)
+            }
+            ParseDictionaryErrorKind::MismatchedArity { expected, actual } => {
+                write!(f, "expected {} arguments but found {}", expected, actual)
+            }
+            ParseDictionaryErrorKind::MismatchedRowCount { expected, actual } => {
+                write!(f, "expected {} rows but found {}", expected, actual)
+            }
+            ParseDictionaryErrorKind::MalformedCompoundRule(err) => {
+                write!(f, "compound rule is malformed: {}", err)
+            }
+            ParseDictionaryErrorKind::MalformedRegex(err) => err.fmt(f),
+            ParseDictionaryErrorKind::MalformedMorphologicalField(s) => {
+                write!(f, "morphological field '{}' is malformed", s)
+            }
+            ParseDictionaryErrorKind::MalformedAffix => write!(f, "failed to parse affix"),
+            ParseDictionaryErrorKind::Empty => write!(f, "the file is empty"),
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {

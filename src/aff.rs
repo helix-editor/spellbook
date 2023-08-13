@@ -7,6 +7,7 @@ pub(crate) mod parser;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
+    fmt::Display,
     ops::Deref,
     rc::Rc,
     str::FromStr,
@@ -409,7 +410,11 @@ impl FromStr for FlagType {
 
 impl std::fmt::Display for UnknownFlagTypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FLAG option must be `long`, `num` or `UTF-8` if set")
+        write!(
+            f,
+            "expected FLAG to be `long`, `num` or `UTF-8` if set, found {}",
+            self.0
+        )
     }
 }
 
@@ -417,18 +422,27 @@ impl std::fmt::Display for UnknownFlagTypeError {
 pub enum ParseFlagError {
     NonAscii(char),
     MissingSecondChar(char),
-    Empty,
     ParseIntError(std::num::ParseIntError),
     DuplicateComma,
+}
+
+impl Display for ParseFlagError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseFlagError::NonAscii(ch) => write!(f, "expected ascii char, found {}", ch),
+            ParseFlagError::MissingSecondChar(ch) => {
+                write!(f, "expected two chars, {} is missing its second", ch)
+            }
+            ParseFlagError::ParseIntError(err) => err.fmt(f),
+            ParseFlagError::DuplicateComma => write!(f, "unexpected extra comma"),
+        }
+    }
 }
 
 impl FlagType {
     pub(crate) fn parse_flag_from_str(&self, input: &str) -> Result<Flag, ParseFlagError> {
         use ParseFlagError::*;
-
-        if input.is_empty() {
-            return Err(Empty);
-        }
+        assert!(!input.is_empty());
 
         match self {
             Self::Short => {
@@ -708,6 +722,19 @@ pub enum ParseCompoundRuleError {
 impl From<ParseFlagError> for ParseCompoundRuleError {
     fn from(err: ParseFlagError) -> Self {
         Self::Flag(err)
+    }
+}
+
+impl Display for ParseCompoundRuleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseCompoundRuleError::Flag(err) => err.fmt(f),
+            ParseCompoundRuleError::DanglingWildcard(ch) => write!(f, "dangling wildcard '{}'", ch),
+            ParseCompoundRuleError::NestedParentheses => write!(f, "nested parethesis"),
+            ParseCompoundRuleError::DanglingParenthesis(ch) => {
+                write!(f, "dangling parenthesis '{}'", ch)
+            }
+        }
     }
 }
 
