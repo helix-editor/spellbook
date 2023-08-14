@@ -32,7 +32,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run cargo check
-        run: cargo check
+        run: |
+          rustc --version
+          cargo check
 
   test:
     name: Test
@@ -50,7 +52,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run cargo test
-        run: cargo test --workspace
+        run: |
+          rustc --version
+          cargo test --workspace
 
   lints:
     name: Lints
@@ -68,6 +72,9 @@ jobs:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Check rust version
+        run: rustc --version
 
       - name: Run cargo fmt
         run: cargo fmt --all --check
