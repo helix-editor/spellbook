@@ -317,6 +317,9 @@ fn parse_break_patterns(cx: &mut Context) -> ParseResult {
         let pattern = regex::escape(pattern)
             .replace("\\^", "^")
             .replace("\\$", "$");
+        // TODO: can we drop the `format!` calls here? I don't see any point to
+        // the parens other than using the captures API, and regex seems to drop
+        // the capture group for the first branch here.
         if pattern.starts_with('^') || pattern.ends_with('$') {
             Regex::new(&format!("({pattern})"))
         } else {

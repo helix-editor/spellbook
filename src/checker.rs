@@ -164,7 +164,7 @@ impl<'a> Checker<'a> {
         for pattern in self.aff.break_patterns.iter() {
             for capture in pattern.captures_iter(word) {
                 let match_ = capture
-                    .get(1)
+                    .get(capture.len().saturating_sub(1))
                     .expect("break patterns always have one capture group");
                 let start = &word[..match_.start()];
                 let rest = &word[match_.end()..];
