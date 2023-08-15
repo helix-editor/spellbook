@@ -337,7 +337,9 @@ impl<'a> Checker<'a> {
                 if suffix_allowed
                     && is_some_and(form.prefixes[0].as_ref(), |prefix| prefix.crossproduct)
                 {
-                    for form2 in self.desuffix(word, suffix_flags, forbidden_flags, false, true) {
+                    for form2 in
+                        self.desuffix(&form.stem, suffix_flags, forbidden_flags, false, true)
+                    {
                         forms.push(AffixForm {
                             text: form.text.clone(),
                             prefixes: form.prefixes.clone(),
