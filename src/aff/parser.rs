@@ -410,7 +410,7 @@ fn parse_suffixes(cx: &mut Context) -> ParseResult {
             // Appease the borrow checker by creating a temporary clone of the Rc
             // that lives long enough to insert the intended Rc<Suffix> into the trie.
             let char_suffix = suffix.clone();
-            let chars = char_suffix.add.chars();
+            let chars = char_suffix.add.chars().rev();
             cx.aff.suffixes_index.push(chars, suffix);
 
             Ok(())
