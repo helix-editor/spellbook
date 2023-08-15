@@ -359,8 +359,6 @@ impl<'a> Checker<'a> {
         nested: bool,
         crossproduct: bool,
     ) -> Vec<AffixForm> {
-        use crate::stdx::is_none_or;
-
         let mut forms = Vec::new();
         let suffixes = match self.aff.suffixes_index.get(word.chars().rev()) {
             Some(suffixes) => suffixes,
@@ -379,8 +377,8 @@ impl<'a> Checker<'a> {
             }
 
             let stem = suffix.replace_regex.replace(word, &suffix.strip);
-            if !is_none_or(suffix.condition_regex.as_ref(), |regex| {
-                regex.is_match(&stem)
+            if is_some_and(suffix.condition_regex.as_ref(), |regex| {
+                !regex.is_match(&stem)
             }) {
                 continue;
             }
@@ -418,8 +416,6 @@ impl<'a> Checker<'a> {
         nested: bool,
         crossproduct: bool,
     ) -> Vec<AffixForm> {
-        use crate::stdx::is_none_or;
-
         let mut forms = Vec::new();
         let prefixes = match self.aff.prefixes_index.get(word.chars()) {
             Some(prefixes) => prefixes,
@@ -438,8 +434,8 @@ impl<'a> Checker<'a> {
             }
 
             let stem = prefix.replace_regex.replace(word, &prefix.strip);
-            if !is_none_or(prefix.condition_regex.as_ref(), |regex| {
-                regex.is_match(&stem)
+            if is_some_and(prefix.condition_regex.as_ref(), |regex| {
+                !regex.is_match(&stem)
             }) {
                 continue;
             }
