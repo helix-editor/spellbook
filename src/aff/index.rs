@@ -1,88 +1,120 @@
+//! A radix tree implementation specialized for looking up affixes
+//! by their affix/add text.
+
 use std::{
-    collections::{hash_map::RandomState, HashMap},
+    collections::{
+        hash_map::{DefaultHasher, RandomState},
+        HashMap,
+    },
     hash::{BuildHasher, Hash, Hasher},
 };
 
 /// An index type for affixes (prefixes & suffixes) allowing fast
 /// lookup of substrings of a word.
-// Currently this is implemented as a Trie backed by a HashMap.
-// TODO: fxhash?
-#[derive(Debug, Default, Clone)]
-pub struct AffixIndex<T> {
-    table: HashMap<u64, Option<T>>,
+///
+/// When read, it returns all values stored in the tree which the key
+/// touches. For example you might store suffixes for "s", "ions",
+/// and "ications", which all overlap. We can efficiently store all
+/// three in this trie. [AffixIndex::get], when accessed with a word
+/// like "complications", will return all the values stored for "s",
+/// "ions", and "ications", while a word like "scions" will return
+/// values from "s" and "ions".
+#[derive(Debug, Clone)]
+pub(crate) struct AffixIndex<T> {
+    // Currently this is implemented as a Trie backed by a HashMap.
+    // TODO: fxhash?
+    table: HashMap<u64, Vec<T>>,
     hasher: RandomState,
 }
 
-// The trie relies heavily on
+/// The derive derivation of Default for AffixIndex mistakenly thinks
+/// it needs a Default implementation for T. We can trick it by using
+/// even more Default!
+impl<T> Default for AffixIndex<T> {
+    fn default() -> Self {
+        Self {
+            table: Default::default(),
+            hasher: Default::default(),
+        }
+    }
+}
+
 // Note [HashBuilder::finish] doesn't destroy the builder. It's more
 // like we're popping out the hasher's value at that point in time.
 
 impl<T> AffixIndex<T> {
-    /// Insert the value into the index with `chars` as the lookup key.
-    ///
-    /// Takes time proportional to the cardinality of `chars`.
-    #[cfg(test)]
-    pub(crate) fn insert<I: Iterator<Item = char>>(&mut self, chars: I, value: T) {
+    /// Inserts the value into the [Vec] entry in the trie if it exists, creating
+    /// a single-element Vec at the entry otherwise.
+    pub(crate) fn push<I: Iterator<Item = char>>(&mut self, chars: I, value: T) {
         let mut chars = chars.peekable();
         let mut hash_state = self.hasher.build_hasher();
         while let Some(ch) = chars.next() {
             ch.hash(&mut hash_state);
             let hash = hash_state.finish();
-            let maybe_value = self.table.entry(hash).or_insert_with(Default::default);
+            let values = self.table.entry(hash).or_insert_with(Default::default);
             if chars.peek().is_none() {
-                *maybe_value = Some(value);
-                // The break is redundant but satisfies the borrow checker
-                // that T is not moved multiple times.
-                // TODO: rewrite as a do-while to make this cleaner?
+                values.push(value);
                 break;
             }
         }
     }
 
     /// Looks up the value in the index, even if the lookup `chars` are
-    /// longer than any key in the trie.
-    ///
-    /// Takes time proportional to the cardinality of `chars`.
-    pub(crate) fn get<I: Iterator<Item = char>>(&self, chars: I) -> Option<&T> {
-        let mut chars = chars.peekable();
-        let mut value = None;
-        let mut hash_state = self.hasher.build_hasher();
+    /// longer than any key in the trie. Returns any `T` values stored in the
+    /// trie along the path.
+    pub(crate) fn get<I: Iterator<Item = char>>(&self, mut chars: I) -> impl Iterator<Item = &T> {
+        use crate::stdx::EitherIterator::{Left, Right};
 
-        while let Some(ch) = chars.next() {
-            ch.hash(&mut hash_state);
-            let hash = hash_state.finish();
-            let maybe_value = match self.table.get(&hash) {
-                Some(maybe_value) => maybe_value,
-                None => return value,
-            };
-            if chars.peek().is_none() {
-                return maybe_value.as_ref();
+        match chars.next() {
+            Some(char) => {
+                let mut hasher = self.hasher.build_hasher();
+                char.hash(&mut hasher);
+                let hash = hasher.finish();
+
+                Left(Get {
+                    table: &self.table,
+                    hasher,
+                    hash,
+                    char,
+                    chars,
+                    index: 0,
+                })
             }
-            value = maybe_value.as_ref();
+            None => Right(std::iter::empty()),
         }
-
-        value
     }
 }
 
-impl<T> AffixIndex<Vec<T>> {
-    /// Inserts the value into the [Vec] entry in the trie if it exists, creating
-    /// a single-element Vec at the entry otherwise.
-    pub(crate) fn push<I: Iterator<Item = char>>(&mut self, chars: I, value: T) {
-        // The Entry API is a good chunk of code to add so this will suffice
-        // since we know exactly how this type will be used in parsing.
-        let mut chars = chars.peekable();
-        let mut hash_state = self.hasher.build_hasher();
-        while let Some(ch) = chars.next() {
-            ch.hash(&mut hash_state);
-            let hash = hash_state.finish();
-            let maybe_value = self.table.entry(hash).or_insert_with(Default::default);
-            if chars.peek().is_none() {
-                match maybe_value.as_mut() {
-                    Some(values) => values.push(value),
-                    None => *maybe_value = Some(vec![value]),
+pub(crate) struct Get<'a, T, I: Iterator<Item = char>> {
+    table: &'a HashMap<u64, Vec<T>>,
+    hasher: DefaultHasher,
+    hash: u64,
+    char: char,
+    chars: I,
+    index: usize,
+}
+
+impl<'a, T, I: Iterator<Item = char>> Iterator for Get<'a, T, I> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self
+                .table
+                .get(&self.hash)
+                .and_then(|values| values.get(self.index))
+            {
+                Some(value) => {
+                    self.index += 1;
+                    return Some(value);
                 }
-                break;
+                None => {
+                    self.char = self.chars.next()?;
+                    self.char.hash(&mut self.hasher);
+                    self.hash = self.hasher.finish();
+                    self.index = 0;
+                    continue;
+                }
             }
         }
     }
@@ -92,14 +124,18 @@ impl<T> AffixIndex<Vec<T>> {
 mod test {
     use super::*;
 
+    fn get<I: Iterator<Item = char>>(index: &AffixIndex<usize>, input: I) -> Vec<usize> {
+        index.get(input).copied().collect()
+    }
+
     #[test]
     fn sanity_check_test() {
         let mut index: AffixIndex<usize> = Default::default();
-        assert_eq!(index.get("abc".chars()), None);
+        assert_eq!(get(&index, "abc".chars()), vec![]);
 
-        index.insert("abc".chars(), 123);
-        assert_eq!(index.get("abc".chars()), Some(&123));
-        assert_eq!(index.get("def".chars()), None);
+        index.push("abc".chars(), 123);
+        assert_eq!(get(&index, "abc".chars()), vec![123]);
+        assert_eq!(get(&index, "def".chars()), vec![]);
     }
 
     /// The trie should return prefixes for entire words.
@@ -107,10 +143,10 @@ mod test {
     #[test]
     fn longer_needle_than_haystack() {
         let mut index: AffixIndex<usize> = Default::default();
-        index.insert("re".chars(), 1);
+        index.push("re".chars(), 1);
 
-        assert_eq!(index.get("retry".chars()), Some(&1));
-        assert_eq!(index.get("terminate".chars()), None);
+        assert_eq!(get(&index, "retry".chars()), vec![1]);
+        assert_eq!(get(&index, "terminate".chars()), vec![]);
     }
 
     /// Check that even if we're looking up the same char at the
@@ -120,10 +156,22 @@ mod test {
     #[test]
     fn depth_and_char_collision_test() {
         let mut index: AffixIndex<usize> = Default::default();
-        index.insert("abc".chars(), 123);
-        index.insert("bac".chars(), 213);
+        index.push("abc".chars(), 123);
+        index.push("bac".chars(), 213);
 
-        assert_eq!(index.get("abc".chars()), Some(&123));
-        assert_eq!(index.get("bac".chars()), Some(&213));
+        assert_eq!(get(&index, "abc".chars()), vec![123]);
+        assert_eq!(get(&index, "bac".chars()), vec![213]);
+    }
+
+    #[test]
+    fn returns_values_from_multiple_entries() {
+        let mut index: AffixIndex<usize> = Default::default();
+        index.push("s".chars().rev(), 1);
+        index.push("ions".chars().rev(), 2);
+        index.push("ications".chars().rev(), 3);
+
+        assert_eq!(get(&index, "s".chars().rev()), vec![1]);
+        assert_eq!(get(&index, "ions".chars().rev()), vec![1, 2]);
+        assert_eq!(get(&index, "ications".chars().rev()), vec![1, 2, 3]);
     }
 }

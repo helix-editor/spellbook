@@ -183,8 +183,8 @@ pub(crate) struct Aff {
     // * WORDCHARS
     // ---
     pub casing: Casing,
-    pub suffixes_index: AffixIndex<Vec<Rc<Suffix>>>,
-    pub prefixes_index: AffixIndex<Vec<Rc<Prefix>>>,
+    pub suffixes_index: AffixIndex<Rc<Suffix>>,
+    pub prefixes_index: AffixIndex<Rc<Prefix>>,
 }
 
 impl Default for Aff {

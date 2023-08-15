@@ -360,18 +360,13 @@ impl<'a> Checker<'a> {
         crossproduct: bool,
     ) -> Vec<AffixForm> {
         let mut forms = Vec::new();
-        let suffixes = match self.aff.suffixes_index.get(word.chars().rev()) {
-            Some(suffixes) => suffixes,
-            None => return forms,
-        };
-
         let is_valid_suffix = |suffix: &Rc<Suffix>| {
             (!crossproduct || suffix.crossproduct)
                 && suffix.flags.is_superset(required_flags)
                 && suffix.flags.is_disjoint(forbidden_flags)
         };
 
-        for suffix in suffixes {
+        for suffix in self.aff.suffixes_index.get(word.chars().rev()) {
             if !is_valid_suffix(suffix) {
                 continue;
             }
@@ -417,18 +412,13 @@ impl<'a> Checker<'a> {
         crossproduct: bool,
     ) -> Vec<AffixForm> {
         let mut forms = Vec::new();
-        let prefixes = match self.aff.prefixes_index.get(word.chars()) {
-            Some(prefixes) => prefixes,
-            None => return forms,
-        };
-
         let is_valid_prefix = |prefix: &Rc<Prefix>| {
             (!crossproduct || prefix.crossproduct)
                 && prefix.flags.is_superset(required_flags)
                 && prefix.flags.is_disjoint(forbidden_flags)
         };
 
-        for prefix in prefixes {
+        for prefix in self.aff.prefixes_index.get(word.chars()) {
             if !is_valid_prefix(prefix) {
                 continue;
             }
