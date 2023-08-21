@@ -13,3 +13,6 @@ rust-version = "1.60"
 regex = "1"
 # TODO: investigate using smartstring to cut down on allocations since
 # there are plenty of small strings.
+
+[dev-dependencies]
+xdg = "2.5"
