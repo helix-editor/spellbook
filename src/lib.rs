@@ -147,6 +147,7 @@ impl Display for ParseDictionaryErrorKind {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::{aff::FlagType, FlagSet};
 
     fn simple_flag_set(flags: &str) -> FlagSet {
@@ -176,5 +177,25 @@ mod test {
         assert!(simple_flag_set("abc").is_superset(&simple_flag_set("abc")));
         assert!(!simple_flag_set("abc").is_superset(&simple_flag_set("abcd")));
         assert!(!simple_flag_set("ac").is_superset(&simple_flag_set("abc")));
+    }
+
+    #[test]
+    fn test_twofold_suffix_stripping() {
+        // This case is straight from the hunspell man page.
+        let aff = r#"
+SFX Y Y 1
+SFX Y 0 s .
+
+SFX X Y 1
+SFX X 0 able/Y .
+"#;
+        let dic = r#"1
+drink/X"#;
+        let dict = Dictionary::compile(aff, dic).unwrap();
+
+        assert!(dict.check("drink"));
+        assert!(dict.check("drinkable"));
+        // Uses the 's' and 'able' suffix.
+        assert!(dict.check("drinkables"));
     }
 }
