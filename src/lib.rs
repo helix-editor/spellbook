@@ -97,7 +97,6 @@ pub enum ParseDictionaryErrorKind {
     MismatchedArity { expected: usize, actual: usize },
     MismatchedRowCount { expected: usize, actual: usize },
     MalformedCompoundRule(ParseCompoundRuleError),
-    MalformedRegex(regex::Error),
     MalformedMorphologicalField(String),
     MalformedAffix,
     Empty,
@@ -135,7 +134,6 @@ impl Display for ParseDictionaryErrorKind {
             ParseDictionaryErrorKind::MalformedCompoundRule(err) => {
                 write!(f, "compound rule is malformed: {}", err)
             }
-            ParseDictionaryErrorKind::MalformedRegex(err) => err.fmt(f),
             ParseDictionaryErrorKind::MalformedMorphologicalField(s) => {
                 write!(f, "morphological field '{}' is malformed", s)
             }

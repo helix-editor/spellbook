@@ -6,12 +6,10 @@ use std::{
     str::Lines,
 };
 
-use regex::Regex;
-
 use super::{Aff, Casing, FlagType};
 use crate::{
-    dic::parser::split_word_and_flags, Flag, MorphologicalFields, ParseDictionaryError,
-    ParseDictionaryErrorKind,
+    aff::AnchoredPattern, dic::parser::split_word_and_flags, Flag, MorphologicalFields,
+    ParseDictionaryError, ParseDictionaryErrorKind,
 };
 
 // This parser takes some inspiration from zspell's work.
@@ -79,9 +77,9 @@ pub(crate) fn parse(text: &str) -> Result<Aff> {
 
     if cx.aff.break_patterns.is_empty() {
         // Default break patterns when not specified
-        cx.aff.break_patterns.push(Regex::new("^-").unwrap());
-        cx.aff.break_patterns.push(Regex::new("-").unwrap());
-        cx.aff.break_patterns.push(Regex::new("-$").unwrap());
+        cx.aff.break_patterns.push(AnchoredPattern::new("^-"));
+        cx.aff.break_patterns.push(AnchoredPattern::new("-"));
+        cx.aff.break_patterns.push(AnchoredPattern::new("-$"));
     }
 
     Ok(cx.aff)
@@ -313,24 +311,9 @@ fn parse_flag_set_aliases(cx: &mut Context) -> ParseResult {
 }
 
 fn parse_break_patterns(cx: &mut Context) -> ParseResult {
-    fn parse_break_pattern(pattern: &str) -> core::result::Result<Regex, regex::Error> {
-        let pattern = regex::escape(pattern)
-            .replace("\\^", "^")
-            .replace("\\$", "$");
-        // TODO: can we drop the `format!` calls here? I don't see any point to
-        // the parens other than using the captures API, and regex seems to drop
-        // the capture group for the first branch here.
-        if pattern.starts_with('^') || pattern.ends_with('$') {
-            Regex::new(&format!("({pattern})"))
-        } else {
-            Regex::new(&format!(".({pattern})."))
-        }
-    }
-
     cx.parse_table1("BREAK", |cx, s| {
-        let break_pattern = parse_break_pattern(s)
-            .map_err(|err| cx.error(ParseDictionaryErrorKind::MalformedRegex(err)))?;
-        cx.aff.break_patterns.push(break_pattern);
+        let pattern = AnchoredPattern::new(s);
+        cx.aff.break_patterns.push(pattern);
         Ok(())
     })
 }
@@ -344,8 +327,7 @@ fn parse_break_patterns(cx: &mut Context) -> ParseResult {
 
 fn parse_replacements(cx: &mut Context) -> ParseResult {
     cx.parse_table2("REP", |cx, word1, word2| {
-        let replacement = super::ReplacementPattern::new(word1, word2)
-            .map_err(|err| cx.error(ParseDictionaryErrorKind::MalformedRegex(err)))?;
+        let replacement = super::ReplacementPattern::new(word1, word2);
         cx.aff.replacements.push(replacement);
         Ok(())
     })
@@ -358,7 +340,7 @@ fn parse_prefixes(cx: &mut Context) -> ParseResult {
             let (add, flag_set) = split_word_and_flags(&cx.aff, add)
                 .map_err(|err| cx.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
 
-            let prefix = super::Prefix::new(
+            let prefix = Rc::new(super::Prefix::new(
                 flag,
                 crossproduct,
                 strip,
@@ -366,9 +348,7 @@ fn parse_prefixes(cx: &mut Context) -> ParseResult {
                 condition,
                 flag_set,
                 morphological_fields,
-            )
-            .map(Rc::new)
-            .map_err(|err| cx.error(ParseDictionaryErrorKind::MalformedRegex(err)))?;
+            ));
 
             cx.aff
                 .prefixes
@@ -393,7 +373,7 @@ fn parse_suffixes(cx: &mut Context) -> ParseResult {
             let (add, flag_set) = split_word_and_flags(&cx.aff, add)
                 .map_err(|err| cx.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
 
-            let suffix = super::Suffix::new(
+            let suffix = Rc::new(super::Suffix::new(
                 flag,
                 crossproduct,
                 strip,
@@ -401,9 +381,7 @@ fn parse_suffixes(cx: &mut Context) -> ParseResult {
                 condition,
                 flag_set,
                 morphological_fields,
-            )
-            .map(Rc::new)
-            .map_err(|err| cx.error(ParseDictionaryErrorKind::MalformedRegex(err)))?;
+            ));
 
             cx.aff
                 .suffixes

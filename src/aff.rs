@@ -13,8 +13,6 @@ use std::{
     str::FromStr,
 };
 
-use regex::Regex;
-
 use crate::{checker::AffixForm, Flag, FlagSet, MorphologicalFields};
 
 use self::index::AffixIndex;
@@ -107,7 +105,7 @@ pub(crate) struct Aff {
     /// From the FULLSTRIP command.
     pub full_strip: bool,
     /// From the BREAK command.
-    pub break_patterns: Vec<Regex>,
+    pub break_patterns: Vec<AnchoredPattern>,
     /// From the COMPOUNDRULE command.
     pub compound_rules: Vec<CompoundRule>,
     /// Minimum length of words used for compounding.
@@ -563,6 +561,108 @@ impl From<&str> for IgnoreChars {
     }
 }
 
+#[derive(Debug)]
+enum AffixPatternRule {
+    /// Matches a single character exactly
+    Char(char),
+    /// Matches any single character
+    AnyChar,
+    /// Matches a character in a group. If the first member is
+    /// `true` then the candidate being matched against should be
+    /// in the set. If it's `false`, the character must not be in the set.
+    CharacterClass(bool, HashSet<char>),
+}
+
+impl AffixPatternRule {
+    fn matches(&self, char: &char) -> bool {
+        match self {
+            Self::Char(ch) => ch == char,
+            Self::AnyChar => true,
+            Self::CharacterClass(negated, set) => set.contains(char) != *negated,
+        }
+    }
+}
+
+/// Regex-like pattern for the conditions in affix rules.
+///
+/// From Hunspell:
+///
+/// > Condition is a simplified, regular expression-like pattern, which must
+/// > be met before the affix can be applied. (Dot signs an arbitrary character.
+/// > Characters in braces sign an arbitrary character from the character subset. Dash
+/// > hasn't got special meaning, but circumflex (^) next the first brace sets the
+/// > complementer character set.)
+#[derive(Debug)]
+pub(crate) struct AffixPattern(Vec<AffixPatternRule>);
+
+impl AffixPattern {
+    pub(crate) fn new(input: &str) -> Self {
+        use AffixPatternRule::*;
+
+        let mut chars = input.chars().peekable();
+        let mut rules = Vec::new();
+        let mut class = HashSet::new();
+        let mut in_bracket = false;
+        let mut negated = false;
+        while let Some(ch) = chars.next() {
+            match ch {
+                '[' if !in_bracket => {
+                    in_bracket = true;
+                    if chars.peek() == Some(&'^') {
+                        chars.next();
+                        negated = true;
+                    }
+                }
+                ']' if in_bracket => {
+                    rules.push(CharacterClass(negated, class));
+                    class = HashSet::new();
+                    in_bracket = false;
+                    negated = false;
+                }
+                _ if in_bracket => {
+                    class.insert(ch);
+                }
+                '.' => rules.push(AnyChar),
+                _ => rules.push(Char(ch)),
+            }
+        }
+
+        Self(rules)
+    }
+
+    pub(crate) fn matches_at_start(&self, input: &str) -> bool {
+        let mut rules = self.0.iter();
+
+        for ch in input.chars() {
+            match rules.next() {
+                Some(rule) => match rule.matches(&ch) {
+                    true => continue,
+                    false => return false,
+                },
+                None => return true,
+            }
+        }
+
+        true
+    }
+
+    pub(crate) fn matches_at_end(&self, input: &str) -> bool {
+        let mut rules = self.0.iter().rev();
+
+        for ch in input.chars().rev() {
+            match rules.next() {
+                Some(rule) => match rule.matches(&ch) {
+                    true => continue,
+                    false => return false,
+                },
+                None => return true,
+            }
+        }
+
+        true
+    }
+}
+
 /// Rules for replacing characters at the beginning of a stem.
 #[derive(Debug)]
 pub(crate) struct Prefix(Affix);
@@ -576,23 +676,27 @@ impl Prefix {
         condition: Option<&str>,
         flags: FlagSet,
         morphological_fields: MorphologicalFields,
-    ) -> Result<Self, regex::Error> {
-        let condition_regex = condition
-            .map(|cond| Regex::new(&format!("^{}", cond.replace('-', "\\-"))))
-            .transpose()?;
-        let replace_regex = Regex::new(&format!("^{add}"))?;
-
-        Ok(Self(Affix {
+    ) -> Self {
+        Self(Affix {
             flag,
             crossproduct,
             strip: strip.to_string(),
             add,
-            // condition: condition.map(ToString::to_string),
             flags,
             _morphological_fields: morphological_fields,
-            condition_regex,
-            replace_regex,
-        }))
+            condition_pattern: condition.map(AffixPattern::new),
+        })
+    }
+
+    /// Remove the `add` and add the `strip`
+    pub(crate) fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        if word.starts_with(&self.add) {
+            let mut stem = self.strip.clone();
+            stem.push_str(&word[self.add.len()..]);
+            Cow::Owned(stem)
+        } else {
+            Cow::Borrowed(word)
+        }
     }
 }
 
@@ -617,23 +721,27 @@ impl Suffix {
         condition: Option<&str>,
         flags: FlagSet,
         morphological_fields: MorphologicalFields,
-    ) -> Result<Self, regex::Error> {
-        let condition_regex = condition
-            .map(|cond| Regex::new(&format!("{}$", cond.replace('-', "\\-"))))
-            .transpose()?;
-        let replace_regex = Regex::new(&format!("{add}$"))?;
-
-        Ok(Self(Affix {
+    ) -> Self {
+        Self(Affix {
             flag,
             crossproduct,
             strip: strip.to_string(),
             add,
-            // condition: condition.map(ToString::to_string),
             flags,
             _morphological_fields: morphological_fields,
-            condition_regex,
-            replace_regex,
-        }))
+            condition_pattern: condition.map(AffixPattern::new),
+        })
+    }
+
+    /// Remove the `add` and add the `strip`
+    pub(crate) fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        if word.ends_with(&self.add) {
+            let mut stem = word[..(word.len() - self.add.len())].to_string();
+            stem.push_str(&self.strip);
+            Cow::Owned(stem)
+        } else {
+            Cow::Borrowed(word)
+        }
     }
 }
 
@@ -664,26 +772,69 @@ pub(crate) struct Affix {
     /// Flags the affix has itself.
     pub flags: FlagSet,
     pub _morphological_fields: MorphologicalFields,
-    /// A regex that checks whether the condition matches.
-    pub condition_regex: Option<Regex>,
-    /// TODO
-    pub replace_regex: Regex,
+    /// A pattern that checks whether the condition matches.
+    pub condition_pattern: Option<AffixPattern>,
+}
+
+/// A regex-like pattern that uses only the `^` and `$` anchors.
+#[derive(Debug)]
+pub(crate) struct AnchoredPattern {
+    pattern: String,
+    anchor_start: bool,
+    anchor_end: bool,
+}
+
+impl AnchoredPattern {
+    pub(crate) fn new(mut input: &str) -> Self {
+        let anchor_start = input.starts_with('^');
+        let anchor_end = input.ends_with('$');
+
+        if anchor_start {
+            input = &input[1..];
+        }
+        if anchor_end {
+            input = &input[..(input.len() - 1)];
+        }
+
+        Self {
+            pattern: input.to_string(),
+            anchor_start,
+            anchor_end,
+        }
+    }
+
+    pub(crate) fn match_byte_ranges<'a>(
+        &'a self,
+        input: &'a str,
+    ) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
+        use crate::stdx::EitherIterator::{Left, Right};
+
+        if (self.anchor_start && !input.starts_with(&self.pattern))
+            || (self.anchor_end && !input.ends_with(&self.pattern))
+        {
+            Left(std::iter::empty())
+        } else {
+            Right(
+                input
+                    .match_indices(&self.pattern)
+                    .map(|(start, m)| start..(start + m.len())),
+            )
+        }
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct ReplacementPattern {
-    pub _pattern: Regex,
+    pub _pattern: AnchoredPattern,
     pub _replacement: String,
 }
 
 impl ReplacementPattern {
-    pub(crate) fn new(pattern: &str, replacement: &str) -> Result<Self, regex::Error> {
-        let pattern = Regex::new(pattern)?;
-
-        Ok(Self {
-            _pattern: pattern,
+    pub(crate) fn new(pattern: &str, replacement: &str) -> Self {
+        Self {
+            _pattern: AnchoredPattern::new(pattern),
             _replacement: replacement.replace('_', " "),
-        })
+        }
     }
 }
 
@@ -1086,5 +1237,52 @@ mod test {
 
         assert!(pattern.full_match(&guess_abbbc));
         assert!(pattern.partial_match(&guess_abbbc));
+    }
+
+    #[test]
+    fn affix_pattern_literals() {
+        let pattern = AffixPattern::new("foobarbaz");
+        assert!(pattern.matches_at_start("foobarbaz"));
+        assert!(pattern.matches_at_end("foobarbaz"));
+    }
+
+    #[test]
+    fn affix_pattern_positive_character_classes() {
+        let vowels = AffixPattern::new("[aeiou]");
+        assert!(vowels.matches_at_start("abc"));
+        assert!(vowels.matches_at_end("foo"));
+
+        let pattern = AffixPattern::new("[bz]oo");
+        assert!(pattern.matches_at_start("boot"));
+        assert!(pattern.matches_at_start("zoologist"));
+        assert!(pattern.matches_at_end("baboo"));
+        assert!(pattern.matches_at_end("kazoo"));
+
+        let pattern = AffixPattern::new("a[ts]");
+        assert!(pattern.matches_at_start("attend"));
+        assert!(pattern.matches_at_start("ask"));
+        assert!(pattern.matches_at_end("hat"));
+        assert!(pattern.matches_at_end("has"));
+    }
+
+    #[test]
+    fn affix_pattern_negative_character_classes() {
+        let pattern = AffixPattern::new("[^y]");
+        assert!(!pattern.matches_at_end("try"));
+        assert!(pattern.matches_at_end("trie"));
+
+        assert!(!pattern.matches_at_start("yahoo"));
+        assert!(pattern.matches_at_start("google"));
+    }
+
+    #[test]
+    fn affix_pattern_any_char_wildcard() {
+        let pattern = AffixPattern::new(".");
+        assert!(pattern.matches_at_start("any"));
+        assert!(pattern.matches_at_end("any"));
+
+        let pattern = AffixPattern::new("a.y");
+        assert!(pattern.matches_at_start("atypical"));
+        assert!(pattern.matches_at_end("many"));
     }
 }

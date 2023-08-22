@@ -162,12 +162,9 @@ impl<'a> Checker<'a> {
         let mut parts = vec![vec![word]];
 
         for pattern in self.aff.break_patterns.iter() {
-            for capture in pattern.captures_iter(word) {
-                let match_ = capture
-                    .get(capture.len().saturating_sub(1))
-                    .expect("break patterns always have one capture group");
-                let start = &word[..match_.start()];
-                let rest = &word[match_.end()..];
+            for r#match in pattern.match_byte_ranges(word) {
+                let start = &word[..r#match.start];
+                let rest = &word[r#match.end..];
                 for mut subparts in self.break_word_impl(rest, depth + 1) {
                     let mut part = vec![start];
                     part.append(&mut subparts);
@@ -373,9 +370,9 @@ impl<'a> Checker<'a> {
                 continue;
             }
 
-            let stem = suffix.replace_regex.replace(word, &suffix.strip);
-            if is_some_and(suffix.condition_regex.as_ref(), |regex| {
-                !regex.is_match(&stem)
+            let stem = suffix.to_stem(word);
+            if is_some_and(suffix.condition_pattern.as_ref(), |pattern| {
+                !pattern.matches_at_end(&stem)
             }) {
                 continue;
             }
@@ -425,9 +422,9 @@ impl<'a> Checker<'a> {
                 continue;
             }
 
-            let stem = prefix.replace_regex.replace(word, &prefix.strip);
-            if is_some_and(prefix.condition_regex.as_ref(), |regex| {
-                !regex.is_match(&stem)
+            let stem = prefix.to_stem(word);
+            if is_some_and(prefix.condition_pattern.as_ref(), |pattern| {
+                !pattern.matches_at_start(&stem)
             }) {
                 continue;
             }

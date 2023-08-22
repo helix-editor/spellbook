@@ -7,10 +7,6 @@ license = "MPL-2.0"
 rust-version = "1.60"
 
 [dependencies]
-# Can we drop regex? Hunspell only seems to allow a subset of regex
-# functionality like '^', '*', character groups and negative character
-# groups.
-regex = "1"
 # TODO: investigate using smartstring to cut down on allocations since
 # there are plenty of small strings.
 
