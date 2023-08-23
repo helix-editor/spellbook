@@ -2,10 +2,10 @@
 //! This allows customizing options like whether to allow words
 //! that aren't allowed to be suggested.
 
-use std::{borrow::Cow, ops::Deref, rc::Rc};
+use std::{borrow::Cow, rc::Rc};
 
 use crate::{
-    aff::{Aff, Affix, Capitalization, CompoundRule, Prefix, Suffix},
+    aff::{Aff, Capitalization, CompoundRule, Prefix, Suffix},
     dic::{Dic, Word},
     stdx::is_some_and,
     FlagSet,
@@ -46,14 +46,14 @@ impl AffixForm {
         flags
     }
 
-    pub(crate) fn all_affixes(&self) -> impl Iterator<Item = &Affix> {
+    pub(crate) fn all_flag_sets(&self) -> impl Iterator<Item = &FlagSet> {
         self.prefixes
             .iter()
-            .filter_map(|prefix| prefix.as_ref().map(|pfx| pfx.as_ref().deref()))
+            .filter_map(|prefix| prefix.as_ref().map(|pfx| &pfx.flags))
             .chain(
                 self.suffixes
                     .iter()
-                    .filter_map(|suffix| suffix.as_ref().map(|sfx| sfx.as_ref().deref())),
+                    .filter_map(|suffix| suffix.as_ref().map(|sfx| &sfx.flags)),
             )
     }
 }
@@ -489,7 +489,7 @@ impl<'a> Checker<'a> {
                 return false;
             }
 
-            if form.has_affixes() && form.all_affixes().all(|a| a.flags.contains(&flag)) {
+            if form.has_affixes() && form.all_flag_sets().all(|flags| flags.contains(&flag)) {
                 return false;
             }
         }

@@ -8,7 +8,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     fmt::Display,
-    ops::Deref,
+    marker::PhantomData,
     rc::Rc,
     str::FromStr,
 };
@@ -663,99 +663,9 @@ impl AffixPattern {
     }
 }
 
-/// Rules for replacing characters at the beginning of a stem.
-#[derive(Debug)]
-pub(crate) struct Prefix(Affix);
-
-impl Prefix {
-    pub(crate) fn new(
-        flag: Flag,
-        crossproduct: bool,
-        strip: &str,
-        add: String,
-        condition: Option<&str>,
-        flags: FlagSet,
-        morphological_fields: MorphologicalFields,
-    ) -> Self {
-        Self(Affix {
-            flag,
-            crossproduct,
-            strip: strip.to_string(),
-            add,
-            flags,
-            _morphological_fields: morphological_fields,
-            condition_pattern: condition.map(AffixPattern::new),
-        })
-    }
-
-    /// Remove the `add` and add the `strip`
-    pub(crate) fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
-        if word.starts_with(&self.add) {
-            let mut stem = self.strip.clone();
-            stem.push_str(&word[self.add.len()..]);
-            Cow::Owned(stem)
-        } else {
-            Cow::Borrowed(word)
-        }
-    }
-}
-
-impl Deref for Prefix {
-    type Target = Affix;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-/// Rules for replacing characters at the end of a stem.
-#[derive(Debug)]
-pub(crate) struct Suffix(Affix);
-
-impl Suffix {
-    pub(crate) fn new(
-        flag: Flag,
-        crossproduct: bool,
-        strip: &str,
-        add: String,
-        condition: Option<&str>,
-        flags: FlagSet,
-        morphological_fields: MorphologicalFields,
-    ) -> Self {
-        Self(Affix {
-            flag,
-            crossproduct,
-            strip: strip.to_string(),
-            add,
-            flags,
-            _morphological_fields: morphological_fields,
-            condition_pattern: condition.map(AffixPattern::new),
-        })
-    }
-
-    /// Remove the `add` and add the `strip`
-    pub(crate) fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
-        if word.ends_with(&self.add) {
-            let mut stem = word[..(word.len() - self.add.len())].to_string();
-            stem.push_str(&self.strip);
-            Cow::Owned(stem)
-        } else {
-            Cow::Borrowed(word)
-        }
-    }
-}
-
-impl Deref for Suffix {
-    type Target = Affix;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 /// Internal container type for a prefix or suffix.
 #[derive(Debug)]
-pub(crate) struct Affix {
+pub(crate) struct Affix<K> {
     /// The flag that words may use to reference this affix.
     pub flag: Flag,
     /// Whether the affix is compatible with the opposite affix.
@@ -768,12 +678,69 @@ pub(crate) struct Affix {
     pub add: String,
     /// Condition that the stem should be checked against to query if the
     /// affix is relevant.
-    // pub condition: Option<String>,
+    pub condition_pattern: Option<AffixPattern>,
     /// Flags the affix has itself.
     pub flags: FlagSet,
     pub _morphological_fields: MorphologicalFields,
-    /// A pattern that checks whether the condition matches.
-    pub condition_pattern: Option<AffixPattern>,
+    phantom_data: PhantomData<K>,
+}
+impl<K> Affix<K> {
+    pub(crate) fn new(
+        flag: Flag,
+        crossproduct: bool,
+        strip: &str,
+        add: String,
+        condition: Option<&str>,
+        flags: FlagSet,
+        morphological_fields: MorphologicalFields,
+    ) -> Self {
+        Self {
+            flag,
+            crossproduct,
+            strip: strip.to_string(),
+            add,
+            flags,
+            _morphological_fields: morphological_fields,
+            condition_pattern: condition.map(AffixPattern::new),
+            phantom_data: PhantomData,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Pfx;
+#[derive(Debug)]
+pub(crate) struct Sfx;
+
+/// Rules for replacing characters at the beginning of a stem.
+pub(crate) type Prefix = Affix<Pfx>;
+/// Rules for replacing characters at the end of a stem.
+pub(crate) type Suffix = Affix<Sfx>;
+
+impl Suffix {
+    /// Remove the `add` and add the `strip`
+    pub(crate) fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        if word.ends_with(&self.add) {
+            let mut stem = word[..(word.len() - self.add.len())].to_string();
+            stem.push_str(&self.strip);
+            Cow::Owned(stem)
+        } else {
+            Cow::Borrowed(word)
+        }
+    }
+}
+
+impl Prefix {
+    /// Remove the `add` and add the `strip`
+    pub(crate) fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        if word.starts_with(&self.add) {
+            let mut stem = self.strip.clone();
+            stem.push_str(&word[self.add.len()..]);
+            Cow::Owned(stem)
+        } else {
+            Cow::Borrowed(word)
+        }
+    }
 }
 
 /// A regex-like pattern that uses only the `^` and `$` anchors.
