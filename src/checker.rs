@@ -494,6 +494,17 @@ impl<'a> Checker<'a> {
             }
         }
 
+        if is_some_and(form.prefixes[0].as_ref(), |prefix| {
+            !all_flags.contains(&prefix.flag)
+        }) {
+            return false;
+        }
+        if is_some_and(form.suffixes[0].as_ref(), |suffix| {
+            !all_flags.contains(&suffix.flag)
+        }) {
+            return false;
+        }
+
         if let Some(flag) = self.aff.circumfix_flag {
             let has_suffix = is_some_and(form.suffixes[0].as_ref(), |suffix| {
                 suffix.flags.contains(&flag)
