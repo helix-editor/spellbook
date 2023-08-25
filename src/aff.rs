@@ -815,23 +815,26 @@ impl AnchoredPattern {
         }
     }
 
-    pub(crate) fn match_byte_ranges<'a>(
-        &'a self,
-        input: &'a str,
-    ) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
-        use crate::stdx::EitherIterator::{Left, Right};
-
+    /// Find the byte index of the match of the pattern in the given
+    /// string, if the pattern matches.
+    ///
+    /// Anchors are ignored for the sake of byte indices but if the input does
+    /// not match the anchor rules, this function returns None.
+    pub(crate) fn find(&self, input: &str) -> Option<usize> {
         if (self.anchor_start && !input.starts_with(&self.pattern))
             || (self.anchor_end && !input.ends_with(&self.pattern))
         {
-            Left(std::iter::empty())
-        } else {
-            Right(
-                input
-                    .match_indices(&self.pattern)
-                    .map(|(start, m)| start..(start + m.len())),
-            )
+            return None;
         }
+
+        input.find(&self.pattern)
+    }
+
+    /// Return the length of the pattern.
+    ///
+    /// Anchors are not considered in the length.
+    pub(crate) fn len(&self) -> usize {
+        self.pattern.len()
     }
 }
 
@@ -1313,5 +1316,20 @@ mod test {
         let pattern = AffixPattern::new("a.y");
         assert!(pattern.matches_at_start("atypical"));
         assert!(pattern.matches_at_end("many"));
+    }
+
+    #[test]
+    fn anchored_pattern() {
+        assert_eq!(AnchoredPattern::new("foo").len(), 3);
+        assert_eq!(AnchoredPattern::new("^foo$").len(), 3);
+
+        let pattern = AnchoredPattern::new("^foo$");
+        assert_eq!(pattern.find("foo"), Some(0));
+        assert_eq!(pattern.find("barfoobaz"), None);
+
+        let pattern = AnchoredPattern::new("foo$");
+        assert_eq!(pattern.find("foo"), Some(0));
+        assert_eq!(pattern.find("barfoo"), Some(3));
+        assert_eq!(pattern.find("foobar"), None);
     }
 }

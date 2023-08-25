@@ -142,38 +142,52 @@ impl<'a> Checker<'a> {
             return true;
         }
 
-        // Permute the possible breaks and check if any interpretation is correct.
-        self.break_word(word.as_ref()).iter().any(|parts| {
-            parts
-                .iter()
-                .all(|part| !self.good_forms(part, true, true).is_empty())
-        })
+        self.check_word_break_permutations(&word)
     }
 
-    fn break_word<'w>(&'w self, word: &'w str) -> Vec<Vec<&'w str>> {
-        // TODO rewrite to be more idiomatic, probably with a loop.
-        self.break_word_impl(word, 0)
+    /// Permute the possible breaks and check if any interpretation is correct.
+    ///
+    /// For example if "pre-processed-meat" is being checked, check:
+    ///
+    /// * `["pre-processed-meat"]`
+    /// * `["pre", "processed-meat"]`
+    /// * `["pre-processed", "meat"]`
+    /// * `["pre", "processed", "meat"]`
+    ///
+    /// Returns `true` if there exists any permutation of which all words are
+    /// correct.
+    fn check_word_break_permutations(&self, word: &str) -> bool {
+        self.check_word_break_permutations_impl(word, 0, 0)
     }
 
-    fn break_word_impl<'w>(&'w self, word: &'w str, depth: usize) -> Vec<Vec<&'w str>> {
-        if depth > 10 {
-            return vec![];
+    fn check_word_break_permutations_impl(&self, word: &str, cursor: usize, depth: usize) -> bool {
+        let is_correct_word = |part| !self.good_forms(part, true, true).is_empty();
+
+        if is_correct_word(word) {
+            return true;
         }
-        let mut parts = vec![vec![word]];
 
-        for pattern in self.aff.break_patterns.iter() {
-            for r#match in pattern.match_byte_ranges(word) {
-                let start = &word[..r#match.start];
-                let rest = &word[r#match.end..];
-                for mut subparts in self.break_word_impl(rest, depth + 1) {
-                    let mut part = vec![start];
-                    part.append(&mut subparts);
-                    parts.push(part);
-                }
+        if depth > 10 {
+            return false;
+        }
+
+        for pattern in &self.aff.break_patterns {
+            let idx = match pattern.find(&word[cursor..]) {
+                Some(idx) => idx,
+                None => continue,
+            };
+            let start = &word[cursor..idx];
+            let rest = &word[idx + pattern.len()..];
+
+            if (is_correct_word(start)
+                && self.check_word_break_permutations_impl(rest, 0, depth + 1))
+                || self.check_word_break_permutations_impl(word, cursor + idx, depth + 1)
+            {
+                return true;
             }
         }
 
-        parts
+        false
     }
 
     fn good_forms(
