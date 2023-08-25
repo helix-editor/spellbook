@@ -270,26 +270,37 @@ impl Default for Casing {
 }
 
 impl Casing {
-    // TODO: take casings into account.
     pub(crate) fn guess(&self, word: &str) -> Capitalization {
-        // TODO: use nuspell's 'guess' instead?
-        if word.chars().all(|ch| ch.is_lowercase()) {
-            Capitalization::Lower
-        } else if word.chars().all(|ch| ch.is_uppercase()) {
-            Capitalization::Upper
-        } else if word
-            .chars()
-            .next()
-            .expect("word is non-empty")
-            .is_uppercase()
-        {
-            if word.chars().skip(1).all(|ch| ch.is_lowercase()) {
-                Capitalization::Title
-            } else {
-                Capitalization::Pascal
+        match self {
+            Self::Germanic => {
+                if word.contains('ß')
+                    && Self::Other.guess(&word.replace('ß', "")) == Capitalization::Upper
+                {
+                    Capitalization::Upper
+                } else {
+                    Self::Other.guess(word)
+                }
             }
-        } else {
-            Capitalization::Camel
+            _ => {
+                if word.chars().all(|ch| ch.is_lowercase()) {
+                    Capitalization::Lower
+                } else if word.chars().all(|ch| ch.is_uppercase()) {
+                    Capitalization::Upper
+                } else if word
+                    .chars()
+                    .next()
+                    .expect("word is non-empty")
+                    .is_uppercase()
+                {
+                    if word.chars().skip(1).all(|ch| ch.is_lowercase()) {
+                        Capitalization::Title
+                    } else {
+                        Capitalization::Pascal
+                    }
+                } else {
+                    Capitalization::Camel
+                }
+            }
         }
     }
 
@@ -315,14 +326,41 @@ impl Casing {
     }
 
     pub(crate) fn lower(&self, word: &str) -> Vec<String> {
-        // Can't be properly downcased in non-Turkic casings.
-        if word.chars().next().expect("word is non-empty") == 'İ' {
-            return vec![];
+        fn sharp_s_variants(word: &str, cursor: usize) -> Vec<String> {
+            let mut variants = Vec::new();
+            if let Some(idx) = word[cursor..].find("ss") {
+                let mut replaced = word[cursor..idx].to_string();
+                replaced.push('ß');
+                replaced.push_str(&word[idx + 2..]);
+                variants.push(replaced);
+                let replaced = variants.last().unwrap();
+                variants.append(&mut sharp_s_variants(replaced, idx + 2));
+                variants.append(&mut sharp_s_variants(word, idx + 2));
+            }
+            variants
         }
 
-        // TODO: do we have to switch over to unicode_segmentation to make this work?
-        // Can we use chars so cavalierly?
-        vec![word.to_lowercase().replace("i̇", "i")]
+        match self {
+            Self::Germanic => {
+                let mut lowered = vec![word.to_lowercase()];
+                if word.contains("SS") {
+                    // Power set of replacements of "ss" in lowered.
+                    lowered.append(&mut sharp_s_variants(&lowered[0], 0));
+                    lowered
+                } else {
+                    lowered
+                }
+            }
+            Self::Turkic => Self::Other.lower(&word.replace('İ', "i").replace('I', "ı")),
+            Self::Other => {
+                // Can't be properly downcased in non-Turkic casings.
+                if word.chars().next().expect("word is non-empty") == 'İ' {
+                    return vec![];
+                }
+
+                vec![word.to_lowercase().replace("i̇", "i")]
+            }
+        }
     }
 
     pub(crate) fn lower_first(&self, word: &str) -> Vec<String> {
@@ -338,9 +376,13 @@ impl Casing {
         lower_words
     }
 
-    // pub(crate) fn upper(&self, word: &str) -> Vec<String> {
-    //     vec![word.to_uppercase()]
-    // }
+    #[allow(dead_code)]
+    pub(crate) fn upper(&self, word: &str) -> String {
+        match self {
+            Self::Turkic => Self::Other.upper(&word.replace('i', "İ").replace('ı', "I")),
+            _ => word.to_uppercase(),
+        }
+    }
 
     pub(crate) fn capitalize(&self, word: &str) -> Vec<String> {
         let mut chars = word.chars().peekable();
@@ -1099,6 +1141,23 @@ impl ConversionTable {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn casing_conversions() {
+        // From the `examples/utils.py` of spylls.
+        assert_eq!(Casing::Other.guess("Paris"), Capitalization::Title);
+
+        assert_eq!(Casing::Other.lower("Izmir"), vec!["izmir".to_string()]);
+        assert_eq!(Casing::Other.upper("Izmir"), "IZMIR".to_string());
+
+        assert_eq!(Casing::Turkic.lower("Izmir"), vec!["ızmir".to_string()]);
+        assert_eq!(Casing::Turkic.upper("Izmir"), "IZMİR".to_string());
+
+        assert_eq!(
+            Casing::Germanic.lower("STRASSE"),
+            vec!["strasse".to_string(), "straße".to_string()]
+        );
+    }
 
     // We need a `&[&FlagSet]` to match `full_match` and `partial_match`'s
     // signatures.
