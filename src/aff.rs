@@ -326,30 +326,33 @@ impl Casing {
     }
 
     pub(crate) fn lower(&self, word: &str) -> Vec<String> {
-        fn sharp_s_variants(word: &str, cursor: usize) -> Vec<String> {
-            let mut variants = Vec::new();
-            if let Some(idx) = word[cursor..].find("ss") {
-                let mut replaced = word[cursor..idx].to_string();
-                replaced.push('ß');
-                replaced.push_str(&word[idx + 2..]);
-                variants.push(replaced);
-                let replaced = variants.last().unwrap();
-                variants.append(&mut sharp_s_variants(replaced, idx + 2));
-                variants.append(&mut sharp_s_variants(word, idx + 2));
-            }
-            variants
+        fn sharp_s_variants(word: &str, cursor: usize, variants: &mut Vec<String>) {
+            const SHARP_LEN: usize = 'ß'.len_utf8();
+            const SS_LEN: usize = "ss".len();
+
+            let idx = match word[cursor..].find("ss") {
+                Some(idx) => idx,
+                None => return,
+            };
+
+            let mut replaced = word[cursor..idx].to_string();
+            replaced.push('ß');
+            replaced.push_str(&word[idx + SS_LEN..]);
+            sharp_s_variants(&replaced, idx + SHARP_LEN, variants);
+            sharp_s_variants(word, idx + SS_LEN, variants);
+            variants.push(replaced);
         }
 
         match self {
             Self::Germanic => {
-                let mut lowered = vec![word.to_lowercase()];
+                let lowered = word.to_lowercase();
+                let mut variants = Vec::new();
                 if word.contains("SS") {
                     // Power set of replacements of "ss" in lowered.
-                    lowered.append(&mut sharp_s_variants(&lowered[0], 0));
-                    lowered
-                } else {
-                    lowered
+                    sharp_s_variants(&lowered, 0, &mut variants);
                 }
+                variants.push(lowered);
+                variants
             }
             Self::Turkic => Self::Other.lower(&word.replace('İ', "i").replace('I', "ı")),
             Self::Other => {
@@ -1155,7 +1158,7 @@ mod test {
 
         assert_eq!(
             Casing::Germanic.lower("STRASSE"),
-            vec!["strasse".to_string(), "straße".to_string()]
+            vec!["straße".to_string(), "strasse".to_string()]
         );
     }
 
