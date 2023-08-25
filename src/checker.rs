@@ -70,14 +70,6 @@ impl CompoundForm {
     }
 }
 
-/// A hypothesis about a relationship between a string and known affixes
-/// in the dictionary.
-#[derive(Debug)]
-pub(crate) enum WordForm {
-    Affix(Box<AffixForm>),
-    Compound(CompoundForm),
-}
-
 #[derive(Debug, Clone, Copy)]
 enum CompoundPosition {
     Begin,
@@ -161,7 +153,7 @@ impl<'a> Checker<'a> {
     }
 
     fn check_word_break_permutations_impl(&self, word: &str, cursor: usize, depth: usize) -> bool {
-        let is_correct_word = |part| !self.good_forms(part, true, true).is_empty();
+        let is_correct_word = |part| self.has_any_form(part, true, true);
 
         if is_correct_word(word) {
             return true;
@@ -190,14 +182,13 @@ impl<'a> Checker<'a> {
         false
     }
 
-    fn good_forms(
+    /// Checks if a given word has a correct form in the dictionary.
+    fn has_any_form(
         &self,
         word: &str,
         include_affix_forms: bool,
         include_compound_forms: bool,
-    ) -> Vec<WordForm> {
-        let mut forms = Vec::new();
-
+    ) -> bool {
         let (captype, variants) = if self.capitalization {
             self.aff.casing.variants(word)
         } else {
@@ -208,7 +199,7 @@ impl<'a> Checker<'a> {
         for variant in variants {
             if include_affix_forms {
                 for form in self.affix_forms(
-                    variant.as_ref(),
+                    &variant,
                     captype,
                     &Default::default(),
                     &Default::default(),
@@ -222,21 +213,17 @@ impl<'a> Checker<'a> {
                             form.flags().contains(&flag)
                         }))
                     {
-                        forms.push(WordForm::Affix(Box::new(form)));
+                        return true;
                     }
                 }
             }
 
-            if include_compound_forms {
-                forms.extend(
-                    self.compound_forms(variant.as_ref(), captype)
-                        .into_iter()
-                        .map(WordForm::Compound),
-                )
+            if include_compound_forms && !self.compound_forms(&variant, captype).is_empty() {
+                return true;
             }
         }
 
-        forms
+        false
     }
 
     #[allow(clippy::too_many_arguments)]
