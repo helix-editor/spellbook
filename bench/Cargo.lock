@@ -13,6 +13,7 @@ name = "benches"
 version = "0.1.0"
 dependencies = [
  "brunch",
+ "once_cell",
  "spellbook",
 ]
 
@@ -43,6 +44,12 @@ checksum = "f30b0abd723be7e2ffca1272140fac1a2f084c77ec3e123c192b66af1ee9e6c2"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "once_cell"
+version = "1.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 
 [[package]]
 name = "spellbook"
