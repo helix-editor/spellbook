@@ -20,7 +20,6 @@ pub(crate) struct AffixForm {
     pub stem: String,
     prefixes: [Option<Rc<Prefix>>; 2],
     suffixes: [Option<Rc<Suffix>>; 2],
-    in_dictionary: Option<Word>,
 }
 
 impl AffixForm {
@@ -34,9 +33,6 @@ impl AffixForm {
 
     pub(crate) fn flags(&self) -> FlagSet {
         let mut flags = FlagSet::new();
-        if let Some(word) = &self.in_dictionary {
-            flags.extend(word.flags.iter());
-        }
         if let Some(prefix) = &self.prefixes[0] {
             flags.extend(prefix.flags.iter());
         }
@@ -260,12 +256,9 @@ impl<'a> Checker<'a> {
             }
 
             for homonym in homonyms {
-                // TODO: avoid clones?
-                let mut form = form.clone();
-                form.in_dictionary = Some(homonym.clone());
-                if self.is_good_form(&form, compound_pos, capitalization) {
+                if self.is_good_form(&form, homonym, compound_pos, capitalization) {
                     found = true;
-                    forms.push(form);
+                    forms.push(form.clone());
                 }
             }
 
@@ -274,12 +267,9 @@ impl<'a> Checker<'a> {
                 && matches!(capitalization, Capitalization::Title)
             {
                 for homonym in self.dic.homonyms(&form.stem.to_lowercase(), false) {
-                    // TODO: avoid clones?
-                    let mut form = form.clone();
-                    form.in_dictionary = Some(homonym.clone());
-                    if self.is_good_form(&form, compound_pos, capitalization) {
+                    if self.is_good_form(&form, homonym, compound_pos, capitalization) {
                         found = true;
-                        forms.push(form);
+                        forms.push(form.clone());
                     }
                 }
             }
@@ -290,11 +280,8 @@ impl<'a> Checker<'a> {
 
             if matches!(self.aff.casing.guess(word), Capitalization::Lower) {
                 for homonym in self.dic.homonyms(&form.stem, false) {
-                    // TODO: avoid clones?
-                    let mut form = form.clone();
-                    form.in_dictionary = Some(homonym.clone());
-                    if self.is_good_form(&form, compound_pos, capitalization) {
-                        forms.push(form);
+                    if self.is_good_form(&form, homonym, compound_pos, capitalization) {
+                        forms.push(form.clone());
                     }
                 }
             }
@@ -384,7 +371,6 @@ impl<'a> Checker<'a> {
                 stem: stem.to_string(),
                 suffixes: [Some(suffix.clone()), None],
                 prefixes: [None, None],
-                in_dictionary: None,
             });
 
             if !nested {
@@ -436,7 +422,6 @@ impl<'a> Checker<'a> {
                 stem: stem.to_string(),
                 prefixes: [Some(prefix.clone()), None],
                 suffixes: [None, None],
-                in_dictionary: None,
             });
 
             if !nested && self.aff.complex_prefixes {
@@ -460,17 +445,18 @@ impl<'a> Checker<'a> {
     fn is_good_form(
         &self,
         form: &AffixForm,
+        word: &Word,
         compound_pos: Option<CompoundPosition>,
         capitalization: Capitalization,
     ) -> bool {
         use crate::stdx::is_none_or;
 
-        let word = form
-            .in_dictionary
-            .as_ref()
-            .expect("form word must be in the dictionary");
         let root_flags = &word.flags;
-        let all_flags = form.flags();
+        let all_flags = {
+            let mut flags = form.flags();
+            flags.extend(word.flags.iter());
+            flags
+        };
 
         if !self.allow_nosuggest
             && is_some_and(self.aff.no_suggest_flag, |flag| root_flags.contains(&flag))
