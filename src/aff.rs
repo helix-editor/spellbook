@@ -9,8 +9,8 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
     marker::PhantomData,
-    rc::Rc,
     str::FromStr,
+    sync::Arc,
 };
 
 use crate::{checker::AffixForm, Flag, FlagSet, MorphologicalFields};
@@ -92,10 +92,10 @@ pub(crate) struct Aff {
     // Stemming
     /// Dictionary of prefixes organized by flag.
     /// From the PFX command.
-    pub prefixes: HashMap<Flag, Vec<Rc<Prefix>>>,
+    pub prefixes: HashMap<Flag, Vec<Arc<Prefix>>>,
     /// Dictionary of suffixes organized by flag.
     /// From the SFX command.
-    pub suffixes: HashMap<Flag, Vec<Rc<Suffix>>>,
+    pub suffixes: HashMap<Flag, Vec<Arc<Suffix>>>,
     /// From the NEEDAFFIX command.
     pub need_affix_flag: Option<Flag>,
     /// From the CIRCUMFIX command.
@@ -181,8 +181,8 @@ pub(crate) struct Aff {
     // * WORDCHARS
     // ---
     pub casing: Casing,
-    pub suffixes_index: AffixIndex<Rc<Suffix>>,
-    pub prefixes_index: AffixIndex<Rc<Prefix>>,
+    pub suffixes_index: AffixIndex<Arc<Suffix>>,
+    pub prefixes_index: AffixIndex<Arc<Prefix>>,
 }
 
 impl Default for Aff {

@@ -2,8 +2,8 @@
 
 use std::{
     iter::{Enumerate, Peekable},
-    rc::Rc,
     str::Lines,
+    sync::Arc,
 };
 
 use super::{Aff, Casing, FlagType};
@@ -340,7 +340,7 @@ fn parse_prefixes(cx: &mut Context) -> ParseResult {
             let (add, flag_set) = split_word_and_flags(&cx.aff, add)
                 .map_err(|err| cx.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
 
-            let prefix = Rc::new(super::Prefix::new(
+            let prefix = Arc::new(super::Prefix::new(
                 flag,
                 crossproduct,
                 strip,
@@ -373,7 +373,7 @@ fn parse_suffixes(cx: &mut Context) -> ParseResult {
             let (add, flag_set) = split_word_and_flags(&cx.aff, add)
                 .map_err(|err| cx.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
 
-            let suffix = Rc::new(super::Suffix::new(
+            let suffix = Arc::new(super::Suffix::new(
                 flag,
                 crossproduct,
                 strip,

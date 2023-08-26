@@ -2,7 +2,7 @@
 //! This allows customizing options like whether to allow words
 //! that aren't allowed to be suggested.
 
-use std::{borrow::Cow, rc::Rc};
+use std::{borrow::Cow, sync::Arc};
 
 use crate::{
     aff::{Aff, Capitalization, CompoundRule, Prefix, Suffix},
@@ -17,8 +17,8 @@ use crate::{
 pub(crate) struct AffixForm {
     text: String,
     pub stem: String,
-    prefixes: [Option<Rc<Prefix>>; 2],
-    suffixes: [Option<Rc<Suffix>>; 2],
+    prefixes: [Option<Arc<Prefix>>; 2],
+    suffixes: [Option<Arc<Suffix>>; 2],
 }
 
 impl AffixForm {
@@ -346,7 +346,7 @@ impl<'a> Checker<'a> {
         crossproduct: bool,
     ) -> Vec<AffixForm> {
         let mut forms = Vec::new();
-        let is_valid_suffix = |suffix: &Rc<Suffix>| {
+        let is_valid_suffix = |suffix: &Arc<Suffix>| {
             (!crossproduct || suffix.crossproduct)
                 && suffix.flags.is_superset(required_flags)
                 && suffix.flags.is_disjoint(forbidden_flags)
@@ -397,7 +397,7 @@ impl<'a> Checker<'a> {
         crossproduct: bool,
     ) -> Vec<AffixForm> {
         let mut forms = Vec::new();
-        let is_valid_prefix = |prefix: &Rc<Prefix>| {
+        let is_valid_prefix = |prefix: &Arc<Prefix>| {
             (!crossproduct || prefix.crossproduct)
                 && prefix.flags.is_superset(required_flags)
                 && prefix.flags.is_disjoint(forbidden_flags)
