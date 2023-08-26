@@ -15,7 +15,6 @@ use crate::{
 /// and prefix(es).
 #[derive(Debug, Default, Clone)]
 pub(crate) struct AffixForm {
-    // TODO: rename as "word"?
     text: String,
     pub stem: String,
     prefixes: [Option<Rc<Prefix>>; 2],
