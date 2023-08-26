@@ -164,7 +164,7 @@ impl<'a> Checker<'a> {
                 Some(idx) => idx,
                 None => continue,
             };
-            let start = &word[cursor..idx];
+            let start = &word[..cursor + idx];
             let rest = &word[idx + pattern.len()..];
 
             if (is_correct_word(start)
