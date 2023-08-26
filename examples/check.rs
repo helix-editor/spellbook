@@ -1,52 +1,23 @@
 use std::time::Instant;
 
 use spellbook::Dictionary;
-use xdg::BaseDirectories;
+
+const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
+const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let arg1 = match args.next() {
+    let word = match args.next() {
         Some(arg) => arg,
         None => {
-            eprintln!("Usage: check [LANG] WORD");
+            eprintln!("Usage: check WORD");
             std::process::exit(1);
         }
     };
-    let (lang, word) = match args.next() {
-        Some(arg2) => (arg1, arg2),
-        None => ("en_US".to_string(), arg1),
-    };
-
-    let base = BaseDirectories::new().expect("Could not determine XDG directories");
-    let (dic_path, aff_path) = match base.get_data_dirs().iter().find_map(|dir| {
-        let subdir = dir.join("hunspell");
-        if !subdir.is_dir() {
-            return None;
-        }
-
-        let dic = subdir.join(format!("{lang}.dic"));
-        let aff = subdir.join(format!("{lang}.aff"));
-        if dic.is_file() && aff.is_file() {
-            Some((dic, aff))
-        } else {
-            None
-        }
-    }) {
-        Some((dic, aff)) => (dic, aff),
-        None => {
-            eprintln!("Could not find the {lang} dictionary");
-            std::process::exit(1);
-        }
-    };
-    let dic_text = std::fs::read_to_string(dic_path).unwrap();
-    let aff_text = std::fs::read_to_string(aff_path).unwrap();
 
     let now = Instant::now();
-    let dict = Dictionary::compile(&aff_text, &dic_text).unwrap();
-    println!(
-        "Compiled the {lang} dictionary in {}ms",
-        now.elapsed().as_millis()
-    );
+    let dict = Dictionary::compile(EN_US_AFF, EN_US_DIC).unwrap();
+    println!("Compiled the dictionary in {}ms", now.elapsed().as_millis());
 
     let now = Instant::now();
     if dict.check(&word) {

@@ -8,4 +8,3 @@ rust-version = "1.66"
 [dependencies]
 spellbook = { path = "../" }
 brunch = "0.5"
-xdg = "2.5"

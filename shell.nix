@@ -11,5 +11,4 @@ pkgs.mkShell {
     cargo-flamegraph
   ];
   RUST_BACKTRACE = "1";
-  XDG_DATA_DIRS = with pkgs; lib.makeSearchPath "share" [hunspellDicts.en_US];
 }
