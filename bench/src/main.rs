@@ -55,6 +55,9 @@ fn main() {
         Bench::new("Incorrect prefix (\"undrink\")")
             .with_samples(SAMPLES)
             .run(|| dict.check(black_box("undrink"))),
+        Bench::new("Breaks (\"light-weight-like\")")
+            .with_samples(SAMPLES)
+            .run(|| dict.check(black_box("light-weight-like"))),
     );
     eprintln!("Finished in {:.1}s", now.elapsed().as_secs_f64());
 }
