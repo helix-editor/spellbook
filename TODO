@@ -1,5 +1,6 @@
 Before going public:
 
+* finish outstanding todos, unimplementeds and missing types in code
 * Dictionary::suggest(&self, word: &str) -> Vec<String>
 * rewrite checker to use Iterators rather than returning Vecs where possible
 	* this change for break_words was a very noticeable performance boost

@@ -22,7 +22,6 @@ use std::{
 #[derive(Debug, Clone)]
 pub(crate) struct AffixIndex<T> {
     // Currently this is implemented as a Trie backed by a HashMap.
-    // TODO: fxhash?
     table: HashMap<u64, Vec<T>>,
     hasher: RandomState,
 }
