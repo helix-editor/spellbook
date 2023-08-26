@@ -1,0 +1,14 @@
+Before going public:
+
+* Dictionary::suggest(&self, word: &str) -> Vec<String>
+* rewrite checker to use Iterators rather than returning Vecs where possible
+	* this change for break_words was a very noticeable performance boost
+* expand unit tests
+
+After going public:
+
+* experiment with smartstring
+* experiment with ahash / other Hashers
+* experiment with not compiling AffixPattern
+    * Nuspell scans the pattern string on-the-fly and we could too
+* integration tests against a real dictionary
