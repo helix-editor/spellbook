@@ -1,1 +1,1 @@
-editor.workspace-lsp-roots = ["examples"]
+editor.workspace-lsp-roots = ["examples", "bench"]

@@ -1,0 +1,11 @@
+[package]
+name = "benches"
+version = "0.1.0"
+edition = "2021"
+# Needed for `std::hint::black_box`.
+rust-version = "1.66"
+
+[dependencies]
+spellbook = { path = "../" }
+brunch = "0.5"
+xdg = "2.5"
