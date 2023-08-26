@@ -242,6 +242,14 @@ impl Default for Aff {
     }
 }
 
+impl Aff {
+    pub(crate) fn replacements<'a>(&'a self, input: &'a str) -> impl Iterator<Item = String> + 'a {
+        self.replacements
+            .iter()
+            .flat_map(|replacement| replacement.replacements(input))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Capitalization {
     /// Hunspell: "NO"
@@ -830,6 +838,41 @@ impl AnchoredPattern {
         input.find(&self.pattern)
     }
 
+    pub(crate) fn find_iter<'a>(
+        &'a self,
+        input: &'a str,
+    ) -> impl Iterator<Item = (usize, usize)> + 'a {
+        struct FindIter<'a> {
+            pattern: &'a AnchoredPattern,
+            input: &'a str,
+            cursor: usize,
+        }
+
+        impl<'a> Iterator for FindIter<'a> {
+            type Item = (usize, usize);
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.cursor == 0 {
+                    let idx = self.pattern.find(self.input)?;
+                    self.cursor = idx + self.pattern.len();
+                    Some((idx, self.cursor))
+                } else if self.pattern.anchor_start || self.pattern.anchor_end {
+                    None
+                } else {
+                    let idx = self.pattern.pattern[self.cursor..].find(self.input)?;
+                    self.cursor += idx + self.pattern.len();
+                    Some((idx, self.cursor))
+                }
+            }
+        }
+
+        FindIter {
+            pattern: self,
+            input,
+            cursor: 0,
+        }
+    }
+
     /// Return the length of the pattern.
     ///
     /// Anchors are not considered in the length.
@@ -840,16 +883,35 @@ impl AnchoredPattern {
 
 #[derive(Debug)]
 pub(crate) struct ReplacementPattern {
-    pub _pattern: AnchoredPattern,
-    pub _replacement: String,
+    pattern: AnchoredPattern,
+    replacement: String,
 }
 
 impl ReplacementPattern {
     pub(crate) fn new(pattern: &str, replacement: &str) -> Self {
         Self {
-            _pattern: AnchoredPattern::new(pattern),
-            _replacement: replacement.replace('_', " "),
+            pattern: AnchoredPattern::new(pattern),
+            replacement: replacement.replace('_', " "),
         }
+    }
+
+    pub(crate) fn replacements(&self, input: &str) -> Vec<String> {
+        let mut replacements = Vec::new();
+
+        for (start, end) in self.pattern.find_iter(input) {
+            let mut replacement = String::from(&input[..start]);
+            replacement.push_str(&self.replacement);
+            replacement.push_str(&input[end..]);
+
+            if let Some((left, right)) = replacement.split_once(' ') {
+                replacements.push(left.to_string());
+                replacements.push(right.to_string());
+            }
+
+            replacements.push(replacement)
+        }
+
+        replacements
     }
 }
 

@@ -792,7 +792,23 @@ impl<'a> Checker<'a> {
             }
 
             if self.aff.check_compound_replacement {
-                unimplemented!("see CHECKCOMPOUNDREP part of is_bad_compount");
+                for candidate in self.aff.replacements(&format!("{left}{right}")) {
+                    // TODO: add has_affix_form to make this and the above eager
+                    if !self
+                        .affix_forms(
+                            &candidate,
+                            capitalization,
+                            &Default::default(),
+                            &Default::default(),
+                            &Default::default(),
+                            None,
+                            false,
+                        )
+                        .is_empty()
+                    {
+                        return true;
+                    }
+                }
             }
 
             if self.aff.check_compound_triple {
