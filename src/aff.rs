@@ -55,16 +55,15 @@ pub(crate) struct Aff {
     /// detection.
     /// From the KEY command.
     pub key: String,
-    /// A list of characters to try with earlier characters being more probably
+    /// A list of characters to try with earlier characters being more probable
     /// than later characters.
     /// From the TRY command.
     pub try_chars: String,
-    /// Table of replacaements for common spelling mistakes.
+    /// Table of replacements for common spelling mistakes.
     /// From the REP command.
     pub replacements: Vec<ReplacementPattern>,
     /// Sets of similar characters to try when suggesting corrections.
     /// For example `aáã`.
-    /// using paretheses.
     /// From the MAP command.
     pub _map_chars: Vec<HashSet<String>>,
     /// A toggle that controls whether split words should be suggested.
