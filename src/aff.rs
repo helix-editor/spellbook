@@ -9,6 +9,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
     marker::PhantomData,
+    num::TryFromIntError,
     str::FromStr,
     sync::Arc,
 };
@@ -473,6 +474,7 @@ pub enum ParseFlagError {
     NonAscii(char),
     MissingSecondChar(char),
     ParseIntError(std::num::ParseIntError),
+    TryFromIntError(TryFromIntError),
     DuplicateComma,
 }
 
@@ -484,8 +486,15 @@ impl Display for ParseFlagError {
                 write!(f, "expected two chars, {} is missing its second", ch)
             }
             ParseFlagError::ParseIntError(err) => err.fmt(f),
+            ParseFlagError::TryFromIntError(err) => err.fmt(f),
             ParseFlagError::DuplicateComma => write!(f, "unexpected extra comma"),
         }
+    }
+}
+
+impl From<TryFromIntError> for ParseFlagError {
+    fn from(err: TryFromIntError) -> Self {
+        Self::TryFromIntError(err)
     }
 }
 
@@ -499,7 +508,7 @@ impl FlagType {
                 let mut chars = input.chars();
                 let ch = chars.next().expect("asserted to be non-empty above");
                 if ch.is_ascii() {
-                    Ok(ch as Flag)
+                    Ok(Flag::try_from(ch as u32)?)
                 } else {
                     Err(NonAscii(ch))
                 }
@@ -518,16 +527,18 @@ impl FlagType {
                     return Err(NonAscii(c2));
                 }
 
-                Ok(u16::from_ne_bytes([c1 as u8, c2 as u8]) as Flag)
+                Ok(Flag::try_from(
+                    u16::from_ne_bytes([c1 as u8, c2 as u8]) as u32
+                )?)
             }
             Self::Numeric => {
-                let number = input.parse::<u16>().map_err(ParseIntError)?;
-                Ok(number as Flag)
+                let number = input.parse::<u16>().map_err(ParseIntError)? as u32;
+                Ok(number.try_into()?)
             }
             Self::Utf8 => {
                 let mut chars = input.chars();
                 let ch = chars.next().expect("asserted to be non-empty above");
-                Ok(ch as Flag)
+                Ok(Flag::try_from(ch as u32)?)
             }
         }
     }
@@ -536,12 +547,12 @@ impl FlagType {
         match self {
             Self::Short => {
                 if ch.is_ascii() {
-                    Ok(ch as Flag)
+                    Ok(Flag::try_from(ch as u32)?)
                 } else {
                     Err(ParseFlagError::NonAscii(ch))
                 }
             }
-            Self::Utf8 => Ok(ch as Flag),
+            Self::Utf8 => Ok(Flag::try_from(ch as u32)?),
             _ => unreachable!("parse_flag_from_char only supports short or UTF8 flag types"),
         }
     }
@@ -560,7 +571,9 @@ impl FlagType {
                         Some(ch) => ch,
                         None => return Err(MissingSecondChar(c1)),
                     };
-                    flags.insert(u16::from_ne_bytes([c1 as u8, c2 as u8]) as Flag);
+                    flags.insert(Flag::try_from(
+                        u16::from_ne_bytes([c1 as u8, c2 as u8]) as u32
+                    )?);
                 }
                 Ok(flags)
             }
@@ -576,7 +589,7 @@ impl FlagType {
                     } else if ch == ',' {
                         separated = true;
                         let n = number.parse::<u16>().map_err(ParseIntError)?;
-                        flags.insert(n as Flag);
+                        flags.insert(Flag::try_from(n as u32)?);
                     }
                 }
                 Ok(flags)
@@ -589,11 +602,6 @@ impl FlagType {
             }
         }
     }
-
-    // #[cfg(test)]
-    // pub(crate) fn parse_flags_from_str(&self, input: &str) -> Result<FlagSet, ParseFlagError> {
-    //     self.parse_flags_from_chars(input.chars())
-    // }
 }
 
 #[derive(Debug, Default)]

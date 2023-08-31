@@ -41,7 +41,7 @@ impl Dictionary {
 }
 
 /// Internal compressed representation of a flag.
-pub(crate) type Flag = u32;
+pub(crate) type Flag = std::num::NonZeroU32;
 
 /// The set of all flags on a word.
 /// Internally this is stored as an ordered set of flags backed
