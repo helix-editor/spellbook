@@ -7,6 +7,8 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
+pub(crate) mod aff;
+
 /// Compressed representation of a Flag.
 ///
 /// Flags are used as attributes about words. For example a flag might mark a word as forbidden,
