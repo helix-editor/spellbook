@@ -2,6 +2,10 @@
 
 // TODO: remove.
 #![allow(dead_code)]
+#![no_std]
+
+extern crate alloc;
+use alloc::vec::Vec;
 
 /// Compressed representation of a Flag.
 ///
@@ -31,3 +35,26 @@
 ///
 /// Hunspell uses an `unsigned short` for flags while Nuspell uses a `char16_t`.
 pub(crate) type Flag = core::num::NonZeroU16;
+
+/// A collection of flags belonging to a word.
+///
+/// Nuspell represents this as a sorted `std::basic_string<char16_t>` (`char16_t` being the
+/// representation) for flags. Hunspell uses a sorted `unsigned short*` and searches it via
+/// `std::binary_search`. We represent this in Spellbook with a sorted `Vec`.
+#[derive(Default)]
+pub(crate) struct FlagSet {
+    inner: Vec<Flag>,
+}
+
+impl FlagSet {
+    pub const fn new() -> Self {
+        Self { inner: Vec::new() }
+    }
+
+    pub fn from_iter<I: Iterator<Item = Flag>>(iter: I) -> Self {
+        let mut inner: Vec<_> = iter.collect();
+        inner.sort_unstable();
+        inner.dedup();
+        Self { inner }
+    }
+}
