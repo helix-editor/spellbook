@@ -9,3 +9,5 @@ rust-version = "1.63"
 
 [dependencies]
 hashbrown = { version = "0.14", default-features = false, features = ["raw"] }
+# TODO: move ahash to a dev dependency and allow any hasher?
+ahash = { version = "0.8", default-features = false }

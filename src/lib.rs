@@ -5,7 +5,7 @@
 #![no_std]
 
 extern crate alloc;
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 
 pub(crate) mod aff;
 mod hash_multi_map;
@@ -61,3 +61,5 @@ impl FlagSet {
         Self { inner }
     }
 }
+
+pub(crate) type WordList = hash_multi_map::HashMultiMap<String, FlagSet, ahash::RandomState>;

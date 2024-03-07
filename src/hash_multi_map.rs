@@ -184,3 +184,25 @@ impl<'a, K: Eq, V> Iterator for GetAllIter<'a, K, V> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::alloc::{vec, vec::Vec};
+
+    use super::*;
+
+    #[test]
+    fn insert_and_get_duplicate_keys() {
+        let mut map = HashMultiMap::with_hasher(ahash::RandomState::new());
+        map.insert(1, 1);
+        map.insert(5, 5);
+        assert!(map.len() == 2);
+        map.insert(1, 2);
+        assert!(map.len() == 3);
+        assert!(map.get(&5) == Some(&5));
+
+        let mut vals: Vec<_> = map.get_all(&1).copied().collect();
+        vals.sort_unstable();
+        assert_eq!(vals, vec![1, 2]);
+    }
+}
