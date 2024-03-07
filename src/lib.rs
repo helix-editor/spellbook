@@ -8,6 +8,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub(crate) mod aff;
+mod hash_multi_map;
 
 /// Compressed representation of a Flag.
 ///

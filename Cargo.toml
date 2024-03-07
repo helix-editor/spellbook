@@ -5,6 +5,7 @@ version = "0.1.0"
 authors = ["Michael Davis <mcarsondavis@gmail.com>"]
 edition = "2021"
 license = "MPL-2.0"
-rust-version = "1.60"
+rust-version = "1.63"
 
 [dependencies]
+hashbrown = { version = "0.14", default-features = false, features = ["raw"] }
