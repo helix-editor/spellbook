@@ -1,4 +1,12 @@
-use crate::alloc::string::{String, ToString};
+use crate::{
+    alloc::{
+        borrow::Cow,
+        string::{String, ToString},
+    },
+    Flag, FlagSet,
+};
+
+use core::marker::PhantomData;
 
 /// The representation of a flag in a `.dic` or `.aff` file.
 ///
@@ -161,6 +169,86 @@ impl core::str::FromStr for Condition {
             pattern: String::from(s),
             chars,
         })
+    }
+}
+
+/// Internal container type for a prefix or suffix.
+pub(crate) struct Affix<K> {
+    /// The flag that words may use to reference this affix.
+    pub flag: Flag,
+    /// Whether the affix is compatible with the opposite affix.
+    /// For example a word that has both a prefix and a suffix, both the prefix
+    /// and suffix should have `crossproduct: true`.
+    pub crossproduct: bool,
+    /// What is stripped from the stem when the affix is applied.
+    pub strip: String,
+    /// What should be added when the affix is applied.
+    pub add: String,
+    /// Condition that the stem should be checked against to query if the
+    /// affix is relevant.
+    pub condition: Option<Condition>,
+    /// Flags the affix has itself.
+    pub flags: FlagSet,
+    phantom_data: PhantomData<K>,
+}
+impl<K> Affix<K> {
+    pub fn new(
+        flag: Flag,
+        crossproduct: bool,
+        strip: &str,
+        add: String,
+        condition: Option<&str>,
+        flags: FlagSet,
+    ) -> Result<Self, ConditionError> {
+        let condition = condition.map(str::parse).transpose()?;
+
+        Ok(Self {
+            flag,
+            crossproduct,
+            strip: strip.to_string(),
+            add,
+            flags,
+            condition,
+            phantom_data: PhantomData,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Pfx;
+#[derive(Debug)]
+pub(crate) struct Sfx;
+
+/// Rules for replacing characters at the beginning of a stem.
+pub(crate) type Prefix = Affix<Pfx>;
+/// Rules for replacing characters at the end of a stem.
+pub(crate) type Suffix = Affix<Sfx>;
+
+impl Suffix {
+    /// Remove the `add` and add the `strip`
+    pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        if word.ends_with(&self.add) {
+            let mut stem = word[..(word.len() - self.add.len())].to_string();
+            stem.push_str(&self.strip);
+            Cow::Owned(stem)
+        } else {
+            Cow::Borrowed(word)
+        }
+    }
+
+    // check_condition
+}
+
+impl Prefix {
+    /// Remove the `add` and add the `strip`
+    pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        if word.starts_with(&self.add) {
+            let mut stem = self.strip.clone();
+            stem.push_str(&word[self.add.len()..]);
+            Cow::Owned(stem)
+        } else {
+            Cow::Borrowed(word)
+        }
     }
 }
 
