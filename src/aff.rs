@@ -70,12 +70,64 @@ pub(crate) struct Condition {
     ///
     /// The condition string is not transformed or compiled into a different input. We'll iterate
     /// over it directly to attempt to match the pattern.
+    ///
+    /// This string is non-empty.
     pattern: String,
     /// The number of `char`s that the pattern describes.
     ///
     /// `Condition` is such a small subset of regex that we can tell only from a linear scan of
     /// the input how many characters we will attempt to match.
     chars: usize,
+}
+
+impl Condition {
+    pub fn matches<I: Iterator<Item = char>>(&self, input: I) -> bool {
+        let mut input = input.peekable();
+        let mut pattern = self.pattern.chars().peekable();
+
+        loop {
+            match (pattern.next(), input.next()) {
+                // If we're at the end of both inputs, this is a match.
+                (None, None) => return true,
+                // Inputs of different lengths are not a match.
+                (Some(_), None) | (None, Some(_)) => return false,
+                // Wildcard: skip the input character.
+                (Some('.'), Some(_)) => (),
+                // Character classes
+                (Some('['), Some(input_ch)) => {
+                    let mut found = false;
+                    let negative = pattern.next_if_eq(&'^').is_some();
+
+                    for ch in pattern.by_ref() {
+                        if ch == ']' {
+                            break;
+                        }
+
+                        if ch == input_ch {
+                            found = true;
+                        }
+                    }
+
+                    // If it's a positive character class and the character isn't a member,
+                    // this is not a match.
+                    if !negative && !found {
+                        return false;
+                    }
+                    // If it's a negative character class and the character _is_ a member,
+                    // this is not a match.
+                    if negative && found {
+                        return false;
+                    }
+                }
+                // Literals: the pattern character must equal the input character.
+                (Some(pattern_ch), Some(input_ch)) => {
+                    if pattern_ch != input_ch {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// An error arising from validating a [`Condition`].
@@ -186,7 +238,7 @@ pub(crate) struct Affix<K> {
     pub add: String,
     /// Condition that the stem should be checked against to query if the
     /// affix is relevant.
-    pub condition: Option<Condition>,
+    condition: Option<Condition>,
     /// Flags the affix has itself.
     pub flags: FlagSet,
     phantom_data: PhantomData<K>,
@@ -236,7 +288,19 @@ impl Suffix {
         }
     }
 
-    // check_condition
+    pub fn condition_matches(&self, word: &str) -> bool {
+        let condition = match &self.condition {
+            Some(condition) => condition,
+            None => return false,
+        };
+
+        // Length in bytes is greater than or equal to length in chars.
+        if word.len() < condition.chars {
+            return false;
+        }
+
+        condition.matches(word.chars().rev())
+    }
 }
 
 impl Prefix {
@@ -249,6 +313,20 @@ impl Prefix {
         } else {
             Cow::Borrowed(word)
         }
+    }
+
+    pub fn condition_matches(&self, word: &str) -> bool {
+        let condition = match &self.condition {
+            Some(condition) => condition,
+            None => return false,
+        };
+
+        // Length in bytes is greater than or equal to length in chars.
+        if word.len() < condition.chars {
+            return false;
+        }
+
+        condition.matches(word.chars())
     }
 }
 
@@ -298,5 +376,28 @@ mod test {
             }),
             "foo[bar]baz".parse()
         );
+    }
+
+    #[test]
+    fn condition_matches() {
+        // No special characters
+        assert!("foo".parse::<Condition>().unwrap().matches("foo".chars()));
+
+        // Fast lane: the input is shorter (bytes) than the number of characters in the pattern.
+        assert!(!"foo".parse::<Condition>().unwrap().matches("fo".chars()));
+
+        // Positive character class
+        let condition = "xx[abc]x".parse::<Condition>().unwrap();
+        assert!(condition.matches("xxax".chars()));
+        assert!(condition.matches("xxbx".chars()));
+        assert!(condition.matches("xxcx".chars()));
+        assert!(!condition.matches("xxdx".chars()));
+
+        // Negative character class
+        let condition = "xx[^abc]x".parse::<Condition>().unwrap();
+        assert!(!condition.matches("xxax".chars()));
+        assert!(!condition.matches("xxbx".chars()));
+        assert!(!condition.matches("xxcx".chars()));
+        assert!(condition.matches("xxdx".chars()));
     }
 }
