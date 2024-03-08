@@ -55,3 +55,160 @@ impl core::fmt::Display for UnknownFlagTypeError {
         )
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Condition {
+    /// The input pattern.
+    ///
+    /// The condition string is not transformed or compiled into a different input. We'll iterate
+    /// over it directly to attempt to match the pattern.
+    pattern: String,
+    /// The number of `char`s that the pattern describes.
+    ///
+    /// `Condition` is such a small subset of regex that we can tell only from a linear scan of
+    /// the input how many characters we will attempt to match.
+    chars: usize,
+}
+
+/// An error arising from validating a [`Condition`].
+///
+/// Conditions are a subset of regular expressions that include positive and negative character
+/// classes and the wildcard character. A condition might fail validation if the character classes
+/// are open (for example `foo]` or `foo[bar`) or if the condition has an empty character class,
+/// which is not valid (`[]`).
+// Hands where I can see 'em, clippy. The only time I ever went down was when a machine was easing
+// at the wrong time.
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, PartialEq, Eq)]
+pub enum ConditionError {
+    /// The pattern contained an opening `[` character which did not match a closing `]`
+    /// character.
+    UnopenedCharacterClass,
+    /// The pattern contained a closing `]` character which did not match an opening `[`
+    /// character.
+    UnclosedCharacterClass,
+    /// The pattern contained the literal `[]` which is not a valid character class.
+    EmptyCharacterClass,
+}
+
+impl core::fmt::Display for ConditionError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::UnopenedCharacterClass => {
+                f.write_str("closing bracket has no matching opening bracket")
+            }
+            Self::UnclosedCharacterClass => {
+                f.write_str("opening bracket has no matching closing bracket")
+            }
+            Self::EmptyCharacterClass => f.write_str("empty bracket expression"),
+        }
+    }
+}
+
+impl core::str::FromStr for Condition {
+    type Err = ConditionError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut scan = s;
+        let mut chars = 0;
+
+        // Loop through the characters. We can't just iterate through the `.chars()` because we'll
+        // be jumping ahead with the help of `find`.
+        loop {
+            // Find a bracket. Brackets signal character classes.
+            let bracket_index = match scan.find(&['[', ']']) {
+                Some(index) => index,
+                None => {
+                    // If there isn't one, accept the rest of the string.
+                    chars += scan.chars().count();
+                    break;
+                }
+            };
+            // If there is one, scan ahead to it.
+            chars += scan[..bracket_index].chars().count();
+            scan = &scan[bracket_index..];
+            match scan
+                .chars()
+                .next()
+                .expect("scan can't be empty if the pattern matched")
+            {
+                ']' => return Err(Self::Err::UnopenedCharacterClass),
+                '[' => {
+                    scan = &scan[1..];
+                    match scan.chars().next() {
+                        None => return Err(Self::Err::UnclosedCharacterClass),
+                        Some('^') => scan = &scan[1..],
+                        _ => (),
+                    }
+
+                    match scan.find(']') {
+                        None => return Err(Self::Err::UnclosedCharacterClass),
+                        Some(0) => return Err(Self::Err::EmptyCharacterClass),
+                        Some(bracket_index) => {
+                            // Only count the character class as one character.
+                            chars += 1;
+                            scan = &scan[bracket_index + 1..];
+                            continue;
+                        }
+                    }
+                }
+                // This is impossible if find `find` found `[` or `]`.
+                _ => unreachable!(),
+            }
+        }
+
+        Ok(Self {
+            pattern: String::from(s),
+            chars,
+        })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn condition_parse() {
+        assert_eq!(
+            Err(ConditionError::EmptyCharacterClass),
+            "[]".parse::<Condition>()
+        );
+        assert_eq!(
+            Err(ConditionError::UnclosedCharacterClass),
+            "[foo".parse::<Condition>()
+        );
+        assert_eq!(
+            Err(ConditionError::UnopenedCharacterClass),
+            "foo]".parse::<Condition>()
+        );
+        assert_eq!(
+            Ok(Condition {
+                pattern: "foo".to_string(),
+                chars: 3
+            }),
+            "foo".parse()
+        );
+        assert_eq!(
+            Ok(Condition {
+                pattern: "foo[bar]".to_string(),
+                chars: 4
+            }),
+            "foo[bar]".parse()
+        );
+        assert_eq!(
+            Ok(Condition {
+                pattern: "[foo]bar".to_string(),
+                chars: 4
+            }),
+            "[foo]bar".parse()
+        );
+        assert_eq!(
+            Ok(Condition {
+                pattern: "foo[bar]baz".to_string(),
+                chars: 7
+            }),
+            "foo[bar]baz".parse()
+        );
+    }
+}
