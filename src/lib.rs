@@ -5,6 +5,8 @@
 #![no_std]
 
 extern crate alloc;
+use core::cmp::Ordering;
+
 use alloc::{string::String, vec::Vec};
 
 pub(crate) mod aff;
@@ -44,7 +46,7 @@ pub(crate) type Flag = core::num::NonZeroU16;
 /// Nuspell represents this as a sorted `std::basic_string<char16_t>` (`char16_t` being the
 /// representation) for flags. Hunspell uses a sorted `unsigned short*` and searches it via
 /// `std::binary_search`. We represent this in Spellbook with a sorted `Vec`.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 pub(crate) struct FlagSet {
     inner: Vec<Flag>,
 }
@@ -60,6 +62,186 @@ impl FlagSet {
         inner.dedup();
         Self { inner }
     }
+
+    pub fn from_slice(slice: &[Flag]) -> Self {
+        let mut inner = Vec::from(slice);
+        inner.sort_unstable();
+        inner.dedup();
+        Self { inner }
+    }
+
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = &Flag> {
+        self.inner.iter()
+    }
+
+    #[inline]
+    pub fn into_iter(self) -> impl IntoIterator<Item = Flag> {
+        self.inner.into_iter()
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Returns `true` if both sets have at least one element in common.
+    pub fn has_intersection(&self, other: &Self) -> bool {
+        let mut xs = self.iter().peekable();
+        let mut ys = other.iter().peekable();
+
+        loop {
+            match xs.peek().zip(ys.peek()) {
+                Some((x, y)) => match x.cmp(y) {
+                    Ordering::Equal => return true,
+                    Ordering::Greater => {
+                        ys.next();
+                    }
+                    Ordering::Less => {
+                        xs.next();
+                    }
+                },
+                _ => return false,
+            }
+        }
+    }
+
+    pub fn intersection(&self, other: &Self) -> Self {
+        let mut intersection = Vec::new();
+        let mut xs = self.iter().peekable();
+        let mut ys = other.iter().peekable();
+
+        while let Some((x, y)) = xs.peek().zip(ys.peek()) {
+            match x.cmp(y) {
+                Ordering::Equal => {
+                    intersection.push(**x);
+                    xs.next();
+                    ys.next();
+                }
+                Ordering::Greater => {
+                    ys.next();
+                }
+                Ordering::Less => {
+                    xs.next();
+                }
+            }
+        }
+
+        Self {
+            inner: intersection,
+        }
+    }
+
+    pub fn union(&self, other: &Self) -> Self {
+        let mut union = Vec::new();
+        let mut xs = self.iter().peekable();
+        let mut ys = other.iter().peekable();
+
+        loop {
+            match (xs.peek(), ys.peek()) {
+                (Some(x), Some(y)) => match x.cmp(y) {
+                    Ordering::Equal => {
+                        union.push(**x);
+                        xs.next();
+                        ys.next();
+                    }
+                    Ordering::Greater => {
+                        union.push(**y);
+                        ys.next();
+                    }
+                    Ordering::Less => {
+                        union.push(**x);
+                        xs.next();
+                    }
+                },
+                (Some(_), None) => {
+                    union.extend(xs.copied());
+                    break;
+                }
+                (None, Some(_)) => {
+                    union.extend(ys.copied());
+                    break;
+                }
+                (None, None) => break,
+            }
+        }
+
+        Self { inner: union }
+    }
+}
+
+impl core::fmt::Debug for FlagSet {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!("flagset!{:?}", self.inner))
+    }
 }
 
 pub(crate) type WordList = hash_multi_map::HashMultiMap<String, FlagSet, ahash::RandomState>;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::alloc::vec;
+
+    macro_rules! flagset {
+        ( $( $x:expr ),* ) => {
+            {
+                FlagSet::from_iter( [ $( Flag::new( $x ).unwrap() ),* ].into_iter() )
+            }
+        }
+    }
+
+    #[test]
+    fn flagset_from_iter() {
+        // Items are deduplicated and sorted.
+        assert_eq!(
+            vec![1, 2, 3],
+            flagset![1, 3, 2, 1]
+                .iter()
+                .map(|flag| flag.get())
+                .collect::<Vec<_>>()
+        )
+    }
+
+    #[test]
+    fn flagset_has_intersection() {
+        assert!(flagset![1, 2, 3].has_intersection(&flagset![1]));
+        assert!(flagset![1, 2, 3].has_intersection(&flagset![2]));
+        assert!(flagset![1, 2, 3].has_intersection(&flagset![3]));
+        assert!(flagset![2].has_intersection(&flagset![1, 2, 3]));
+
+        assert!(!flagset![1, 2, 3].has_intersection(&flagset![4, 5, 6]));
+        assert!(!flagset![4, 5, 6].has_intersection(&flagset![1, 2, 3]));
+
+        assert!(!flagset![1, 3, 5].has_intersection(&flagset![2, 4, 6]));
+
+        assert!(!flagset![].has_intersection(&flagset![]));
+    }
+
+    #[test]
+    fn flagset_intersection() {
+        assert_eq!(flagset![], flagset![].intersection(&flagset![]));
+        assert_eq!(flagset![], flagset![1, 3].intersection(&flagset![2]));
+        assert_eq!(flagset![], flagset![2].intersection(&flagset![1, 3]));
+        assert_eq!(flagset![2], flagset![1, 2, 3].intersection(&flagset![2]));
+        assert_eq!(
+            flagset![1, 3],
+            flagset![1, 2, 3].intersection(&flagset![1, 3])
+        );
+        assert_eq!(
+            flagset![1, 2, 3],
+            flagset![1, 2, 3].intersection(&flagset![1, 2, 3])
+        );
+    }
+
+    #[test]
+    fn flagset_union() {
+        assert_eq!(flagset![], flagset![].union(&flagset![]));
+        assert_eq!(flagset![1, 2, 3], flagset![1, 3].union(&flagset![2]));
+        assert_eq!(flagset![1, 2, 3], flagset![2].union(&flagset![1, 3]));
+        assert_eq!(
+            flagset![1, 2, 3],
+            flagset![1, 2, 3].union(&flagset![1, 2, 3])
+        );
+    }
+}
