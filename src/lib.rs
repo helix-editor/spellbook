@@ -51,23 +51,18 @@ pub(crate) struct FlagSet {
     inner: Vec<Flag>,
 }
 
+impl FromIterator<Flag> for FlagSet {
+    fn from_iter<T: IntoIterator<Item = Flag>>(iter: T) -> Self {
+        let mut inner: Vec<_> = iter.into_iter().collect();
+        inner.sort_unstable();
+        inner.dedup();
+        Self { inner }
+    }
+}
+
 impl FlagSet {
     pub const fn new() -> Self {
         Self { inner: Vec::new() }
-    }
-
-    pub fn from_iter<I: Iterator<Item = Flag>>(iter: I) -> Self {
-        let mut inner: Vec<_> = iter.collect();
-        inner.sort_unstable();
-        inner.dedup();
-        Self { inner }
-    }
-
-    pub fn from_slice(slice: &[Flag]) -> Self {
-        let mut inner = Vec::from(slice);
-        inner.sort_unstable();
-        inner.dedup();
-        Self { inner }
     }
 
     #[inline]
