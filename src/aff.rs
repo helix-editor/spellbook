@@ -2,6 +2,7 @@ use crate::{
     alloc::{
         borrow::Cow,
         string::{String, ToString},
+        vec::Vec,
     },
     Flag, FlagSet,
 };
@@ -327,6 +328,73 @@ impl Prefix {
         }
 
         condition.matches(word.chars())
+    }
+}
+
+/// A collection of patterns used to break words into smaller words.
+///
+/// This is internally represented with a single `table` which is partitioned into three sections:
+/// one for patterns that apply at the beginning of words, one for patterns that can apply
+/// anywhere in the middle of a word, and one for patterns that must apply to the end of a word.
+///
+/// TODO: document how breaks are used and what the patterns mean.
+pub(crate) struct BreakTable {
+    table: Vec<String>,
+    start_word_breaks_last_idx: usize,
+    // Nuspell keeps the entries partitioned in the order "start, end, middle." I've re-arranged
+    // this to be "start, middle, end" since I think it's more natural.
+    middle_word_breaks_last_idx: usize,
+}
+
+impl From<Vec<&str>> for BreakTable {
+    fn from(breaks: Vec<&str>) -> Self {
+        let mut start = Vec::new();
+        let mut middle = Vec::new();
+        let mut end = Vec::new();
+
+        for b in breaks.into_iter() {
+            if b.is_empty() {
+                // TODO: ensure this in the parsing code.
+                unreachable!("break patterns must not be empty");
+            }
+
+            if let Some(b) = b.strip_prefix('^') {
+                start.push(b.to_string());
+            } else if let Some(b) = b.strip_suffix('$') {
+                end.push(b.to_string());
+            } else {
+                middle.push(b.to_string());
+            }
+        }
+
+        let mut table = start;
+        let start_word_breaks_last_idx = table.len();
+        table.append(&mut middle);
+        let middle_word_breaks_last_idx = table.len();
+        table.append(&mut end);
+
+        Self {
+            table,
+            start_word_breaks_last_idx,
+            middle_word_breaks_last_idx,
+        }
+    }
+}
+
+impl BreakTable {
+    #[inline]
+    pub fn start_word_breaks(&self) -> &[String] {
+        &self.table[..self.start_word_breaks_last_idx]
+    }
+
+    #[inline]
+    pub fn middle_word_breaks(&self) -> &[String] {
+        &self.table[self.start_word_breaks_last_idx..self.middle_word_breaks_last_idx]
+    }
+
+    #[inline]
+    pub fn end_word_breaks(&self) -> &[String] {
+        &self.table[self.middle_word_breaks_last_idx..]
     }
 }
 
