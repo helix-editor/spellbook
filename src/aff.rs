@@ -398,6 +398,49 @@ impl BreakTable {
     }
 }
 
+pub(crate) enum CompoundRuleElement {
+    Flag(Flag),
+    ZeroOrOne,
+    ZeroOrMore,
+}
+
+// Nuspell uses a `std::u16string` to represent this type which is quite clever. Nuspell can
+// treat `?` and `*` like regular flags and therefore only use 2 bytes per element, since flags
+// are all `char16_t`. The enum representation above takes 4 bytes per element.
+//
+// TODO: consider special-casing `*` and `?` when parsing. Instead of using an enum, encode them
+// as `Flag`s. This will reduce the clarity of the code but save half of the space of each
+// CompoundRule.
+//
+// Also look at real dictionaries and see how many compound rules there are. This may not be
+// worth the reduction in clarity.
+type CompoundRule = Vec<CompoundRuleElement>;
+
+/// A set of rules that can be used to detect whether constructed compounds are allowed.
+///
+/// TODO: talk about wildcards, show a compounding example.
+pub(crate) struct CompoundRuleTable {
+    rules: Vec<CompoundRule>,
+    all_flags: FlagSet,
+}
+
+impl FromIterator<CompoundRule> for CompoundRuleTable {
+    fn from_iter<T: IntoIterator<Item = CompoundRule>>(iter: T) -> Self {
+        let rules: Vec<_> = iter.into_iter().collect();
+
+        let all_flags = rules
+            .iter()
+            .flatten()
+            .filter_map(|el| match el {
+                CompoundRuleElement::Flag(flag) => Some(*flag),
+                _ => None,
+            })
+            .collect();
+
+        Self { rules, all_flags }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
