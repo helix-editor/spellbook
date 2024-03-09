@@ -177,7 +177,7 @@ impl core::str::FromStr for Condition {
         // be jumping ahead with the help of `find`.
         loop {
             // Find a bracket. Brackets signal character classes.
-            let bracket_index = match scan.find(&['[', ']']) {
+            let bracket_index = match scan.find(['[', ']']) {
                 Some(index) => index,
                 None => {
                     // If there isn't one, accept the rest of the string.
