@@ -163,6 +163,12 @@ impl FlagSet {
 
         Self { inner: union }
     }
+
+    /// Checks whether the given flag is contained in the flagset.
+    #[inline]
+    pub fn contains(&self, flag: &Flag) -> bool {
+        self.inner.binary_search(flag).is_ok()
+    }
 }
 
 impl core::fmt::Debug for FlagSet {
@@ -177,6 +183,12 @@ pub(crate) type WordList = hash_multi_map::HashMultiMap<String, FlagSet, ahash::
 mod test {
     use super::*;
     use crate::alloc::vec;
+
+    macro_rules! flag {
+        ( $x:expr ) => {{
+            Flag::new($x).unwrap()
+        }};
+    }
 
     macro_rules! flagset {
         ( $( $x:expr ),* ) => {
@@ -238,5 +250,13 @@ mod test {
             flagset![1, 2, 3],
             flagset![1, 2, 3].union(&flagset![1, 2, 3])
         );
+    }
+
+    #[test]
+    fn flagset_contains() {
+        assert!(flagset![1, 2, 3].contains(&flag!(1)));
+        assert!(flagset![1, 2, 3].contains(&flag!(2)));
+        assert!(flagset![1, 2, 3].contains(&flag!(3)));
+        assert!(!flagset![1, 2, 3].contains(&flag!(4)));
     }
 }
