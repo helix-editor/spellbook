@@ -441,6 +441,49 @@ impl FromIterator<CompoundRule> for CompoundRuleTable {
     }
 }
 
+/// Storage for two `String`s within the allocation of one `String`.
+pub(crate) struct StringPair {
+    inner: String,
+    /// The `.len()` of the first string: the index of the partition between the first and
+    /// second string.
+    partition: usize,
+}
+
+impl StringPair {
+    pub fn new(left: &str, right: &str) -> Self {
+        let mut inner = left.to_string();
+        let partition = inner.len();
+        inner.push_str(right);
+
+        Self { inner, partition }
+    }
+
+    #[inline]
+    pub fn left(&self) -> &str {
+        &self.inner[..self.partition]
+    }
+
+    #[inline]
+    pub fn right(&self) -> &str {
+        &self.inner[self.partition..]
+    }
+
+    /// Get the partition point of the two strings. This is the same as the `.len()` of the
+    /// [`left`] string.
+    #[inline]
+    pub fn left_len(&self) -> usize {
+        self.partition
+    }
+}
+
+pub(crate) struct CompoundPattern {
+    begin_end_chars: StringPair,
+    replacement: Option<String>,
+    first_word_flag: Option<Flag>,
+    second_word_flag: Option<Flag>,
+    match_first_only_unaffixed_or_zero_affixed: bool,
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -510,5 +553,18 @@ mod test {
         assert!(!condition.matches("xxbx".chars()));
         assert!(!condition.matches("xxcx".chars()));
         assert!(condition.matches("xxdx".chars()));
+    }
+
+    #[test]
+    fn string_pair() {
+        let pair = StringPair::new("foo", "bar");
+        assert_eq!(pair.left(), "foo");
+        assert_eq!(pair.right(), "bar");
+        assert_eq!(pair.left_len(), 3);
+
+        let pair = StringPair::new("", "");
+        assert_eq!(pair.left(), "");
+        assert_eq!(pair.right(), "");
+        assert_eq!(pair.left_len(), 0);
     }
 }
