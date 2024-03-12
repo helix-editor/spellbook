@@ -164,6 +164,13 @@ impl FlagSet {
         Self { inner: union }
     }
 
+    // TODO: better name.
+    pub fn merge(&mut self, other: &Self) {
+        self.inner.extend(other.iter().copied());
+        self.inner.sort_unstable();
+        self.inner.dedup();
+    }
+
     /// Checks whether the given flag is contained in the flagset.
     #[inline]
     pub fn contains(&self, flag: &Flag) -> bool {

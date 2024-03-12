@@ -1,3 +1,5 @@
+use hashbrown::raw::{RawIterHash, RawTable};
+
 use crate::{
     alloc::{
         borrow::Cow,
@@ -7,7 +9,11 @@ use crate::{
     Flag, FlagSet,
 };
 
-use core::marker::PhantomData;
+use core::{
+    hash::{BuildHasher, Hash, Hasher},
+    marker::PhantomData,
+    str::Chars,
+};
 
 /// The representation of a flag in a `.dic` or `.aff` file.
 ///
@@ -82,8 +88,8 @@ pub(crate) struct Condition {
 }
 
 impl Condition {
-    pub fn matches<I: Iterator<Item = char>>(&self, input: I) -> bool {
-        let mut input = input.peekable();
+    pub fn matches(&self, input: &str) -> bool {
+        let mut input = input.chars().peekable();
         let mut pattern = self.pattern.chars().peekable();
 
         loop {
@@ -170,6 +176,7 @@ impl core::str::FromStr for Condition {
     type Err = ConditionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // TODO when parsing: treat `"."` as `None`.
         let mut scan = s;
         let mut chars = 0;
 
@@ -277,30 +284,25 @@ pub(crate) type Prefix = Affix<Pfx>;
 /// Rules for replacing characters at the end of a stem.
 pub(crate) type Suffix = Affix<Sfx>;
 
-impl Suffix {
-    /// Remove the `add` and add the `strip`
-    pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
-        if word.ends_with(&self.add) {
-            let mut stem = word[..(word.len() - self.add.len())].to_string();
-            stem.push_str(&self.strip);
-            Cow::Owned(stem)
-        } else {
-            Cow::Borrowed(word)
-        }
+pub(crate) trait AffixKind<'a> {
+    type Chars: Iterator<Item = char>;
+
+    fn chars(word: &'a str) -> Self::Chars;
+}
+
+impl<'a> AffixKind<'a> for Pfx {
+    type Chars = Chars<'a>;
+
+    fn chars(word: &'a str) -> Self::Chars {
+        word.chars()
     }
+}
 
-    pub fn condition_matches(&self, word: &str) -> bool {
-        let condition = match &self.condition {
-            Some(condition) => condition,
-            None => return false,
-        };
+impl<'a> AffixKind<'a> for Sfx {
+    type Chars = core::iter::Rev<Chars<'a>>;
 
-        // Length in bytes is greater than or equal to length in chars.
-        if word.len() < condition.chars {
-            return false;
-        }
-
-        condition.matches(word.chars().rev())
+    fn chars(word: &'a str) -> Self::Chars {
+        word.chars().rev()
     }
 }
 
@@ -319,7 +321,7 @@ impl Prefix {
     pub fn condition_matches(&self, word: &str) -> bool {
         let condition = match &self.condition {
             Some(condition) => condition,
-            None => return false,
+            None => return true,
         };
 
         // Length in bytes is greater than or equal to length in chars.
@@ -327,7 +329,148 @@ impl Prefix {
             return false;
         }
 
-        condition.matches(word.chars())
+        condition.matches(word)
+    }
+}
+
+impl Suffix {
+    /// Remove the `add` and add the `strip`
+    pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        if word.ends_with(&self.add) {
+            let mut stem = word[..(word.len() - self.add.len())].to_string();
+            stem.push_str(&self.strip);
+            Cow::Owned(stem)
+        } else {
+            Cow::Borrowed(word)
+        }
+    }
+
+    pub fn condition_matches(&self, word: &str) -> bool {
+        let condition = match &self.condition {
+            Some(condition) => condition,
+            None => return true,
+        };
+
+        // Length in bytes is greater than or equal to length in chars.
+        if word.len() < condition.chars {
+            return false;
+        }
+
+        let buffer = &mut [0; 4];
+        let (chars, bytes) =
+            word.chars()
+                .rev()
+                .take(condition.chars)
+                .fold((0, 0), |(chars, bytes), ch| {
+                    // TODO: convert to a u32 instead and check with bit math how many bytes
+                    // the code point takes.
+                    (chars + 1, bytes + ch.encode_utf8(buffer).len())
+                });
+
+        if chars < condition.chars {
+            return false;
+        }
+        condition.matches(&word[word.len() - bytes..])
+    }
+}
+
+pub(crate) struct AffixIndex<K, S: BuildHasher> {
+    empty: Vec<Affix<K>>,
+    table: RawTable<Affix<K>>,
+    build_hasher: S,
+    all_continuation_flags: FlagSet,
+}
+
+impl<'a, K, S> AffixIndex<K, S>
+where
+    K: AffixKind<'a>,
+    S: BuildHasher,
+{
+    pub fn insert(&mut self, affix: Affix<K>) {
+        self.all_continuation_flags.merge(&affix.flags);
+        if affix.add.is_empty() {
+            self.empty.push(affix);
+        } else {
+            let build_hasher = &self.build_hasher;
+            let hasher = move |affix: &Affix<K>| {
+                let mut state = build_hasher.build_hasher();
+                // TODO: something is very wrong about the AffixKind trait here.
+                let add = unsafe { core::mem::transmute::<&str, &'static str>(&affix.add) };
+                for ch in K::chars(add) {
+                    ch.hash(&mut state);
+                }
+                state.finish()
+            };
+            let hash = hasher(&affix);
+            self.table.insert(hash, affix, hasher);
+        }
+    }
+
+    /// Returns all affixes that match the search word.
+    ///
+    /// An affix matches the search word if its `add` field is a prefix of the search word (when
+    /// looking up prefixes) or a suffix of the search word (when looking up suffixes).
+    pub fn find(&'a self, search_word: &'a str) -> FindAffixesIter<'a, K, S::Hasher> {
+        FindAffixesIter {
+            empty: self.empty.iter(),
+            table: &self.table,
+            table_iter: None,
+            chars: K::chars(search_word),
+            hasher: self.build_hasher.build_hasher(),
+            visited_chars: Vec::new(),
+        }
+    }
+}
+
+pub(crate) struct FindAffixesIter<'a, K: AffixKind<'a>, H: Hasher> {
+    empty: core::slice::Iter<'a, Affix<K>>,
+    table: &'a RawTable<Affix<K>>,
+    table_iter: Option<RawIterHash<Affix<K>>>,
+    chars: K::Chars,
+    hasher: H,
+    visited_chars: Vec<char>,
+}
+
+impl<'a, K: AffixKind<'a>, H: Hasher> Iterator for FindAffixesIter<'a, K, H> {
+    type Item = &'a Affix<K>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // All empty affixes apply. Emit those first.
+        if let Some(next_empty) = self.empty.next() {
+            return Some(next_empty);
+        }
+
+        // Once we're out of empty affixes, lookup affixes with matching `add`s via the radix
+        // tree.
+        loop {
+            // If we have a search for the current input character, return all affixes matching
+            // the substring.
+            if let Some(mut iter) = self.table_iter.take() {
+                while let Some(next) = iter.next() {
+                    // SAFETY: the lifetime of the returned value is bound to the table.
+                    let affix = unsafe { next.as_ref() };
+
+                    if K::chars(&affix.add)
+                        .zip(self.visited_chars.iter())
+                        .all(|(ach, vch)| ach == *vch)
+                    {
+                        self.table_iter = Some(iter);
+                        return Some(affix);
+                    }
+                }
+            }
+
+            // Once that search is done, add the next character and start a new search into the
+            // trie.
+            let ch = self.chars.next()?;
+            ch.hash(&mut self.hasher);
+            let hash = self.hasher.finish();
+            self.visited_chars.push(ch);
+
+            // SAFETY: the lifetime of the returned value is bound to the table.
+            let iter = unsafe { self.table.iter_hash(hash) };
+            self.table_iter = Some(iter);
+        }
     }
 }
 
@@ -535,24 +678,24 @@ mod test {
     #[test]
     fn condition_matches() {
         // No special characters
-        assert!("foo".parse::<Condition>().unwrap().matches("foo".chars()));
+        assert!("foo".parse::<Condition>().unwrap().matches("foo"));
 
         // Fast lane: the input is shorter (bytes) than the number of characters in the pattern.
-        assert!(!"foo".parse::<Condition>().unwrap().matches("fo".chars()));
+        assert!(!"foo".parse::<Condition>().unwrap().matches("fo"));
 
         // Positive character class
         let condition = "xx[abc]x".parse::<Condition>().unwrap();
-        assert!(condition.matches("xxax".chars()));
-        assert!(condition.matches("xxbx".chars()));
-        assert!(condition.matches("xxcx".chars()));
-        assert!(!condition.matches("xxdx".chars()));
+        assert!(condition.matches("xxax"));
+        assert!(condition.matches("xxbx"));
+        assert!(condition.matches("xxcx"));
+        assert!(!condition.matches("xxdx"));
 
         // Negative character class
         let condition = "xx[^abc]x".parse::<Condition>().unwrap();
-        assert!(!condition.matches("xxax".chars()));
-        assert!(!condition.matches("xxbx".chars()));
-        assert!(!condition.matches("xxcx".chars()));
-        assert!(condition.matches("xxdx".chars()));
+        assert!(!condition.matches("xxax"));
+        assert!(!condition.matches("xxbx"));
+        assert!(!condition.matches("xxcx"));
+        assert!(condition.matches("xxdx"));
     }
 
     #[test]
