@@ -251,7 +251,8 @@ pub(crate) struct Affix<K> {
     pub flags: FlagSet,
     phantom_data: PhantomData<K>,
 }
-impl<K> Affix<K> {
+
+impl<K: AffixKind> Affix<K> {
     pub fn new(
         flag: Flag,
         crossproduct: bool,
@@ -272,6 +273,10 @@ impl<K> Affix<K> {
             phantom_data: PhantomData,
         })
     }
+
+    pub fn adding(&self) -> K::Chars<'_> {
+        K::chars(&self.add)
+    }
 }
 
 #[derive(Debug)]
@@ -284,24 +289,26 @@ pub(crate) type Prefix = Affix<Pfx>;
 /// Rules for replacing characters at the end of a stem.
 pub(crate) type Suffix = Affix<Sfx>;
 
-pub(crate) trait AffixKind<'a> {
-    type Chars: Iterator<Item = char>;
+pub(crate) trait AffixKind {
+    type Chars<'a>: Iterator<Item = char>
+    where
+        Self: 'a;
 
-    fn chars(word: &'a str) -> Self::Chars;
+    fn chars(word: &str) -> Self::Chars<'_>;
 }
 
-impl<'a> AffixKind<'a> for Pfx {
-    type Chars = Chars<'a>;
+impl AffixKind for Pfx {
+    type Chars<'a> = Chars<'a>;
 
-    fn chars(word: &'a str) -> Self::Chars {
+    fn chars(word: &str) -> Self::Chars<'_> {
         word.chars()
     }
 }
 
-impl<'a> AffixKind<'a> for Sfx {
-    type Chars = core::iter::Rev<Chars<'a>>;
+impl AffixKind for Sfx {
+    type Chars<'a> = core::iter::Rev<Chars<'a>>;
 
-    fn chars(word: &'a str) -> Self::Chars {
+    fn chars(word: &str) -> Self::Chars<'_> {
         word.chars().rev()
     }
 }
@@ -381,9 +388,9 @@ pub(crate) struct AffixIndex<K, S: BuildHasher> {
     all_continuation_flags: FlagSet,
 }
 
-impl<'a, K, S> AffixIndex<K, S>
+impl<K, S> AffixIndex<K, S>
 where
-    K: AffixKind<'a>,
+    K: AffixKind,
     S: BuildHasher,
 {
     pub fn insert(&mut self, affix: Affix<K>) {
@@ -394,9 +401,7 @@ where
             let build_hasher = &self.build_hasher;
             let hasher = move |affix: &Affix<K>| {
                 let mut state = build_hasher.build_hasher();
-                // TODO: something is very wrong about the AffixKind trait here.
-                let add = unsafe { core::mem::transmute::<&str, &'static str>(&affix.add) };
-                for ch in K::chars(add) {
+                for ch in affix.adding() {
                     ch.hash(&mut state);
                 }
                 state.finish()
@@ -410,7 +415,7 @@ where
     ///
     /// An affix matches the search word if its `add` field is a prefix of the search word (when
     /// looking up prefixes) or a suffix of the search word (when looking up suffixes).
-    pub fn find(&'a self, search_word: &'a str) -> FindAffixesIter<'a, K, S::Hasher> {
+    pub fn find<'a>(&'a self, search_word: &'a str) -> FindAffixesIter<'a, K, S::Hasher> {
         FindAffixesIter {
             empty: self.empty.iter(),
             table: &self.table,
@@ -422,16 +427,16 @@ where
     }
 }
 
-pub(crate) struct FindAffixesIter<'a, K: AffixKind<'a>, H: Hasher> {
+pub(crate) struct FindAffixesIter<'a, K: AffixKind, H: Hasher> {
     empty: core::slice::Iter<'a, Affix<K>>,
     table: &'a RawTable<Affix<K>>,
     table_iter: Option<RawIterHash<Affix<K>>>,
-    chars: K::Chars,
+    chars: K::Chars<'a>,
     hasher: H,
     visited_chars: Vec<char>,
 }
 
-impl<'a, K: AffixKind<'a>, H: Hasher> Iterator for FindAffixesIter<'a, K, H> {
+impl<'a, K: AffixKind, H: Hasher> Iterator for FindAffixesIter<'a, K, H> {
     type Item = &'a Affix<K>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -450,7 +455,8 @@ impl<'a, K: AffixKind<'a>, H: Hasher> Iterator for FindAffixesIter<'a, K, H> {
                     // SAFETY: the lifetime of the returned value is bound to the table.
                     let affix = unsafe { next.as_ref() };
 
-                    if K::chars(&affix.add)
+                    if affix
+                        .adding()
                         .zip(self.visited_chars.iter())
                         .all(|(ach, vch)| ach == *vch)
                     {
