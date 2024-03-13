@@ -11,6 +11,7 @@ use alloc::{string::String, vec::Vec};
 
 pub(crate) mod aff;
 mod hash_multi_map;
+pub(crate) mod macros;
 
 /// Compressed representation of a Flag.
 ///
@@ -190,20 +191,6 @@ pub(crate) type WordList = hash_multi_map::HashMultiMap<String, FlagSet, ahash::
 mod test {
     use super::*;
     use crate::alloc::vec;
-
-    macro_rules! flag {
-        ( $x:expr ) => {{
-            Flag::new($x).unwrap()
-        }};
-    }
-
-    macro_rules! flagset {
-        ( $( $x:expr ),* ) => {
-            {
-                FlagSet::from_iter( [ $( Flag::new( $x ).unwrap() ),* ].into_iter() )
-            }
-        }
-    }
 
     #[test]
     fn flagset_from_iter() {
