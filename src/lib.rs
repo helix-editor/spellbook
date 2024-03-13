@@ -47,7 +47,7 @@ pub(crate) type Flag = core::num::NonZeroU16;
 /// Nuspell represents this as a sorted `std::basic_string<char16_t>` (`char16_t` being the
 /// representation) for flags. Hunspell uses a sorted `unsigned short*` and searches it via
 /// `std::binary_search`. We represent this in Spellbook with a sorted `Vec`.
-#[derive(Default, PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq, Clone)]
 pub(crate) struct FlagSet {
     inner: Vec<Flag>,
 }

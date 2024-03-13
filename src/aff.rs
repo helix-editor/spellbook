@@ -1,5 +1,3 @@
-use hashbrown::raw::{RawIterHash, RawTable};
-
 use crate::{
     alloc::{
         borrow::Cow,
@@ -9,11 +7,7 @@ use crate::{
     Flag, FlagSet,
 };
 
-use core::{
-    hash::{BuildHasher, Hash, Hasher},
-    marker::PhantomData,
-    str::Chars,
-};
+use core::{marker::PhantomData, str::Chars};
 
 /// The representation of a flag in a `.dic` or `.aff` file.
 ///
@@ -71,7 +65,7 @@ impl core::fmt::Display for UnknownFlagTypeError {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct Condition {
     /// The input pattern.
     ///
@@ -233,22 +227,23 @@ impl core::str::FromStr for Condition {
 }
 
 /// Internal container type for a prefix or suffix.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct Affix<K> {
     /// The flag that words may use to reference this affix.
-    pub flag: Flag,
+    flag: Flag,
     /// Whether the affix is compatible with the opposite affix.
     /// For example a word that has both a prefix and a suffix, both the prefix
     /// and suffix should have `crossproduct: true`.
-    pub crossproduct: bool,
+    crossproduct: bool,
     /// What is stripped from the stem when the affix is applied.
-    pub strip: String,
+    strip: Option<String>,
     /// What should be added when the affix is applied.
-    pub add: String,
+    add: String,
     /// Condition that the stem should be checked against to query if the
     /// affix is relevant.
-    condition: Option<Condition>,
+    condition: Condition,
     /// Flags the affix has itself.
-    pub flags: FlagSet,
+    flags: FlagSet,
     phantom_data: PhantomData<K>,
 }
 
@@ -256,32 +251,30 @@ impl<K: AffixKind> Affix<K> {
     pub fn new(
         flag: Flag,
         crossproduct: bool,
-        strip: &str,
-        add: String,
-        condition: Option<&str>,
+        strip: Option<&str>,
+        add: &str,
+        condition: &str,
         flags: FlagSet,
     ) -> Result<Self, ConditionError> {
-        let condition = condition.map(str::parse).transpose()?;
-
         Ok(Self {
             flag,
             crossproduct,
-            strip: strip.to_string(),
-            add,
+            strip: strip.map(|str| str.to_string()),
+            add: add.to_string(),
             flags,
-            condition,
+            condition: condition.parse()?,
             phantom_data: PhantomData,
         })
     }
 
-    pub fn adding(&self) -> K::Chars<'_> {
+    pub fn appending(&self) -> K::Chars<'_> {
         K::chars(&self.add)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct Pfx;
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct Sfx;
 
 /// Rules for replacing characters at the beginning of a stem.
@@ -314,52 +307,110 @@ impl AffixKind for Sfx {
 }
 
 impl Prefix {
-    /// Remove the `add` and add the `strip`
+    /// Converts a word which starts with this `Prefix` to the word's stem.
+    ///
+    /// The prefix's `add` is removed from the beginning and replaced with the `strip`.
+    ///
+    /// Nuspell calls this `to_root`.
+    ///
+    /// # Panics
+    ///
+    /// This function `expect`s that the `Prefix`'s `add` is a prefix of the input `word`.
     pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
-        if word.starts_with(&self.add) {
-            let mut stem = self.strip.clone();
-            stem.push_str(&word[self.add.len()..]);
-            Cow::Owned(stem)
-        } else {
-            Cow::Borrowed(word)
+        let stripped = word
+            .strip_prefix(&self.add)
+            .expect("to_stem should only be called when the `add` is a prefix of the word");
+
+        match &self.strip {
+            Some(strip) => {
+                let mut stem = strip.to_string();
+                stem.push_str(stripped);
+                Cow::Owned(stem)
+            }
+            None => Cow::Borrowed(stripped),
         }
     }
 
-    pub fn condition_matches(&self, word: &str) -> bool {
-        let condition = match &self.condition {
-            Some(condition) => condition,
-            None => return true,
+    /// Converts a stem into a word starting with this `Prefix`.
+    ///
+    /// This prefix's `strip` is removed from the beginning and replaced with the `add`. This is
+    /// the inverse of `Prefix::to_stem`.
+    ///
+    /// # Panics
+    ///
+    /// This function `expect`s that the given `word` starts with this `Prefix`'s `strip`, if this
+    /// prefix has a `strip`.
+    pub fn to_derived(&self, word: &str) -> String {
+        let stripped = match &self.strip {
+            Some(strip) => word
+                .strip_prefix(strip)
+                .expect("to_derived should only be called when `strip` is a prefix of the word"),
+            None => word,
         };
+        let mut stem = self.add.clone();
+        stem.push_str(stripped);
+        stem
+    }
 
+    pub fn condition_matches(&self, word: &str) -> bool {
         // Length in bytes is greater than or equal to length in chars.
-        if word.len() < condition.chars {
+        if word.len() < self.condition.chars {
             return false;
         }
 
-        condition.matches(word)
+        self.condition.matches(word)
     }
 }
 
 impl Suffix {
-    /// Remove the `add` and add the `strip`
+    /// Converts a word which ends with this `Suffix` to the word's stem.
+    ///
+    /// This suffix's `add` is removed from the end and replaced with the `strip`.
+    ///
+    /// Nuspell calls this `to_root`.
+    ///
+    /// # Panics
+    ///
+    /// This function `expect`s that the `Suffix`'s `add` is a suffix of the input `word`.
     pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
-        if word.ends_with(&self.add) {
-            let mut stem = word[..(word.len() - self.add.len())].to_string();
-            stem.push_str(&self.strip);
-            Cow::Owned(stem)
-        } else {
-            Cow::Borrowed(word)
+        let stripped = word
+            .strip_suffix(&self.add)
+            .expect("to_stem should only be called when the `add` is a suffix of the word");
+
+        match self.strip.as_deref() {
+            Some(strip) => {
+                let mut stem = stripped.to_string();
+                stem.push_str(strip);
+                Cow::Owned(stem)
+            }
+            None => Cow::Borrowed(stripped),
         }
     }
 
-    pub fn condition_matches(&self, word: &str) -> bool {
-        let condition = match &self.condition {
-            Some(condition) => condition,
-            None => return true,
-        };
+    /// Converts a stem into a word starting with this `Suffix`.
+    ///
+    /// This suffix's `strip` is removed from the end and replaced with the `add`. This is
+    /// the inverse of `Suffix::to_stem`.
+    ///
+    /// # Panics
+    ///
+    /// This function `expect`s that the given `word` ends with this `Suffix`'s `strip`, if this
+    /// suffix has a `strip`.
+    pub fn to_derived(&self, word: &str) -> String {
+        let mut stem = match &self.strip {
+            Some(strip) => word
+                .strip_suffix(strip)
+                .expect("to_derived should only be called when `strip` is a prefix of the word"),
+            None => word,
+        }
+        .to_string();
+        stem.push_str(&self.add);
+        stem
+    }
 
+    pub fn condition_matches(&self, word: &str) -> bool {
         // Length in bytes is greater than or equal to length in chars.
-        if word.len() < condition.chars {
+        if word.len() < self.condition.chars {
             return false;
         }
 
@@ -367,115 +418,211 @@ impl Suffix {
         let (chars, bytes) =
             word.chars()
                 .rev()
-                .take(condition.chars)
+                .take(self.condition.chars)
                 .fold((0, 0), |(chars, bytes), ch| {
                     // TODO: convert to a u32 instead and check with bit math how many bytes
                     // the code point takes.
                     (chars + 1, bytes + ch.encode_utf8(buffer).len())
                 });
 
-        if chars < condition.chars {
+        if chars < self.condition.chars {
             return false;
         }
-        condition.matches(&word[word.len() - bytes..])
+        self.condition.matches(&word[word.len() - bytes..])
     }
 }
 
-pub(crate) struct AffixIndex<K, S: BuildHasher> {
-    empty: Vec<Affix<K>>,
-    table: RawTable<Affix<K>>,
-    build_hasher: S,
-    all_continuation_flags: FlagSet,
+pub(crate) type PrefixIndex = AffixIndex<Pfx>;
+pub(crate) type SuffixIndex = AffixIndex<Sfx>;
+
+/// A data structure for looking up any affixes which might match a given word.
+///
+/// The `AffixIndex` is one of two central data structures, along with the `WordList`. It
+/// functions very similarly to a [radix tree], allowing efficient lookup of prefix or suffix
+/// rules.
+///
+/// For example a prefix from `en_US.aff` for "re":
+///
+/// ```text
+/// PFX A Y 1
+/// PFX A   0     re         .
+/// ```
+///
+/// That prefix strips nothing (`0`) from the beginning and adds "re" to the beginning of any
+/// words it is applied to.
+///
+/// For prefixes, `affixes_of` returns an iterator over all of the `Prefix`es in the table which
+/// have an `add` field which is a prefix of the search word.
+///
+/// This structure also searches from the end of the word when looking up suffixes. A suffix from
+/// `en_US.aff`:
+///
+/// ```text
+/// SFX D Y 4
+/// SFX D   0     d          e
+/// SFX D   y     ied        [^aeiou]y
+/// SFX D   0     ed         [^ey]
+/// SFX D   0     ed         [aeiou]y
+/// ```
+///
+/// Any word in the word list with the "D" flag can try to apply these suffixes. For a word like
+/// "aced," `affixes_of` would return the first, third and fourth suffixes, as `d`, `ed` and `ed`
+/// are suffixes of "aced," but not the second (`ied`).
+///
+/// Internally this type is implemented using a sorted `Vec` of affixes - one table for prefixes
+/// and one for suffixes. Iterating with `affixes_of` first emits all affixes with empty `add`
+/// text. Then we look at the first character in the search string. We can constrain our search
+/// to only the elements in the table that start with that character using a precomputed index
+/// of characters to indices within the table. After considering the first character, we use
+/// linear searches of the remaining table slice to constrain the search for each next character
+/// in the search key.
+///
+/// [radix tree]: https://en.wikipedia.org/wiki/Radix_tree
+// TODO: I originally tried a hashing-based approach using `hashbrown::raw::RawTable`. Lift that
+// structure from the commit history and benchmark it against this Vec based approach.
+#[derive(Debug)]
+pub(crate) struct AffixIndex<K> {
+    table: Vec<Affix<K>>,
+    first_char: Vec<char>,
+    prefix_idx_with_first_char: Vec<usize>,
 }
 
-impl<K, S> AffixIndex<K, S>
-where
-    K: AffixKind,
-    S: BuildHasher,
-{
-    pub fn insert(&mut self, affix: Affix<K>) {
-        self.all_continuation_flags.merge(&affix.flags);
-        if affix.add.is_empty() {
-            self.empty.push(affix);
-        } else {
-            let build_hasher = &self.build_hasher;
-            let hasher = move |affix: &Affix<K>| {
-                let mut state = build_hasher.build_hasher();
-                for ch in affix.adding() {
-                    ch.hash(&mut state);
-                }
-                state.finish()
-            };
-            let hash = hasher(&affix);
-            self.table.insert(hash, affix, hasher);
+impl<K: AffixKind> FromIterator<Affix<K>> for AffixIndex<K> {
+    fn from_iter<T: IntoIterator<Item = Affix<K>>>(iter: T) -> Self {
+        let mut table: Vec<_> = iter.into_iter().collect();
+        // Sort the table lexiographically by key. We will use this lexiographical ordering to
+        // efficiently search in AffixesIter.
+        table.sort_unstable_by(|a, b| a.appending().cmp(b.appending()));
+
+        let mut first_char = Vec::new();
+        let mut prefix_idx_with_first_char = Vec::new();
+
+        // Seek through the sorted table to the first element where the key is non-empty.
+        let mut first_char_idx = table.partition_point(|affix| affix.appending().next().is_none());
+        while first_char_idx < table.len() {
+            let ch = table[first_char_idx]
+                .appending()
+                .next()
+                .expect("vec is sorted so empty keys are before the partition point");
+
+            // Save the first character of the key and the index of the affix in the table that
+            // starts off this character. We can use this while reading the AffixIndex to jump
+            // ahead efficiently in the table.
+            first_char.push(ch);
+            prefix_idx_with_first_char.push(first_char_idx);
+
+            match table[first_char_idx..].iter().position(|affix| {
+                affix
+                    .appending()
+                    .next()
+                    .expect("vec is sorted so empty keys are before the partition point")
+                    > ch
+            }) {
+                Some(next_char_index) => first_char_idx += next_char_index,
+                None => break,
+            }
+        }
+        // Add an extra element to the end so that `prefix_idx_with_first_char` is always one
+        // element longer than `first_char`.
+        prefix_idx_with_first_char.push(table.len());
+
+        Self {
+            table,
+            first_char,
+            prefix_idx_with_first_char,
         }
     }
+}
 
-    /// Returns all affixes that match the search word.
-    ///
-    /// An affix matches the search word if its `add` field is a prefix of the search word (when
-    /// looking up prefixes) or a suffix of the search word (when looking up suffixes).
-    pub fn find<'a>(&'a self, search_word: &'a str) -> FindAffixesIter<'a, K, S::Hasher> {
-        FindAffixesIter {
-            empty: self.empty.iter(),
+impl<K: AffixKind> AffixIndex<K> {
+    fn affixes_of<'a>(&'a self, word: &'a str) -> AffixesIter<'a, K> {
+        AffixesIter {
             table: &self.table,
-            table_iter: None,
-            chars: K::chars(search_word),
-            hasher: self.build_hasher.build_hasher(),
-            visited_chars: Vec::new(),
+            first_char: &self.first_char,
+            prefix_idx_with_first_char: &self.prefix_idx_with_first_char,
+            chars: K::chars(word),
+            chars_matched: 0,
         }
     }
 }
 
-pub(crate) struct FindAffixesIter<'a, K: AffixKind, H: Hasher> {
-    empty: core::slice::Iter<'a, Affix<K>>,
-    table: &'a RawTable<Affix<K>>,
-    table_iter: Option<RawIterHash<Affix<K>>>,
+/// An iterator over the affixes for the
+pub(crate) struct AffixesIter<'a, K: AffixKind> {
+    table: &'a [Affix<K>],
+    first_char: &'a [char],
+    prefix_idx_with_first_char: &'a [usize],
     chars: K::Chars<'a>,
-    hasher: H,
-    visited_chars: Vec<char>,
+    chars_matched: usize,
 }
 
-impl<'a, K: AffixKind, H: Hasher> Iterator for FindAffixesIter<'a, K, H> {
+impl<'a, K: AffixKind> Iterator for AffixesIter<'a, K> {
     type Item = &'a Affix<K>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // All empty affixes apply. Emit those first.
-        if let Some(next_empty) = self.empty.next() {
-            return Some(next_empty);
-        }
-
-        // Once we're out of empty affixes, lookup affixes with matching `add`s via the radix
-        // tree.
-        loop {
-            // If we have a search for the current input character, return all affixes matching
-            // the substring.
-            if let Some(mut iter) = self.table_iter.take() {
-                while let Some(next) = iter.next() {
-                    // SAFETY: the lifetime of the returned value is bound to the table.
-                    let affix = unsafe { next.as_ref() };
-
-                    if affix
-                        .adding()
-                        .zip(self.visited_chars.iter())
-                        .all(|(ach, vch)| ach == *vch)
-                    {
-                        self.table_iter = Some(iter);
-                        return Some(affix);
-                    }
-                }
+        // Return all affixes that append nothing first.
+        if self.chars_matched == 0 {
+            if self.table.is_empty() {
+                return None;
             }
 
-            // Once that search is done, add the next character and start a new search into the
-            // trie.
-            let ch = self.chars.next()?;
-            ch.hash(&mut self.hasher);
-            let hash = self.hasher.finish();
-            self.visited_chars.push(ch);
+            let item = &self.table[0];
+            if item.appending().next().is_some() {
+                // The empty portion of the table is done.
+                // Scan ahead to where the first character is.
+                let ch = self.chars.next()?;
+                let first_char_idx = self.first_char.iter().position(|c| *c == ch)?;
 
-            // SAFETY: the lifetime of the returned value is bound to the table.
-            let iter = unsafe { self.table.iter_hash(hash) };
-            self.table_iter = Some(iter);
+                // NOTE: `prefix_idx_with_first_char` always has at least one element and is
+                // always one element longer than `first_char`, so we can safely index at `0`
+                // and at whatever index we get from `first_char` plus one.
+                let empty_offset = self.prefix_idx_with_first_char[0];
+                // Constrain the bounds of the search to affixes that share the first letter
+                // of the key. Offset by the number of affixes with empty `add` that we emitted
+                // previously.
+                let start = self.prefix_idx_with_first_char[first_char_idx] - empty_offset;
+                let end = self.prefix_idx_with_first_char[first_char_idx + 1] - empty_offset;
+                self.table = &self.table[start..end];
+                self.chars_matched = 1;
+            } else {
+                self.table = &self.table[1..];
+                return Some(item);
+            }
+        }
+
+        loop {
+            if self.table.is_empty() {
+                return None;
+            }
+
+            // If the search key is exactly matched so far (up to the number of characters we've
+            // seen), emit the item.
+            let item = &self.table[0];
+            if item.appending().count() == self.chars_matched {
+                self.table = &self.table[1..];
+                return Some(item);
+            }
+
+            // Look at the next character in the search key. Limit the search to the slice of
+            // the table where the nth character for each affix matches this character of the
+            // search key.
+            let ch = self.chars.next()?;
+
+            // Move `start` up to the index of the first affix that has this character in its
+            // nth position.
+            let char_beginning_idx = self
+                .table
+                .iter()
+                .position(|affix| affix.appending().nth(self.chars_matched) == Some(ch))?;
+            self.table = &self.table[char_beginning_idx..];
+
+            // Move the `end` back so that the last element in the search slice is the last
+            // affix that shares this character in its nth position.
+            let char_end_idx = self
+                .table
+                .partition_point(|affix| affix.appending().nth(self.chars_matched) == Some(ch));
+            self.table = &self.table[..char_end_idx];
+
+            self.chars_matched += 1;
         }
     }
 }
@@ -636,6 +783,7 @@ pub(crate) struct CompoundPattern {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::*;
 
     #[test]
     fn condition_parse() {
@@ -715,5 +863,104 @@ mod test {
         assert_eq!(pair.left(), "");
         assert_eq!(pair.right(), "");
         assert_eq!(pair.left_len(), 0);
+    }
+
+    #[test]
+    fn empty_affix_index() {
+        let index: PrefixIndex = [].into_iter().collect();
+        assert!(index.affixes_of("anything").next().is_none());
+
+        let index: SuffixIndex = [].into_iter().collect();
+        assert!(index.affixes_of("anything").next().is_none());
+    }
+
+    #[test]
+    fn affix_index_prefix_multiset_nuspell_unit_test() {
+        // Upstream: <https://github.com/nuspell/nuspell/blob/b37faff6ea630a4a1bfb22097d455224b4239f8e/tests/unit_test.cxx#L315-L329>
+        fn prefix(add: &str) -> Prefix {
+            Prefix::new(Flag::new(1).unwrap(), true, None, add, ".", flagset![]).unwrap()
+        }
+
+        let index: PrefixIndex = [
+            "", "a", "", "ab", "abx", "as", "asdf", "axx", "as", "bqwe", "ba", "rqwe",
+        ]
+        .into_iter()
+        .map(prefix)
+        .collect();
+
+        let prefixes: Vec<_> = index
+            .affixes_of("asdfg")
+            .map(|prefix| prefix.add.as_str())
+            .collect();
+
+        assert_eq!(&["", "", "a", "as", "as", "asdf"], prefixes.as_slice());
+    }
+
+    #[test]
+    fn affix_index_suffix_multiset_nuspell_unit_test() {
+        // Upstream: <https://github.com/nuspell/nuspell/blob/b37faff6ea630a4a1bfb22097d455224b4239f8e/tests/unit_test.cxx#L331-L345>
+        fn suffix(add: &str) -> Suffix {
+            Suffix::new(Flag::new(1).unwrap(), true, None, add, ".", flagset![]).unwrap()
+        }
+
+        let index: SuffixIndex = [
+            "", "", "a", "b", "b", "ab", "ub", "zb", "aub", "uub", "xub", "huub",
+        ]
+        .into_iter()
+        .map(suffix)
+        .collect();
+
+        let suffixes: Vec<_> = index
+            .affixes_of("ahahuub")
+            .map(|suffix| suffix.add.as_str())
+            .collect();
+
+        assert_eq!(
+            &["", "", "b", "b", "ub", "uub", "huub"],
+            suffixes.as_slice()
+        );
+    }
+
+    #[test]
+    fn affix_index_en_us_suffix_example() {
+        // This suffix is from `en_US.aff`:
+        //
+        // SFX D Y 4
+        // SFX D   0     d          e
+        // SFX D   y     ied        [^aeiou]y
+        // SFX D   0     ed         [^ey]
+        // SFX D   0     ed         [aeiou]y
+        let flag = Flag::new('D' as u16).unwrap();
+        let suffix1 = Suffix::new(flag, true, None, "d", "e", flagset![]).unwrap();
+        let suffix2 = Suffix::new(flag, true, Some("y"), "ied", "[^aeiou]y", flagset![]).unwrap();
+        let suffix3 = Suffix::new(flag, true, None, "ed", "[^ey]", flagset![]).unwrap();
+        let suffix4 = Suffix::new(flag, true, None, "ed", "[aeiou]y", flagset![]).unwrap();
+
+        let index: SuffixIndex = [&suffix1, &suffix2, &suffix3, &suffix4]
+            .into_iter()
+            .cloned()
+            .collect();
+
+        // From `en_US.dic`: `ace/DSMG`. The "ace" stem can be turned into "aced" with the above
+        // suffix rules, specifically the first rule (`suffix1`). However all of these suffixes
+        // except `suffix2` are returned by `affixes_of`.
+        let word = "aced";
+        let affixes: Vec<&Suffix> = index.affixes_of(word).collect();
+        assert_eq!(&[&suffix1, &suffix3, &suffix4], affixes.as_slice());
+
+        // Note: even though the condition can match, we would also need to look up the produced
+        // stem in the word list to confirm that "aced" is a valid word.
+
+        let stem1 = suffix1.to_stem(word);
+        assert_eq!(&stem1, "ace");
+        assert!(suffix1.condition_matches(&stem1));
+
+        let stem3 = suffix3.to_stem(word);
+        assert_eq!(&stem3, "ac");
+        assert!(suffix3.condition_matches(&stem3));
+
+        let stem4 = suffix4.to_stem(word);
+        assert_eq!(&stem4, "ac");
+        assert!(!suffix4.condition_matches(&stem4));
     }
 }
