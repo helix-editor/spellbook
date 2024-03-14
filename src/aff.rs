@@ -737,7 +737,15 @@ impl FromIterator<CompoundRule> for CompoundRuleTable {
     }
 }
 
+impl CompoundRuleTable {
+    #[inline]
+    pub fn has_any_flags(&self, flagset: &FlagSet) -> bool {
+        self.all_flags.has_intersection(flagset)
+    }
+}
+
 /// Storage for two `String`s within the allocation of one `String`.
+#[derive(Debug)]
 pub(crate) struct StringPair {
     inner: String,
     /// The `.len()` of the first string: the index of the partition between the first and
@@ -772,6 +780,7 @@ impl StringPair {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct CompoundPattern {
     begin_end_chars: StringPair,
     replacement: Option<String>,
