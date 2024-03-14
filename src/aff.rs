@@ -934,7 +934,7 @@ pub(crate) struct CompoundPattern {
 
 pub(crate) struct AffData {
     // checking options
-    words: WordList,
+    pub words: WordList,
     prefixes: PrefixIndex,
     suffixes: SuffixIndex,
     complex_prefixes: bool,

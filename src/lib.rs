@@ -17,6 +17,22 @@ pub(crate) mod aff;
 mod hash_multi_map;
 pub(crate) mod macros;
 
+/// TODO
+pub struct Dictionary {
+    aff_data: aff::AffData,
+}
+
+impl Dictionary {
+    // new(dic_reader, aff_reader) -> Self
+
+    pub fn check(&self, word: &str) -> bool {
+        self.aff_data.words.get(word).is_some()
+    }
+
+    // suggest(&self, word: &str) -> impl Iterator<Item = String> ?
+    // accept a &mut Vec instead?
+}
+
 /// Compressed representation of a Flag.
 ///
 /// Flags are used as attributes about words. For example a flag might mark a word as forbidden,
