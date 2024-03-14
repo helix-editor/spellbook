@@ -72,6 +72,143 @@ impl fmt::Display for UnknownFlagTypeError {
     }
 }
 
+#[derive(Debug)]
+pub enum ParseFlagError {
+    NonAscii(char),
+    MissingSecondChar(char),
+    ParseIntError(core::num::ParseIntError),
+    DuplicateComma,
+    ZeroFlag,
+    FlagAbove65535,
+}
+
+impl fmt::Display for ParseFlagError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonAscii(ch) => write!(f, "expected ascii char, found {}", ch),
+            Self::MissingSecondChar(ch) => {
+                write!(f, "expected two chars, {} is missing its second", ch)
+            }
+            Self::ParseIntError(err) => err.fmt(f),
+            Self::DuplicateComma => f.write_str("unexpected extra comma"),
+            Self::ZeroFlag => f.write_str("flag cannot be zero"),
+            Self::FlagAbove65535 => f.write_str("flag's binary representation exceeds 65535"),
+        }
+    }
+}
+
+fn try_flag_from_u16(val: u16) -> Result<Flag, ParseFlagError> {
+    Flag::new(val).ok_or(ParseFlagError::ZeroFlag)
+}
+
+fn try_flag_from_u32(val: u32) -> Result<Flag, ParseFlagError> {
+    if val > u16::MAX as u32 {
+        return Err(ParseFlagError::FlagAbove65535);
+    }
+    try_flag_from_u16(val as u16)
+}
+
+fn try_flag_from_char(ch: char) -> Result<Flag, ParseFlagError> {
+    try_flag_from_u32(ch as u32)
+}
+
+impl FlagType {
+    pub fn parse_flag_from_str(&self, input: &str) -> Result<Flag, ParseFlagError> {
+        use ParseFlagError::*;
+        assert!(!input.is_empty());
+
+        match self {
+            Self::Short => {
+                let mut chars = input.chars();
+                let ch = chars.next().expect("asserted to be non-empty above");
+                if ch.is_ascii() {
+                    // The flag is ASCII: it's a valid `u8` so it can fit into a `u16`.
+                    try_flag_from_u16(ch as u16)
+                } else {
+                    Err(NonAscii(ch))
+                }
+            }
+            Self::Long => {
+                let mut chars = input.chars();
+                let c1 = chars.next().expect("asserted to be non-empty above");
+                if !c1.is_ascii() {
+                    return Err(NonAscii(c1));
+                }
+                let c2 = match chars.next() {
+                    Some(ch) => ch,
+                    None => return Err(MissingSecondChar(c1)),
+                };
+                if !c2.is_ascii() {
+                    return Err(NonAscii(c2));
+                }
+
+                try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))
+            }
+            Self::Numeric => {
+                let number = input.parse::<u16>().map_err(ParseIntError)?;
+                try_flag_from_u16(number)
+            }
+            Self::Utf8 => {
+                let mut chars = input.chars();
+                let ch = chars.next().expect("asserted to be non-empty above");
+                try_flag_from_char(ch)
+            }
+        }
+    }
+
+    pub fn parse_flags_from_chars(&self, mut chars: Chars) -> Result<FlagSet, ParseFlagError> {
+        use ParseFlagError::*;
+
+        match self {
+            Self::Short => {
+                chars
+                    .map(|ch| {
+                        if ch.is_ascii() {
+                            // The flag is ASCII: it's a valid `u8` so it can fit into a `u16`.
+                            try_flag_from_u16(ch as u16)
+                        } else {
+                            Err(ParseFlagError::NonAscii(ch))
+                        }
+                    })
+                    .collect()
+            }
+            Self::Long => {
+                let mut flags = FlagSet::new();
+                while let Some(c1) = chars.next() {
+                    let c2 = match chars.next() {
+                        Some(ch) => ch,
+                        None => return Err(MissingSecondChar(c1)),
+                    };
+                    let flag = try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))?;
+                    flags.insert(flag);
+                }
+                Ok(flags)
+            }
+            Self::Numeric => {
+                let mut flags = FlagSet::new();
+                let mut number = String::new();
+                let mut separated = false;
+                for ch in chars.by_ref() {
+                    if ch.is_ascii_digit() {
+                        number.push(ch);
+                    } else {
+                        if ch == ',' && separated {
+                            return Err(DuplicateComma);
+                        }
+                        if ch == ',' {
+                            separated = true;
+                            let n = number.parse::<u16>().map_err(ParseIntError)?;
+                            flags.insert(try_flag_from_u16(n)?);
+                        }
+                    }
+                }
+                Ok(flags)
+            }
+            Self::Utf8 => chars.map(try_flag_from_char).collect(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct Condition {
     /// The input pattern.

@@ -85,6 +85,11 @@ impl FlagSet {
         self.inner.len()
     }
 
+    pub fn insert(&mut self, flag: Flag) {
+        let partition = self.inner.partition_point(|&f| f < flag);
+        self.inner.insert(partition, flag);
+    }
+
     /// Returns `true` if both sets have at least one element in common.
     pub fn has_intersection(&self, other: &Self) -> bool {
         let mut xs = self.iter().peekable();
