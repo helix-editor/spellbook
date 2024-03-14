@@ -1,5 +1,6 @@
 use core::{
     borrow::Borrow,
+    fmt::Debug,
     hash::{BuildHasher, Hash},
     marker::PhantomData,
 };
@@ -18,11 +19,7 @@ use hashbrown::raw::{RawIter, RawIterHash, RawTable};
 /// compounding while another set of flags provides a different affix which supports compounding.
 ///
 /// Internally this is built on Hashbrown's "raw" API - a set of tools for building Swiss tables.
-pub struct HashMultiMap<K, V, S>
-where
-    K: Hash + Eq,
-    S: BuildHasher,
-{
+pub struct HashMultiMap<K, V, S> {
     table: RawTable<(K, V)>,
     build_hasher: S,
 }
@@ -114,7 +111,18 @@ where
     }
 }
 
-// `make_hash`, `make_hasher`, and `Iter` are pulled from Hashbrown's `map` module
+impl<K, V, S> Debug for HashMultiMap<K, V, S>
+where
+    K: Debug + Hash + Eq,
+    V: Debug,
+    S: BuildHasher,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
+    }
+}
+
+// make_hash`, `make_hasher`, and `Iter` are pulled from Hashbrown's `map` module
 // at `274c7bbd79398881e0225c0133e423ce60d7a8f1`.
 
 fn make_hash<Q, S>(hash_builder: &S, val: &Q) -> u64
