@@ -777,7 +777,9 @@ impl<'a, K: AffixKind> Iterator for AffixesIter<'a, K> {
 /// one for patterns that apply at the beginning of words, one for patterns that can apply
 /// anywhere in the middle of a word, and one for patterns that must apply to the end of a word.
 ///
-/// TODO: document how breaks are used and what the patterns mean.
+// TODO: document how breaks are used and what the patterns mean.
+// TODO: use the Default implementation to give what Hunspell considers default?
+#[derive(Debug, Default)]
 pub(crate) struct BreakTable {
     table: Vec<String>,
     start_word_breaks_last_idx: usize,
@@ -838,6 +840,7 @@ impl BreakTable {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum CompoundRuleElement {
     Flag(Flag),
     ZeroOrOne,
@@ -859,6 +862,7 @@ type CompoundRule = Vec<CompoundRuleElement>;
 /// A set of rules that can be used to detect whether constructed compounds are allowed.
 ///
 /// TODO: talk about wildcards, show a compounding example.
+#[derive(Debug)]
 pub(crate) struct CompoundRuleTable {
     rules: Vec<CompoundRule>,
     all_flags: FlagSet,
@@ -933,6 +937,7 @@ pub(crate) struct CompoundPattern {
     match_first_only_unaffixed_or_zero_affixed: bool,
 }
 
+#[derive(Debug)]
 pub(crate) struct AffData<S: BuildHasher> {
     // checking options
     pub words: WordList<S>,
