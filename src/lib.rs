@@ -5,9 +5,13 @@
 #![no_std]
 
 extern crate alloc;
-use core::cmp::Ordering;
+use core::{cmp::Ordering, fmt};
 
-use alloc::{string::String, vec::Vec};
+use alloc::{
+    slice,
+    string::String,
+    vec::{self, Vec},
+};
 
 pub(crate) mod aff;
 mod hash_multi_map;
@@ -67,12 +71,12 @@ impl FlagSet {
     }
 
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = &Flag> {
+    pub fn iter(&self) -> slice::Iter<'_, Flag> {
         self.inner.iter()
     }
 
     #[inline]
-    pub fn into_iter(self) -> impl IntoIterator<Item = Flag> {
+    pub fn into_iter(self) -> vec::IntoIter<Flag> {
         self.inner.into_iter()
     }
 
@@ -179,8 +183,8 @@ impl FlagSet {
     }
 }
 
-impl core::fmt::Debug for FlagSet {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl fmt::Debug for FlagSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("flagset!{:?}", self.inner))
     }
 }

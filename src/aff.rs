@@ -7,7 +7,11 @@ use crate::{
     Flag, FlagSet, WordList,
 };
 
-use core::{marker::PhantomData, str::Chars};
+use core::{
+    fmt,
+    marker::PhantomData,
+    str::{Chars, FromStr},
+};
 
 const HIDDEN_HOMONYM_FLAG: u16 = u16::MAX;
 const MAX_SUGGESTIONS: usize = 16;
@@ -45,7 +49,7 @@ impl Default for FlagType {
 #[derive(Debug, Clone)]
 pub struct UnknownFlagTypeError(String);
 
-impl core::str::FromStr for FlagType {
+impl FromStr for FlagType {
     type Err = UnknownFlagTypeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -58,8 +62,8 @@ impl core::str::FromStr for FlagType {
     }
 }
 
-impl core::fmt::Display for UnknownFlagTypeError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl fmt::Display for UnknownFlagTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "expected FLAG to be `long`, `num` or `UTF-8` if set, found {}",
@@ -155,8 +159,8 @@ pub enum ConditionError {
     EmptyCharacterClass,
 }
 
-impl core::fmt::Display for ConditionError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl fmt::Display for ConditionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnopenedCharacterClass => {
                 f.write_str("closing bracket has no matching opening bracket")
@@ -169,7 +173,7 @@ impl core::fmt::Display for ConditionError {
     }
 }
 
-impl core::str::FromStr for Condition {
+impl FromStr for Condition {
     type Err = ConditionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
