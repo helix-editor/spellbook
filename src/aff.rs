@@ -9,6 +9,7 @@ use crate::{
 
 use core::{
     fmt,
+    hash::BuildHasher,
     marker::PhantomData,
     str::{Chars, FromStr},
 };
@@ -932,9 +933,9 @@ pub(crate) struct CompoundPattern {
     match_first_only_unaffixed_or_zero_affixed: bool,
 }
 
-pub(crate) struct AffData {
+pub(crate) struct AffData<S: BuildHasher> {
     // checking options
-    pub words: WordList,
+    pub words: WordList<S>,
     prefixes: PrefixIndex,
     suffixes: SuffixIndex,
     complex_prefixes: bool,

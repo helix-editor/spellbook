@@ -5,7 +5,7 @@
 #![no_std]
 
 extern crate alloc;
-use core::{cmp::Ordering, fmt};
+use core::{cmp::Ordering, fmt, hash::BuildHasher};
 
 use alloc::{
     slice,
@@ -18,11 +18,11 @@ mod hash_multi_map;
 pub(crate) mod macros;
 
 /// TODO
-pub struct Dictionary {
-    aff_data: aff::AffData,
+pub struct Dictionary<S: BuildHasher> {
+    aff_data: aff::AffData<S>,
 }
 
-impl Dictionary {
+impl<S: BuildHasher> Dictionary<S> {
     // new(dic_reader, aff_reader) -> Self
 
     pub fn check(&self, word: &str) -> bool {
@@ -210,7 +210,7 @@ impl fmt::Debug for FlagSet {
     }
 }
 
-pub(crate) type WordList = hash_multi_map::HashMultiMap<String, FlagSet, ahash::RandomState>;
+pub(crate) type WordList<S> = hash_multi_map::HashMultiMap<String, FlagSet, S>;
 
 #[cfg(test)]
 mod test {
