@@ -938,6 +938,25 @@ pub(crate) struct AffData<S: BuildHasher> {
     pub words: WordList<S>,
     prefixes: PrefixIndex,
     suffixes: SuffixIndex,
+    break_table: BreakTable,
+    ignored_chars: String,
+    compound_rules: CompoundRuleTable,
+    compound_syllable_vowels: String,
+    compound_patterns: Vec<CompoundPattern>,
+    // input_substr_replacer: ? TODO
+    // locale TODO
+    // output_substr_replacer: ? TODO
+    // suggestion options
+    // replacements: ReplacementTable,
+    // similarities: Vec<SimilarityGroup>,
+    // keyboard_closeness: String,
+    // try_chars: String,
+    // phonetic_table: PhoneticTable,
+    options: AffOptions,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct AffOptions {
     complex_prefixes: bool,
     fullstrip: bool,
     checksharps: bool,
@@ -948,13 +967,7 @@ pub(crate) struct AffData<S: BuildHasher> {
     keep_case_flag: Option<Flag>,
     need_affix_flag: Option<Flag>,
     warn_flag: Option<Flag>,
-    break_table: BreakTable,
-    // input_substr_replacer: ? TODO
-    ignored_chars: String,
-    // locale TODO
-    // output_substr_replacer: ? TODO
     // compounding options
-    compound_rules: CompoundRuleTable,
     compound_flag: Option<Flag>,
     compound_begin_flag: Option<Flag>,
     compound_middle_flag: Option<Flag>,
@@ -971,27 +984,14 @@ pub(crate) struct AffData<S: BuildHasher> {
     compound_check_triple: bool,
     compound_syllable_num: bool,
     compound_syllable_max: u16,
-    compound_syllable_vowels: String,
-    compound_patterns: Vec<CompoundPattern>,
     max_compound_suggestions: u16,
-    // suggestion options
-    // replacements: ReplacementTable,
-    // similarities: Vec<SimilarityGroup>,
-    // keyboard_closeness: String,
-    // try_chars: String,
-    // phonetic_table: PhoneticTable,
-    nosuggest_flag: Option<Flag>,
+    no_suggest_flag: Option<Flag>,
     substandard_flag: Option<Flag>,
     max_ngram_suggestions: u16,
     max_diff_factor: Option<u16>,
     only_max_diff: bool,
     no_split_suggestions: bool,
     suggest_with_dots: bool,
-    // options only used while parsing
-    flag_type: FlagType,
-    // encoding: Encoding,
-    flag_aliases: Vec<FlagSet>,
-    // wordchars: String, deprecated?
 }
 
 #[cfg(test)]
