@@ -4,10 +4,13 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    Flag, FlagSet,
+    Flag, FlagSet, WordList,
 };
 
 use core::{marker::PhantomData, str::Chars};
+
+const HIDDEN_HOMONYM_FLAG: u16 = u16::MAX;
+const MAX_SUGGESTIONS: usize = 16;
 
 /// The representation of a flag in a `.dic` or `.aff` file.
 ///
@@ -787,6 +790,67 @@ pub(crate) struct CompoundPattern {
     first_word_flag: Option<Flag>,
     second_word_flag: Option<Flag>,
     match_first_only_unaffixed_or_zero_affixed: bool,
+}
+
+pub(crate) struct AffData {
+    // checking options
+    words: WordList,
+    prefixes: PrefixIndex,
+    suffixes: SuffixIndex,
+    complex_prefixes: bool,
+    fullstrip: bool,
+    checksharps: bool,
+    forbid_warn: bool,
+    compound_only_in_flag: Option<Flag>,
+    circumfix_flag: Option<Flag>,
+    forbidden_word_flag: Option<Flag>,
+    keep_case_flag: Option<Flag>,
+    need_affix_flag: Option<Flag>,
+    warn_flag: Option<Flag>,
+    break_table: BreakTable,
+    // input_substr_replacer: ? TODO
+    ignored_chars: String,
+    // locale TODO
+    // output_substr_replacer: ? TODO
+    // compounding options
+    compound_rules: CompoundRuleTable,
+    compound_flag: Option<Flag>,
+    compound_begin_flag: Option<Flag>,
+    compound_middle_flag: Option<Flag>,
+    compound_last_flag: Option<Flag>,
+    compound_min_length: u16,
+    compound_max_word_count: u16,
+    compound_permit_flag: Option<Flag>,
+    compound_forbid_flag: Option<Flag>,
+    compound_force_uppercase: Option<Flag>,
+    compound_more_suffixes: bool,
+    compound_check_duplicate: bool,
+    compound_check_rep: bool,
+    compound_check_case: bool,
+    compound_check_triple: bool,
+    compound_syllable_num: bool,
+    compound_syllable_max: u16,
+    compound_syllable_vowels: String,
+    compound_patterns: Vec<CompoundPattern>,
+    max_compound_suggestions: u16,
+    // suggestion options
+    // replacements: ReplacementTable,
+    // similarities: Vec<SimilarityGroup>,
+    // keyboard_closeness: String,
+    // try_chars: String,
+    // phonetic_table: PhoneticTable,
+    nosuggest_flag: Option<Flag>,
+    substandard_flag: Option<Flag>,
+    max_ngram_suggestions: u16,
+    max_diff_factor: Option<u16>,
+    only_max_diff: bool,
+    no_split_suggestions: bool,
+    suggest_with_dots: bool,
+    // options only used while parsing
+    flag_type: FlagType,
+    // encoding: Encoding,
+    flag_aliases: Vec<FlagSet>,
+    // wordchars: String, deprecated?
 }
 
 #[cfg(test)]
