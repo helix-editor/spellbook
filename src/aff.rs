@@ -173,7 +173,6 @@ impl core::str::FromStr for Condition {
     type Err = ConditionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // TODO when parsing: treat `"."` as `None`.
         let mut scan = s;
         let mut chars = 0;
 
