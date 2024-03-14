@@ -1,3 +1,5 @@
+pub(crate) mod parser;
+
 use crate::{
     alloc::{
         borrow::Cow,
@@ -73,7 +75,7 @@ impl fmt::Display for UnknownFlagTypeError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ParseFlagError {
     NonAscii(char),
     MissingSecondChar(char),
@@ -94,118 +96,6 @@ impl fmt::Display for ParseFlagError {
             Self::DuplicateComma => f.write_str("unexpected extra comma"),
             Self::ZeroFlag => f.write_str("flag cannot be zero"),
             Self::FlagAbove65535 => f.write_str("flag's binary representation exceeds 65535"),
-        }
-    }
-}
-
-fn try_flag_from_u16(val: u16) -> Result<Flag, ParseFlagError> {
-    Flag::new(val).ok_or(ParseFlagError::ZeroFlag)
-}
-
-fn try_flag_from_u32(val: u32) -> Result<Flag, ParseFlagError> {
-    if val > u16::MAX as u32 {
-        return Err(ParseFlagError::FlagAbove65535);
-    }
-    try_flag_from_u16(val as u16)
-}
-
-fn try_flag_from_char(ch: char) -> Result<Flag, ParseFlagError> {
-    try_flag_from_u32(ch as u32)
-}
-
-impl FlagType {
-    pub fn parse_flag_from_str(&self, input: &str) -> Result<Flag, ParseFlagError> {
-        use ParseFlagError::*;
-        assert!(!input.is_empty());
-
-        match self {
-            Self::Short => {
-                let mut chars = input.chars();
-                let ch = chars.next().expect("asserted to be non-empty above");
-                if ch.is_ascii() {
-                    // The flag is ASCII: it's a valid `u8` so it can fit into a `u16`.
-                    try_flag_from_u16(ch as u16)
-                } else {
-                    Err(NonAscii(ch))
-                }
-            }
-            Self::Long => {
-                let mut chars = input.chars();
-                let c1 = chars.next().expect("asserted to be non-empty above");
-                if !c1.is_ascii() {
-                    return Err(NonAscii(c1));
-                }
-                let c2 = match chars.next() {
-                    Some(ch) => ch,
-                    None => return Err(MissingSecondChar(c1)),
-                };
-                if !c2.is_ascii() {
-                    return Err(NonAscii(c2));
-                }
-
-                try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))
-            }
-            Self::Numeric => {
-                let number = input.parse::<u16>().map_err(ParseIntError)?;
-                try_flag_from_u16(number)
-            }
-            Self::Utf8 => {
-                let mut chars = input.chars();
-                let ch = chars.next().expect("asserted to be non-empty above");
-                try_flag_from_char(ch)
-            }
-        }
-    }
-
-    pub fn parse_flags_from_chars(&self, mut chars: Chars) -> Result<FlagSet, ParseFlagError> {
-        use ParseFlagError::*;
-
-        match self {
-            Self::Short => {
-                chars
-                    .map(|ch| {
-                        if ch.is_ascii() {
-                            // The flag is ASCII: it's a valid `u8` so it can fit into a `u16`.
-                            try_flag_from_u16(ch as u16)
-                        } else {
-                            Err(ParseFlagError::NonAscii(ch))
-                        }
-                    })
-                    .collect()
-            }
-            Self::Long => {
-                let mut flags = FlagSet::new();
-                while let Some(c1) = chars.next() {
-                    let c2 = match chars.next() {
-                        Some(ch) => ch,
-                        None => return Err(MissingSecondChar(c1)),
-                    };
-                    let flag = try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))?;
-                    flags.insert(flag);
-                }
-                Ok(flags)
-            }
-            Self::Numeric => {
-                let mut flags = FlagSet::new();
-                let mut number = String::new();
-                let mut separated = false;
-                for ch in chars.by_ref() {
-                    if ch.is_ascii_digit() {
-                        number.push(ch);
-                    } else {
-                        if ch == ',' && separated {
-                            return Err(DuplicateComma);
-                        }
-                        if ch == ',' {
-                            separated = true;
-                            let n = number.parse::<u16>().map_err(ParseIntError)?;
-                            flags.insert(try_flag_from_u16(n)?);
-                        }
-                    }
-                }
-                Ok(flags)
-            }
-            Self::Utf8 => chars.map(try_flag_from_char).collect(),
         }
     }
 }
@@ -375,18 +265,23 @@ impl FromStr for Condition {
 pub(crate) struct Affix<K> {
     /// The flag that words may use to reference this affix.
     flag: Flag,
-    /// Whether the affix is compatible with the opposite affix.
-    /// For example a word that has both a prefix and a suffix, both the prefix
-    /// and suffix should have `crossproduct: true`.
+    /// Whether the affix is compatible with the opposite affix. For example a word that has both
+    /// a prefix and a suffix, both the prefix and suffix should have `crossproduct: true`.
     crossproduct: bool,
     /// What is stripped from the stem when the affix is applied.
     strip: Option<String>,
     /// What should be added when the affix is applied.
     add: String,
-    /// Condition that the stem should be checked against to query if the
-    /// affix is relevant.
-    condition: Condition,
-    /// Flags the affix has itself.
+    /// Condition that the stem should be checked against to query if the affix is relevant.
+    ///
+    /// This is optional in Spellbook. Hunspell and Nuspell represent what we say is `None` as
+    /// `"."`. It's a pattern that always matches the input since the input to `condition_matches`
+    /// is never empty.
+    condition: Option<Condition>,
+    /// Continuation flags.
+    ///
+    /// These are included with the `add` in `.aff` files (separated by `/`).
+    // TODO: document how they're used.
     flags: FlagSet,
     phantom_data: PhantomData<K>,
 }
@@ -397,16 +292,18 @@ impl<K: AffixKind> Affix<K> {
         crossproduct: bool,
         strip: Option<&str>,
         add: &str,
-        condition: &str,
+        condition: Option<&str>,
         flags: FlagSet,
     ) -> Result<Self, ConditionError> {
+        let condition = condition.map(str::parse).transpose()?;
+
         Ok(Self {
             flag,
             crossproduct,
             strip: strip.map(|str| str.to_string()),
             add: add.to_string(),
             flags,
-            condition: condition.parse()?,
+            condition,
             phantom_data: PhantomData,
         })
     }
@@ -497,12 +394,17 @@ impl Prefix {
     }
 
     pub fn condition_matches(&self, word: &str) -> bool {
+        let condition = match self.condition.as_ref() {
+            Some(condition) => condition,
+            None => return true,
+        };
+
         // Length in bytes is greater than or equal to length in chars.
-        if word.len() < self.condition.chars {
+        if word.len() < condition.chars {
             return false;
         }
 
-        self.condition.matches(word)
+        condition.matches(word)
     }
 }
 
@@ -553,8 +455,13 @@ impl Suffix {
     }
 
     pub fn condition_matches(&self, word: &str) -> bool {
+        let condition = match self.condition.as_ref() {
+            Some(condition) => condition,
+            None => return true,
+        };
+
         // Length in bytes is greater than or equal to length in chars.
-        if word.len() < self.condition.chars {
+        if word.len() < condition.chars {
             return false;
         }
 
@@ -562,17 +469,17 @@ impl Suffix {
         let (chars, bytes) =
             word.chars()
                 .rev()
-                .take(self.condition.chars)
+                .take(condition.chars)
                 .fold((0, 0), |(chars, bytes), ch| {
                     // TODO: convert to a u32 instead and check with bit math how many bytes
                     // the code point takes.
                     (chars + 1, bytes + ch.encode_utf8(buffer).len())
                 });
 
-        if chars < self.condition.chars {
+        if chars < condition.chars {
             return false;
         }
-        self.condition.matches(&word[word.len() - bytes..])
+        condition.matches(&word[word.len() - bytes..])
     }
 }
 
@@ -633,7 +540,13 @@ pub(crate) struct AffixIndex<K> {
 
 impl<K: AffixKind> FromIterator<Affix<K>> for AffixIndex<K> {
     fn from_iter<T: IntoIterator<Item = Affix<K>>>(iter: T) -> Self {
-        let mut table: Vec<_> = iter.into_iter().collect();
+        let table: Vec<_> = iter.into_iter().collect();
+        table.into()
+    }
+}
+
+impl<K: AffixKind> From<Vec<Affix<K>>> for AffixIndex<K> {
+    fn from(mut table: Vec<Affix<K>>) -> Self {
         // Sort the table lexiographically by key. We will use this lexiographical ordering to
         // efficiently search in AffixesIter.
         table.sort_unstable_by(|a, b| a.appending().cmp(b.appending()));
@@ -779,13 +692,21 @@ impl<'a, K: AffixKind> Iterator for AffixesIter<'a, K> {
 ///
 // TODO: document how breaks are used and what the patterns mean.
 // TODO: use the Default implementation to give what Hunspell considers default?
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct BreakTable {
     table: Vec<String>,
     start_word_breaks_last_idx: usize,
     // Nuspell keeps the entries partitioned in the order "start, end, middle." I've re-arranged
     // this to be "start, middle, end" since I think it's more natural.
     middle_word_breaks_last_idx: usize,
+}
+
+impl Default for BreakTable {
+    fn default() -> Self {
+        use crate::alloc::vec;
+
+        vec!["^-", "-", "-$"].into()
+    }
 }
 
 impl From<Vec<&str>> for BreakTable {
@@ -944,29 +865,29 @@ pub(crate) struct AffData<S: BuildHasher> {
     prefixes: PrefixIndex,
     suffixes: SuffixIndex,
     break_table: BreakTable,
-    ignored_chars: String,
-    compound_rules: CompoundRuleTable,
+    // compound_rules: CompoundRuleTable, TODO: parsing
     compound_syllable_vowels: String,
-    compound_patterns: Vec<CompoundPattern>,
+    // compound_patterns: Vec<CompoundPattern>, TODO: parsing
     // input_substr_replacer: ? TODO
     // locale TODO
     // output_substr_replacer: ? TODO
     // suggestion options
-    // replacements: ReplacementTable,
+    // replacements: ReplacementTable, TODO
     // similarities: Vec<SimilarityGroup>,
-    // keyboard_closeness: String,
-    // try_chars: String,
     // phonetic_table: PhoneticTable,
+    ignore_chars: String,
+    keyboard_closeness: String,
+    try_chars: String,
     options: AffOptions,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct AffOptions {
     complex_prefixes: bool,
     fullstrip: bool,
     checksharps: bool,
     forbid_warn: bool,
-    compound_only_in_flag: Option<Flag>,
+    only_in_compound_flag: Option<Flag>,
     circumfix_flag: Option<Flag>,
     forbidden_word_flag: Option<Flag>,
     keep_case_flag: Option<Flag>,
@@ -981,22 +902,65 @@ pub(crate) struct AffOptions {
     compound_max_word_count: u16,
     compound_permit_flag: Option<Flag>,
     compound_forbid_flag: Option<Flag>,
-    compound_force_uppercase: Option<Flag>,
+    compound_force_uppercase_flag: Option<Flag>,
     compound_more_suffixes: bool,
     compound_check_duplicate: bool,
     compound_check_rep: bool,
     compound_check_case: bool,
     compound_check_triple: bool,
+    compound_simplified_triple: bool,
     compound_syllable_num: bool,
     compound_syllable_max: u16,
     max_compound_suggestions: u16,
     no_suggest_flag: Option<Flag>,
     substandard_flag: Option<Flag>,
     max_ngram_suggestions: u16,
-    max_diff_factor: Option<u16>,
+    max_diff_factor: u16,
     only_max_diff: bool,
     no_split_suggestions: bool,
     suggest_with_dots: bool,
+}
+
+impl Default for AffOptions {
+    fn default() -> Self {
+        Self {
+            complex_prefixes: Default::default(),
+            fullstrip: Default::default(),
+            checksharps: Default::default(),
+            forbid_warn: Default::default(),
+            only_in_compound_flag: Default::default(),
+            circumfix_flag: Default::default(),
+            forbidden_word_flag: Default::default(),
+            keep_case_flag: Default::default(),
+            need_affix_flag: Default::default(),
+            warn_flag: Default::default(),
+            compound_flag: Default::default(),
+            compound_begin_flag: Default::default(),
+            compound_middle_flag: Default::default(),
+            compound_last_flag: Default::default(),
+            compound_min_length: Default::default(),
+            compound_max_word_count: Default::default(),
+            compound_permit_flag: Default::default(),
+            compound_forbid_flag: Default::default(),
+            compound_force_uppercase_flag: Default::default(),
+            compound_more_suffixes: Default::default(),
+            compound_check_duplicate: Default::default(),
+            compound_check_rep: Default::default(),
+            compound_check_case: Default::default(),
+            compound_check_triple: Default::default(),
+            compound_simplified_triple: Default::default(),
+            compound_syllable_num: Default::default(),
+            compound_syllable_max: Default::default(),
+            max_compound_suggestions: 3,
+            no_suggest_flag: Default::default(),
+            substandard_flag: Default::default(),
+            max_ngram_suggestions: 5,
+            max_diff_factor: 5,
+            only_max_diff: Default::default(),
+            no_split_suggestions: Default::default(),
+            suggest_with_dots: Default::default(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1097,7 +1061,7 @@ mod test {
     fn affix_index_prefix_multiset_nuspell_unit_test() {
         // Upstream: <https://github.com/nuspell/nuspell/blob/b37faff6ea630a4a1bfb22097d455224b4239f8e/tests/unit_test.cxx#L315-L329>
         fn prefix(add: &str) -> Prefix {
-            Prefix::new(Flag::new(1).unwrap(), true, None, add, ".", flagset![]).unwrap()
+            Prefix::new(Flag::new(1).unwrap(), true, None, add, None, flagset![]).unwrap()
         }
 
         let index: PrefixIndex = [
@@ -1119,7 +1083,7 @@ mod test {
     fn affix_index_suffix_multiset_nuspell_unit_test() {
         // Upstream: <https://github.com/nuspell/nuspell/blob/b37faff6ea630a4a1bfb22097d455224b4239f8e/tests/unit_test.cxx#L331-L345>
         fn suffix(add: &str) -> Suffix {
-            Suffix::new(Flag::new(1).unwrap(), true, None, add, ".", flagset![]).unwrap()
+            Suffix::new(Flag::new(1).unwrap(), true, None, add, None, flagset![]).unwrap()
         }
 
         let index: SuffixIndex = [
@@ -1150,10 +1114,11 @@ mod test {
         // SFX D   0     ed         [^ey]
         // SFX D   0     ed         [aeiou]y
         let flag = Flag::new('D' as u16).unwrap();
-        let suffix1 = Suffix::new(flag, true, None, "d", "e", flagset![]).unwrap();
-        let suffix2 = Suffix::new(flag, true, Some("y"), "ied", "[^aeiou]y", flagset![]).unwrap();
-        let suffix3 = Suffix::new(flag, true, None, "ed", "[^ey]", flagset![]).unwrap();
-        let suffix4 = Suffix::new(flag, true, None, "ed", "[aeiou]y", flagset![]).unwrap();
+        let suffix1 = Suffix::new(flag, true, None, "d", Some("e"), flagset![]).unwrap();
+        let suffix2 =
+            Suffix::new(flag, true, Some("y"), "ied", Some("[^aeiou]y"), flagset![]).unwrap();
+        let suffix3 = Suffix::new(flag, true, None, "ed", Some("[^ey]"), flagset![]).unwrap();
+        let suffix4 = Suffix::new(flag, true, None, "ed", Some("[aeiou]y"), flagset![]).unwrap();
 
         let index: SuffixIndex = [&suffix1, &suffix2, &suffix3, &suffix4]
             .into_iter()
