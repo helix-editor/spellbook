@@ -1,4 +1,5 @@
 use core::{
+    borrow::Borrow,
     hash::{BuildHasher, Hash},
     marker::PhantomData,
 };
@@ -84,16 +85,24 @@ where
         self.table.len()
     }
 
-    pub fn get(&self, k: &K) -> Option<&V> {
-        let hash = make_hash(&self.build_hasher, k);
-        self.table.find(hash, |(p, _v)| p == k).map(|b| {
+    pub fn get<Q: ?Sized>(&self, k: &Q) -> Option<&V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        let hash = make_hash(&self.build_hasher, &k);
+        self.table.find(hash, |(p, _v)| p.borrow() == k).map(|b| {
             // Here we tie the lifetime of self to the value.
             let r = unsafe { b.as_ref() };
             &r.1
         })
     }
 
-    pub fn get_all<'a>(&'a self, k: &'a K) -> impl Iterator<Item = &'a V> + 'a {
+    pub fn get_all<'a, Q: ?Sized>(&'a self, k: &'a Q) -> GetAllIter<'a, Q, K, V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+    {
         let hash = make_hash(&self.build_hasher, k);
 
         GetAllIter {
@@ -157,13 +166,21 @@ impl<K, V> ExactSizeIterator for Iter<'_, K, V> {
     }
 }
 
-pub struct GetAllIter<'a, K: Eq, V> {
+pub struct GetAllIter<'a, Q: ?Sized, K, V>
+where
+    K: Borrow<Q>,
+    Q: Hash + Eq,
+{
     inner: RawIterHash<(K, V)>,
-    key: &'a K,
+    key: &'a Q,
     marker: PhantomData<(&'a K, &'a V)>,
 }
 
-impl<'a, K: Eq, V> Iterator for GetAllIter<'a, K, V> {
+impl<'a, Q: ?Sized, K, V> Iterator for GetAllIter<'a, Q, K, V>
+where
+    K: Borrow<Q>,
+    Q: Hash + Eq,
+{
     type Item = &'a V;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -174,7 +191,7 @@ impl<'a, K: Eq, V> Iterator for GetAllIter<'a, K, V> {
                     // to the value outlives the RawTable. It also prevents concurrent
                     // modifications to the table.
                     let element = unsafe { bucket.as_ref() };
-                    if self.key.eq(&element.0) {
+                    if self.key.eq(element.0.borrow()) {
                         return Some(&element.1);
                     }
                     continue;
@@ -187,7 +204,7 @@ impl<'a, K: Eq, V> Iterator for GetAllIter<'a, K, V> {
 
 #[cfg(test)]
 mod test {
-    use crate::alloc::{vec, vec::Vec};
+    use crate::alloc::{string::ToString, vec::Vec};
 
     use super::*;
 
@@ -203,6 +220,20 @@ mod test {
 
         let mut vals: Vec<_> = map.get_all(&1).copied().collect();
         vals.sort_unstable();
-        assert_eq!(vals, vec![1, 2]);
+        assert_eq!(&[1, 2], vals.as_slice());
+    }
+
+    #[test]
+    fn string_keys() {
+        let mut map = HashMultiMap::with_hasher(ahash::RandomState::new());
+        map.insert("hello".to_string(), "bob");
+        map.insert("hello".to_string(), "world");
+        map.insert("bye".to_string(), "bob");
+
+        let mut hellos: Vec<_> = map.get_all("hello").copied().collect();
+        hellos.sort_unstable();
+        assert_eq!(&["bob", "world"], hellos.as_slice());
+
+        assert_eq!(Some(&"bob"), map.get("bye"));
     }
 }
