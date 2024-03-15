@@ -842,7 +842,7 @@ impl StringPair {
     }
 
     /// Get the partition point of the two strings. This is the same as the `.len()` of the
-    /// [`left`] string.
+    /// [`Self::left`] string.
     #[inline]
     pub fn left_len(&self) -> usize {
         self.partition
