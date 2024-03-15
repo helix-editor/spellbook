@@ -116,7 +116,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Default>(
 ) -> Result<AffData<S>> {
     // First parse the aff file.
     let mut lines = Lines::<'aff>::new(aff_text, ParseDictionaryErrorSource::Aff);
-    let aff_parsers = HashMap::<&str, Parser, S>::from_iter(AFF_PARSERS.into_iter());
+    let aff_parsers = HashMap::<&str, Parser, S>::from_iter(AFF_PARSERS);
     let mut cx = AffLineParser::<'aff>::default();
 
     while !lines.is_finished() {
