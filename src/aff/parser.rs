@@ -109,14 +109,16 @@ const AFF_PARSERS: [(&str, Parser); 44] = [
 ];
 
 // TODO: encoding? Or just require all dictionaries to be UTF-8?
-// TODO: drop dependency on Default for S and allow passing it in.
-pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Default>(
+pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
     dic_text: &'dic str,
     aff_text: &'aff str,
+    build_hasher: S,
 ) -> Result<AffData<S>> {
     // First parse the aff file.
     let mut lines = Lines::<'aff>::new(aff_text, ParseDictionaryErrorSource::Aff);
-    let aff_parsers = HashMap::<&str, Parser, S>::from_iter(AFF_PARSERS);
+    let mut aff_parsers =
+        HashMap::with_capacity_and_hasher(AFF_PARSERS.len(), build_hasher.clone());
+    aff_parsers.extend(AFF_PARSERS);
     let mut cx = AffLineParser::<'aff>::default();
 
     while !lines.is_finished() {
@@ -133,7 +135,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Default>(
         .take_exactly_one_word()?
         .parse::<usize>()
         .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedNumber(err)))?;
-    let mut words = WordList::<S>::with_capacity(row_count);
+    let mut words = WordList::with_capacity_and_hasher(row_count, build_hasher);
 
     for row in 1..=row_count {
         lines.advance_line();

@@ -62,6 +62,13 @@ where
         }
     }
 
+    pub fn with_capacity_and_hasher(capacity: usize, build_hasher: S) -> Self {
+        Self {
+            table: RawTable::with_capacity(capacity),
+            build_hasher,
+        }
+    }
+
     pub fn insert(&mut self, k: K, v: V) {
         let hash = make_hash(&self.build_hasher, &k);
         let hasher = make_hasher(&self.build_hasher);

@@ -22,9 +22,24 @@ pub struct Dictionary<S: BuildHasher> {
     aff_data: aff::AffData<S>,
 }
 
-impl<S: BuildHasher> Dictionary<S> {
-    // new(dic_reader, aff_reader) -> Self
+impl<S: BuildHasher + Clone> Dictionary<S> {
+    pub fn new_with_hasher(
+        dic: &str,
+        aff: &str,
+        build_hasher: S,
+    ) -> Result<Self, ParseDictionaryError> {
+        let aff_data = aff::parser::parse(dic, aff, build_hasher)?;
+        Ok(Self { aff_data })
+    }
+}
 
+impl<S: BuildHasher + Clone + Default> Dictionary<S> {
+    pub fn new(dic: &str, aff: &str) -> Result<Self, ParseDictionaryError> {
+        Self::new_with_hasher(dic, aff, S::default())
+    }
+}
+
+impl<S: BuildHasher> Dictionary<S> {
     pub fn check(&self, word: &str) -> bool {
         self.aff_data.words.get(word).is_some()
     }
