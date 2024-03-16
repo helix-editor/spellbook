@@ -8,9 +8,10 @@
 //! constructively by inserting each element.
 
 use core::{
+    fmt,
     hash::BuildHasher,
     iter::{Enumerate, Peekable, TakeWhile},
-    str::{Chars, SplitWhitespace},
+    str::{Chars, FromStr, SplitWhitespace},
 };
 
 use hashbrown::HashMap;
@@ -20,12 +21,12 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    ParseDictionaryErrorSource, WordList,
+    WordList,
 };
 
-use crate::{Flag, FlagSet, ParseDictionaryError, ParseDictionaryErrorKind};
+use crate::{Flag, FlagSet};
 
-use super::{AffData, AffOptions, CompoundRule, FlagType, ParseFlagError, Prefix, Suffix};
+use super::{AffData, AffOptions, CompoundRule, Condition, FlagType, Prefix, Suffix};
 
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
 type ParseResult = Result<()>;
@@ -1021,7 +1022,7 @@ fn parse_dic_line(
     Ok((word, flag_set))
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ParseCompoundRuleError {
     ParseFlagError(ParseFlagError),
     InvalidFormat,
@@ -1184,6 +1185,250 @@ fn parse_compound_rule(
     Ok(rule)
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ParseDictionaryError {
+    pub kind: ParseDictionaryErrorKind,
+    pub source: ParseDictionaryErrorSource,
+    pub line_number: Option<usize>,
+}
+
+impl fmt::Display for ParseDictionaryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.line_number {
+            Some(line) => write!(
+                f,
+                "failed to parse {} file on line {}: {}",
+                self.source, line, self.kind
+            ),
+            None => write!(f, "failed to parse {} file: {}", self.source, self.kind),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ParseDictionaryErrorSource {
+    Dic,
+    Aff,
+    // Personal, ?
+}
+
+impl fmt::Display for ParseDictionaryErrorSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Dic => write!(f, ".dic"),
+            Self::Aff => write!(f, ".aff"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ParseDictionaryErrorKind {
+    UnknownFlagType(UnknownFlagTypeError),
+    MalformedFlag(ParseFlagError),
+    MalformedNumber(core::num::ParseIntError),
+    UnexpectedNonWhitespace(char),
+    MismatchedArity { expected: usize, actual: usize },
+    MismatchedRowCount { expected: usize, actual: usize },
+    MalformedCompoundRule(ParseCompoundRuleError),
+    // MalformedMorphologicalField(String),
+    MalformedAffix,
+    MalformedCondition(ConditionError),
+    Empty,
+}
+
+impl From<UnknownFlagTypeError> for ParseDictionaryErrorKind {
+    fn from(err: UnknownFlagTypeError) -> Self {
+        Self::UnknownFlagType(err)
+    }
+}
+
+impl From<ParseFlagError> for ParseDictionaryErrorKind {
+    fn from(err: ParseFlagError) -> Self {
+        Self::MalformedFlag(err)
+    }
+}
+
+impl From<ConditionError> for ParseDictionaryErrorKind {
+    fn from(err: ConditionError) -> Self {
+        Self::MalformedCondition(err)
+    }
+}
+
+impl fmt::Display for ParseDictionaryErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnknownFlagType(err) => err.fmt(f),
+            Self::MalformedFlag(err) => {
+                write!(f, "flag is malformed: {}", err)
+            }
+            Self::MalformedNumber(err) => err.fmt(f),
+            Self::UnexpectedNonWhitespace(ch) => {
+                write!(f, "unexpected non-whitespace character '{}'", ch)
+            }
+            Self::MismatchedArity { expected, actual } => {
+                write!(f, "expected {} arguments but found {}", expected, actual)
+            }
+            Self::MismatchedRowCount { expected, actual } => {
+                write!(f, "expected {} rows but found {}", expected, actual)
+            }
+            Self::MalformedCompoundRule(err) => {
+                write!(f, "compound rule is malformed: {}", err)
+            }
+            // Self::MalformedMorphologicalField(s) => {
+            //     write!(f, "morphological field '{}' is malformed", s)
+            // }
+            Self::MalformedAffix => write!(f, "failed to parse affix"),
+            Self::MalformedCondition(err) => write!(f, "condition is malformed: {}", err),
+            Self::Empty => write!(f, "the file is empty"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct UnknownFlagTypeError(String);
+
+impl FromStr for FlagType {
+    type Err = UnknownFlagTypeError;
+
+    fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+        match s {
+            "long" => Ok(Self::Long),
+            "num" => Ok(Self::Numeric),
+            "UTF-8" => Ok(Self::Utf8),
+            _ => Err(UnknownFlagTypeError(s.to_string())),
+        }
+    }
+}
+
+impl fmt::Display for UnknownFlagTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "expected FLAG to be `long`, `num` or `UTF-8` if set, found {}",
+            self.0
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ParseFlagError {
+    NonAscii(char),
+    MissingSecondChar(char),
+    ParseIntError(core::num::ParseIntError),
+    DuplicateComma,
+    ZeroFlag,
+    FlagAbove65535,
+}
+
+impl fmt::Display for ParseFlagError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonAscii(ch) => write!(f, "expected ascii char, found {}", ch),
+            Self::MissingSecondChar(ch) => {
+                write!(f, "expected two chars, {} is missing its second", ch)
+            }
+            Self::ParseIntError(err) => err.fmt(f),
+            Self::DuplicateComma => f.write_str("unexpected extra comma"),
+            Self::ZeroFlag => f.write_str("flag cannot be zero"),
+            Self::FlagAbove65535 => f.write_str("flag's binary representation exceeds 65535"),
+        }
+    }
+}
+
+/// An error arising from validating a [`Condition`].
+///
+/// Conditions are a subset of regular expressions that include positive and negative character
+/// classes and the wildcard character. A condition might fail validation if the character classes
+/// are open (for example `foo]` or `foo[bar`) or if the condition has an empty character class,
+/// which is not valid (`[]`).
+// Hands where I can see 'em, clippy. The only time I ever went down was when a machine was easing
+// at the wrong time.
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ConditionError {
+    /// The pattern contained an opening `[` character which did not match a closing `]`
+    /// character.
+    UnopenedCharacterClass,
+    /// The pattern contained a closing `]` character which did not match an opening `[`
+    /// character.
+    UnclosedCharacterClass,
+    /// The pattern contained the literal `[]` which is not a valid character class.
+    EmptyCharacterClass,
+}
+
+impl fmt::Display for ConditionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnopenedCharacterClass => {
+                f.write_str("closing bracket has no matching opening bracket")
+            }
+            Self::UnclosedCharacterClass => {
+                f.write_str("opening bracket has no matching closing bracket")
+            }
+            Self::EmptyCharacterClass => f.write_str("empty bracket expression"),
+        }
+    }
+}
+
+impl FromStr for Condition {
+    type Err = ConditionError;
+
+    fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+        let mut scan = s;
+        let mut chars = 0;
+
+        // Loop through the characters. We can't just iterate through the `.chars()` because we'll
+        // be jumping ahead with the help of `find`.
+        loop {
+            // Find a bracket. Brackets signal character classes.
+            let bracket_index = match scan.find(['[', ']']) {
+                Some(index) => index,
+                None => {
+                    // If there isn't one, accept the rest of the string.
+                    chars += scan.chars().count();
+                    break;
+                }
+            };
+            // If there is one, scan ahead to it.
+            chars += scan[..bracket_index].chars().count();
+            scan = &scan[bracket_index..];
+            match scan
+                .chars()
+                .next()
+                .expect("scan can't be empty if the pattern matched")
+            {
+                ']' => return Err(Self::Err::UnopenedCharacterClass),
+                '[' => {
+                    scan = &scan[1..];
+                    match scan.chars().next() {
+                        None => return Err(Self::Err::UnclosedCharacterClass),
+                        Some('^') => scan = &scan[1..],
+                        _ => (),
+                    }
+
+                    match scan.find(']') {
+                        None => return Err(Self::Err::UnclosedCharacterClass),
+                        Some(0) => return Err(Self::Err::EmptyCharacterClass),
+                        Some(bracket_index) => {
+                            // Only count the character class as one character.
+                            chars += 1;
+                            scan = &scan[bracket_index + 1..];
+                            continue;
+                        }
+                    }
+                }
+                // This is impossible if find `find` found `[` or `]`.
+                _ => unreachable!(),
+            }
+        }
+
+        Ok(Self {
+            pattern: String::from(s),
+            chars,
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{alloc::vec, flag, flagset};
@@ -1243,6 +1488,50 @@ mod test {
         assert_eq!(
             flagset!['1' as u16],
             decode_flagset("1", FlagType::default(), &[]).unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_condition_test() {
+        assert_eq!(
+            Err(ConditionError::EmptyCharacterClass),
+            "[]".parse::<Condition>()
+        );
+        assert_eq!(
+            Err(ConditionError::UnclosedCharacterClass),
+            "[foo".parse::<Condition>()
+        );
+        assert_eq!(
+            Err(ConditionError::UnopenedCharacterClass),
+            "foo]".parse::<Condition>()
+        );
+        assert_eq!(
+            Ok(Condition {
+                pattern: "foo".to_string(),
+                chars: 3
+            }),
+            "foo".parse()
+        );
+        assert_eq!(
+            Ok(Condition {
+                pattern: "foo[bar]".to_string(),
+                chars: 4
+            }),
+            "foo[bar]".parse()
+        );
+        assert_eq!(
+            Ok(Condition {
+                pattern: "[foo]bar".to_string(),
+                chars: 4
+            }),
+            "[foo]bar".parse()
+        );
+        assert_eq!(
+            Ok(Condition {
+                pattern: "foo[bar]baz".to_string(),
+                chars: 7
+            }),
+            "foo[bar]baz".parse()
         );
     }
 

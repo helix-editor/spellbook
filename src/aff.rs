@@ -9,12 +9,7 @@ use crate::{
     Flag, FlagSet, WordList,
 };
 
-use core::{
-    fmt,
-    hash::BuildHasher,
-    marker::PhantomData,
-    str::{Chars, FromStr},
-};
+use core::{hash::BuildHasher, marker::PhantomData, str::Chars};
 
 const HIDDEN_HOMONYM_FLAG: u16 = u16::MAX;
 const MAX_SUGGESTIONS: usize = 16;
@@ -46,57 +41,6 @@ pub(crate) enum FlagType {
 impl Default for FlagType {
     fn default() -> Self {
         Self::Short
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct UnknownFlagTypeError(String);
-
-impl FromStr for FlagType {
-    type Err = UnknownFlagTypeError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "long" => Ok(Self::Long),
-            "num" => Ok(Self::Numeric),
-            "UTF-8" => Ok(Self::Utf8),
-            _ => Err(UnknownFlagTypeError(s.to_string())),
-        }
-    }
-}
-
-impl fmt::Display for UnknownFlagTypeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "expected FLAG to be `long`, `num` or `UTF-8` if set, found {}",
-            self.0
-        )
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ParseFlagError {
-    NonAscii(char),
-    MissingSecondChar(char),
-    ParseIntError(core::num::ParseIntError),
-    DuplicateComma,
-    ZeroFlag,
-    FlagAbove65535,
-}
-
-impl fmt::Display for ParseFlagError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NonAscii(ch) => write!(f, "expected ascii char, found {}", ch),
-            Self::MissingSecondChar(ch) => {
-                write!(f, "expected two chars, {} is missing its second", ch)
-            }
-            Self::ParseIntError(err) => err.fmt(f),
-            Self::DuplicateComma => f.write_str("unexpected extra comma"),
-            Self::ZeroFlag => f.write_str("flag cannot be zero"),
-            Self::FlagAbove65535 => f.write_str("flag's binary representation exceeds 65535"),
-        }
     }
 }
 
@@ -166,100 +110,6 @@ impl Condition {
     }
 }
 
-/// An error arising from validating a [`Condition`].
-///
-/// Conditions are a subset of regular expressions that include positive and negative character
-/// classes and the wildcard character. A condition might fail validation if the character classes
-/// are open (for example `foo]` or `foo[bar`) or if the condition has an empty character class,
-/// which is not valid (`[]`).
-// Hands where I can see 'em, clippy. The only time I ever went down was when a machine was easing
-// at the wrong time.
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, PartialEq, Eq)]
-pub enum ConditionError {
-    /// The pattern contained an opening `[` character which did not match a closing `]`
-    /// character.
-    UnopenedCharacterClass,
-    /// The pattern contained a closing `]` character which did not match an opening `[`
-    /// character.
-    UnclosedCharacterClass,
-    /// The pattern contained the literal `[]` which is not a valid character class.
-    EmptyCharacterClass,
-}
-
-impl fmt::Display for ConditionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnopenedCharacterClass => {
-                f.write_str("closing bracket has no matching opening bracket")
-            }
-            Self::UnclosedCharacterClass => {
-                f.write_str("opening bracket has no matching closing bracket")
-            }
-            Self::EmptyCharacterClass => f.write_str("empty bracket expression"),
-        }
-    }
-}
-
-impl FromStr for Condition {
-    type Err = ConditionError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut scan = s;
-        let mut chars = 0;
-
-        // Loop through the characters. We can't just iterate through the `.chars()` because we'll
-        // be jumping ahead with the help of `find`.
-        loop {
-            // Find a bracket. Brackets signal character classes.
-            let bracket_index = match scan.find(['[', ']']) {
-                Some(index) => index,
-                None => {
-                    // If there isn't one, accept the rest of the string.
-                    chars += scan.chars().count();
-                    break;
-                }
-            };
-            // If there is one, scan ahead to it.
-            chars += scan[..bracket_index].chars().count();
-            scan = &scan[bracket_index..];
-            match scan
-                .chars()
-                .next()
-                .expect("scan can't be empty if the pattern matched")
-            {
-                ']' => return Err(Self::Err::UnopenedCharacterClass),
-                '[' => {
-                    scan = &scan[1..];
-                    match scan.chars().next() {
-                        None => return Err(Self::Err::UnclosedCharacterClass),
-                        Some('^') => scan = &scan[1..],
-                        _ => (),
-                    }
-
-                    match scan.find(']') {
-                        None => return Err(Self::Err::UnclosedCharacterClass),
-                        Some(0) => return Err(Self::Err::EmptyCharacterClass),
-                        Some(bracket_index) => {
-                            // Only count the character class as one character.
-                            chars += 1;
-                            scan = &scan[bracket_index + 1..];
-                            continue;
-                        }
-                    }
-                }
-                // This is impossible if find `find` found `[` or `]`.
-                _ => unreachable!(),
-            }
-        }
-
-        Ok(Self {
-            pattern: String::from(s),
-            chars,
-        })
-    }
-}
-
 /// Internal container type for a prefix or suffix.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct Affix<K> {
@@ -294,7 +144,7 @@ impl<K: AffixKind> Affix<K> {
         add: &str,
         condition: Option<&str>,
         flags: FlagSet,
-    ) -> Result<Self, ConditionError> {
+    ) -> Result<Self, parser::ConditionError> {
         let condition = condition.map(str::parse).transpose()?;
 
         Ok(Self {
@@ -717,7 +567,6 @@ impl From<Vec<&str>> for BreakTable {
 
         for b in breaks.into_iter() {
             if b.is_empty() {
-                // TODO: ensure this in the parsing code.
                 unreachable!("break patterns must not be empty");
             }
 
@@ -974,50 +823,6 @@ impl Default for AffOptions {
 mod test {
     use super::*;
     use crate::*;
-
-    #[test]
-    fn condition_parse() {
-        assert_eq!(
-            Err(ConditionError::EmptyCharacterClass),
-            "[]".parse::<Condition>()
-        );
-        assert_eq!(
-            Err(ConditionError::UnclosedCharacterClass),
-            "[foo".parse::<Condition>()
-        );
-        assert_eq!(
-            Err(ConditionError::UnopenedCharacterClass),
-            "foo]".parse::<Condition>()
-        );
-        assert_eq!(
-            Ok(Condition {
-                pattern: "foo".to_string(),
-                chars: 3
-            }),
-            "foo".parse()
-        );
-        assert_eq!(
-            Ok(Condition {
-                pattern: "foo[bar]".to_string(),
-                chars: 4
-            }),
-            "foo[bar]".parse()
-        );
-        assert_eq!(
-            Ok(Condition {
-                pattern: "[foo]bar".to_string(),
-                chars: 4
-            }),
-            "[foo]bar".parse()
-        );
-        assert_eq!(
-            Ok(Condition {
-                pattern: "foo[bar]baz".to_string(),
-                chars: 7
-            }),
-            "foo[bar]baz".parse()
-        );
-    }
 
     #[test]
     fn condition_matches() {

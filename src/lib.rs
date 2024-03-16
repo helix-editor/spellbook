@@ -2,7 +2,7 @@
 
 // TODO: remove.
 #![allow(dead_code)]
-// #![no_std]
+#![no_std]
 
 extern crate alloc;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
@@ -16,6 +16,8 @@ use alloc::{
 pub(crate) mod aff;
 mod hash_multi_map;
 pub(crate) mod macros;
+
+pub use aff::parser::{ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource};
 
 /// TODO
 pub struct Dictionary<S: BuildHasher> {
@@ -226,106 +228,6 @@ impl fmt::Debug for FlagSet {
 }
 
 pub(crate) type WordList<S> = hash_multi_map::HashMultiMap<String, FlagSet, S>;
-
-#[derive(Debug)]
-pub struct ParseDictionaryError {
-    pub kind: ParseDictionaryErrorKind,
-    pub source: ParseDictionaryErrorSource,
-    pub line_number: Option<usize>,
-}
-
-impl fmt::Display for ParseDictionaryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.line_number {
-            Some(line) => write!(
-                f,
-                "failed to parse {} file on line {}: {}",
-                self.source, line, self.kind
-            ),
-            None => write!(f, "failed to parse {} file: {}", self.source, self.kind),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ParseDictionaryErrorSource {
-    Dic,
-    Aff,
-    // Personal, ?
-}
-
-impl fmt::Display for ParseDictionaryErrorSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Dic => write!(f, ".dic"),
-            Self::Aff => write!(f, ".aff"),
-        }
-    }
-}
-
-// TODO: move parse error types to parser module.
-#[derive(Debug)]
-pub enum ParseDictionaryErrorKind {
-    UnknownFlagType(aff::UnknownFlagTypeError),
-    MalformedFlag(aff::ParseFlagError),
-    MalformedNumber(core::num::ParseIntError),
-    UnexpectedNonWhitespace(char),
-    MismatchedArity { expected: usize, actual: usize },
-    MismatchedRowCount { expected: usize, actual: usize },
-    MalformedCompoundRule(aff::parser::ParseCompoundRuleError),
-    // MalformedMorphologicalField(String),
-    MalformedAffix,
-    MalformedCondition(aff::ConditionError),
-    Empty,
-}
-
-impl From<aff::UnknownFlagTypeError> for ParseDictionaryErrorKind {
-    fn from(err: aff::UnknownFlagTypeError) -> Self {
-        Self::UnknownFlagType(err)
-    }
-}
-
-impl From<aff::ParseFlagError> for ParseDictionaryErrorKind {
-    fn from(err: aff::ParseFlagError) -> Self {
-        Self::MalformedFlag(err)
-    }
-}
-
-impl From<aff::ConditionError> for ParseDictionaryErrorKind {
-    fn from(err: aff::ConditionError) -> Self {
-        Self::MalformedCondition(err)
-    }
-}
-
-impl fmt::Display for ParseDictionaryErrorKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownFlagType(err) => err.fmt(f),
-            Self::MalformedFlag(err) => {
-                write!(f, "flag is malformed: {}", err)
-            }
-            Self::MalformedNumber(err) => err.fmt(f),
-            Self::UnexpectedNonWhitespace(ch) => {
-                write!(f, "unexpected non-whitespace character '{}'", ch)
-            }
-            Self::MismatchedArity { expected, actual } => {
-                write!(f, "expected {} arguments but found {}", expected, actual)
-            }
-            Self::MismatchedRowCount { expected, actual } => {
-                write!(f, "expected {} rows but found {}", expected, actual)
-            }
-            Self::MalformedCompoundRule(err) => {
-                write!(f, "compound rule is malformed: {}", err)
-            }
-            // Self::MalformedMorphologicalField(s) => {
-            //     write!(f, "morphological field '{}' is malformed", s)
-            // }
-            Self::MalformedAffix => write!(f, "failed to parse affix"),
-            Self::MalformedCondition(err) => write!(f, "condition is malformed: {}", err),
-            Self::Empty => write!(f, "the file is empty"),
-        }
-    }
-}
 
 #[cfg(test)]
 mod test {
