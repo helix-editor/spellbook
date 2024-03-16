@@ -25,7 +25,7 @@ use crate::{
 
 use crate::{Flag, FlagSet, ParseDictionaryError, ParseDictionaryErrorKind};
 
-use super::{AffData, AffOptions, FlagType, ParseFlagError, Prefix, Suffix};
+use super::{AffData, AffOptions, CompoundRule, FlagType, ParseFlagError, Prefix, Suffix};
 
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
 type ParseResult = Result<()>;
@@ -46,12 +46,13 @@ struct AffLineParser<'aff> {
     keyboard_closeness: &'aff str,
     prefixes: Vec<Prefix>,
     suffixes: Vec<Suffix>,
+    compound_rules: Vec<CompoundRule>,
 }
 
 type Parser = for<'aff> fn(&mut AffLineParser<'aff>, &mut Lines<'aff>) -> ParseResult;
 
 // These parsers are only used for the `.aff` file's contents. The `.dic` file is handled ad-hoc.
-const AFF_PARSERS: [(&str, Parser); 44] = [
+const AFF_PARSERS: [(&str, Parser); 45] = [
     ("FLAG", parse_flag_type),
     // Flags
     ("FORBIDDENWORD", parse_forbidden_word_flag),
@@ -103,9 +104,9 @@ const AFF_PARSERS: [(&str, Parser); 44] = [
     ("AF", parse_flag_aliases),
     ("PFX", parse_prefix_table),
     ("SFX", parse_suffix_table),
+    ("COMPOUNDRULE", parse_compound_rule_table),
     // TODO:
     // ("CHECKCOMPOUNDPATTERN", parse_compound_pattern),
-    // ("COMPOUNDRULE", parse_compound_rule),
 ];
 
 // TODO: encoding? Or just require all dictionaries to be UTF-8?
@@ -163,7 +164,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         prefixes: cx.prefixes.into(),
         suffixes: cx.suffixes.into(),
         break_table: cx.break_patterns.into(),
-        // compound_rules: todo!(),
+        compound_rules: cx.compound_rules.into(),
         compound_syllable_vowels: cx.compound_syllable_vowels.to_string(),
         // compound_patterns: todo!(),
         ignore_chars: cx.ignore_chars.to_string(),
@@ -489,6 +490,14 @@ fn parse_suffix_table(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult 
             Ok(())
         },
     )
+}
+
+fn parse_compound_rule_table(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
+    lines.parse_table1("COMPOUNDRULE", |word| {
+        let rule = parse_compound_rule(word, cx.flag_type)?;
+        cx.compound_rules.push(rule);
+        Ok(())
+    })
 }
 
 /// A helper type that means "words on a line split by whitespace with comments
@@ -1012,9 +1021,172 @@ fn parse_dic_line(
     Ok((word, flag_set))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParseCompoundRuleError {
+    ParseFlagError(ParseFlagError),
+    InvalidFormat,
+}
+
+impl core::fmt::Display for ParseCompoundRuleError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ParseFlagError(err) => write!(f, "failed to parse flag: {}", err),
+            Self::InvalidFormat => f.write_str("invalid compound rule format"),
+        }
+    }
+}
+
+impl From<ParseFlagError> for ParseCompoundRuleError {
+    fn from(err: ParseFlagError) -> Self {
+        Self::ParseFlagError(err)
+    }
+}
+
+impl From<ParseCompoundRuleError> for ParseDictionaryErrorKind {
+    fn from(err: ParseCompoundRuleError) -> Self {
+        Self::MalformedCompoundRule(err)
+    }
+}
+
+fn parse_compound_rule(
+    input: &str,
+    flag_type: FlagType,
+) -> core::result::Result<CompoundRule, ParseCompoundRuleError> {
+    use super::CompoundRuleElement as Elem;
+
+    let rough_capacity = if matches!(flag_type, FlagType::Long) {
+        input.len() / 2
+    } else {
+        input.len()
+    };
+    let mut rule = Vec::with_capacity(rough_capacity);
+
+    match flag_type {
+        FlagType::Short => {
+            for ch in input.chars() {
+                if !ch.is_ascii() {
+                    return Err(ParseFlagError::NonAscii(ch).into());
+                }
+                let element = match ch {
+                    // Can't start with a wildcard.
+                    '*' | '?' if rule.is_empty() => {
+                        return Err(ParseCompoundRuleError::InvalidFormat);
+                    }
+                    '*' => Elem::ZeroOrMore,
+                    '?' => Elem::ZeroOrOne,
+                    _ => Elem::Flag(try_flag_from_char(ch)?),
+                };
+                rule.push(element);
+            }
+        }
+        FlagType::Utf8 => {
+            for ch in input.chars() {
+                let element = match ch {
+                    // Can't start with a wildcard.
+                    '*' | '?' if rule.is_empty() => {
+                        return Err(ParseCompoundRuleError::InvalidFormat);
+                    }
+                    '*' => Elem::ZeroOrMore,
+                    '?' => Elem::ZeroOrOne,
+                    _ => Elem::Flag(try_flag_from_char(ch)?),
+                };
+                rule.push(element);
+            }
+        }
+        FlagType::Long => {
+            let mut chars = input.chars().peekable();
+
+            loop {
+                match chars.next() {
+                    Some('(') => {
+                        let c1 = match chars.next() {
+                            Some(ch) if !ch.is_ascii() => {
+                                return Err(ParseFlagError::NonAscii(ch).into())
+                            }
+                            Some(ch) if ch != ')' => ch,
+                            _ => return Err(ParseCompoundRuleError::InvalidFormat),
+                        };
+                        let c2 = match chars.next() {
+                            Some(ch) if !ch.is_ascii() => {
+                                return Err(ParseFlagError::NonAscii(ch).into())
+                            }
+                            Some(ch) if ch != ')' => ch,
+                            _ => return Err(ParseCompoundRuleError::InvalidFormat),
+                        };
+
+                        if chars.next() != Some(')') {
+                            return Err(ParseCompoundRuleError::InvalidFormat);
+                        }
+
+                        let flag = try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))?;
+                        rule.push(Elem::Flag(flag));
+                    }
+                    Some(_) => return Err(ParseCompoundRuleError::InvalidFormat),
+                    None => break,
+                }
+
+                match chars.peek() {
+                    Some('*') => {
+                        rule.push(Elem::ZeroOrMore);
+                        chars.next();
+                    }
+                    Some('?') => {
+                        rule.push(Elem::ZeroOrOne);
+                        chars.next();
+                    }
+                    _ => (),
+                }
+            }
+        }
+        FlagType::Numeric => {
+            // Most dictionaries will not exceed 3 digit numeric flags.
+            let mut number = String::with_capacity(3);
+            let mut chars = input.chars().peekable();
+
+            loop {
+                match chars.next() {
+                    Some('(') => {
+                        loop {
+                            match chars.next() {
+                                Some(ch) if ch.is_ascii_digit() => number.push(ch),
+                                Some(')') if !number.is_empty() => break,
+                                _ => return Err(ParseCompoundRuleError::InvalidFormat),
+                            }
+                        }
+
+                        let n = number
+                            .parse::<u16>()
+                            .map_err(ParseFlagError::ParseIntError)?;
+                        number.clear();
+
+                        let flag = try_flag_from_u16(n)?;
+                        rule.push(Elem::Flag(flag));
+                    }
+                    Some(_) => return Err(ParseCompoundRuleError::InvalidFormat),
+                    None => break,
+                }
+
+                match chars.peek() {
+                    Some('*') => {
+                        rule.push(Elem::ZeroOrMore);
+                        chars.next();
+                    }
+                    Some('?') => {
+                        rule.push(Elem::ZeroOrOne);
+                        chars.next();
+                    }
+                    _ => (),
+                }
+            }
+        }
+    }
+
+    Ok(rule)
+}
+
 #[cfg(test)]
 mod test {
-    use crate::{flag, flagset};
+    use crate::{alloc::vec, flag, flagset};
 
     use super::*;
 
@@ -1071,6 +1243,69 @@ mod test {
         assert_eq!(
             flagset!['1' as u16],
             decode_flagset("1", FlagType::default(), &[]).unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_compound_rule_test() {
+        use super::ParseCompoundRuleError as Error;
+        use crate::aff::CompoundRuleElement as Elem;
+
+        assert_eq!(
+            Ok(vec![
+                Elem::Flag(flag!('a')),
+                Elem::Flag(flag!('b')),
+                Elem::ZeroOrOne,
+                Elem::Flag(flag!('c')),
+                Elem::ZeroOrMore,
+                Elem::Flag(flag!('d')),
+            ]),
+            parse_compound_rule("ab?c*d", FlagType::Short)
+        );
+
+        // Hello, en_GB.aff
+        assert_eq!(
+            Ok(vec![
+                Elem::Flag(flag!('#')),
+                Elem::ZeroOrMore,
+                Elem::Flag(flag!('0')),
+                Elem::Flag(flag!('{')),
+            ]),
+            parse_compound_rule("#*0{", FlagType::Utf8)
+        );
+
+        assert_eq!(
+            Ok(vec![
+                Elem::Flag(flag!(5)),
+                Elem::Flag(flag!(6)),
+                Elem::ZeroOrMore,
+                Elem::Flag(flag!(11)),
+                Elem::ZeroOrOne,
+                Elem::Flag(flag!(99)),
+            ]),
+            parse_compound_rule("(5)(6)*(11)?(99)", FlagType::Numeric)
+        );
+
+        assert_eq!(
+            Ok(vec![
+                Elem::Flag(flag!(10060)),
+                Elem::Flag(flag!(10052)),
+                Elem::ZeroOrMore,
+                Elem::Flag(flag!(10056)),
+                Elem::ZeroOrOne,
+                Elem::Flag(flag!(17218)),
+            ]),
+            parse_compound_rule("(L')(D')*(H')?(BC)", FlagType::Long)
+        );
+
+        // Can't start with a wildcard
+        assert_eq!(
+            Err(Error::InvalidFormat),
+            parse_compound_rule("*", FlagType::Short)
+        );
+        assert_eq!(
+            Err(Error::InvalidFormat),
+            parse_compound_rule("?", FlagType::Short)
         );
     }
 }

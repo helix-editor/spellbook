@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! flag {
     ( $x:expr ) => {{
-        Flag::new($x).unwrap()
+        Flag::new($x as u16).unwrap()
     }};
 }
 

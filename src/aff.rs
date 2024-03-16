@@ -761,24 +761,33 @@ impl BreakTable {
     }
 }
 
-#[derive(Debug)]
+/// Individual rules of COMPOUNDRULE patterns.
+///
+/// Compound rules are a very small regex-like language for describing how stems might be joined
+/// in a compound. Each element might be a flag, a zero-or-one wildcard (`?`) or a zero-or-more
+/// wildcard (`*`). Typically dictionaries use these to describe how to compound numbers
+/// together. The [Spylls docs for `CompoundRule`](https://spylls.readthedocs.io/en/latest/hunspell/data_aff.html?highlight=compound%20rule#spylls.hunspell.data.aff.CompoundRule)
+/// have an excellent explanation of a common use-case for compound rules.
+///
+/// Trivia: Nuspell doesn't special case `*` and `?` modifiers in its internal representation of
+/// the compound rule. Instead it keeps those flags as characters. (`char16_t` is Nuspell's flag
+/// representation.) This is quite clever because it allows Nuspell to only spend two bytes per
+/// element to store the rule. `CompoundRuleElement` is 4 bytes in comparison. The tradeoff is
+/// ambiguity for some `FlagType` representations. If a `.aff` file used `FlagType::Numeric`,
+/// `*` would be indistinguishable from 42 and `?` indistinguishable from 63. In practice this
+/// doesn't seem to be a problem.
+///
+/// We use a `Vec<CompoundRuleElement>` in Spellbook only for clarity. Few dictionaries use
+/// compound rules and those that do use them tend to use 12 or fewer entries in the table, with
+/// each rule being only a few elements long.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum CompoundRuleElement {
     Flag(Flag),
     ZeroOrOne,
     ZeroOrMore,
 }
 
-// Nuspell uses a `std::u16string` to represent this type which is quite clever. Nuspell can
-// treat `?` and `*` like regular flags and therefore only use 2 bytes per element, since flags
-// are all `char16_t`. The enum representation above takes 4 bytes per element.
-//
-// TODO: consider special-casing `*` and `?` when parsing. Instead of using an enum, encode them
-// as `Flag`s. This will reduce the clarity of the code but save half of the space of each
-// CompoundRule.
-//
-// Also look at real dictionaries and see how many compound rules there are. This may not be
-// worth the reduction in clarity.
-type CompoundRule = Vec<CompoundRuleElement>;
+pub(crate) type CompoundRule = Vec<CompoundRuleElement>;
 
 /// A set of rules that can be used to detect whether constructed compounds are allowed.
 ///
@@ -789,10 +798,8 @@ pub(crate) struct CompoundRuleTable {
     all_flags: FlagSet,
 }
 
-impl FromIterator<CompoundRule> for CompoundRuleTable {
-    fn from_iter<T: IntoIterator<Item = CompoundRule>>(iter: T) -> Self {
-        let rules: Vec<_> = iter.into_iter().collect();
-
+impl From<Vec<CompoundRule>> for CompoundRuleTable {
+    fn from(rules: Vec<CompoundRule>) -> Self {
         let all_flags = rules
             .iter()
             .flatten()
@@ -865,7 +872,7 @@ pub(crate) struct AffData<S: BuildHasher> {
     prefixes: PrefixIndex,
     suffixes: SuffixIndex,
     break_table: BreakTable,
-    // compound_rules: CompoundRuleTable, TODO: parsing
+    compound_rules: CompoundRuleTable,
     compound_syllable_vowels: String,
     // compound_patterns: Vec<CompoundPattern>, TODO: parsing
     // input_substr_replacer: ? TODO

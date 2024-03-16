@@ -2,7 +2,7 @@
 
 // TODO: remove.
 #![allow(dead_code)]
-#![no_std]
+// #![no_std]
 
 extern crate alloc;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
@@ -263,6 +263,7 @@ impl fmt::Display for ParseDictionaryErrorSource {
     }
 }
 
+// TODO: move parse error types to parser module.
 #[derive(Debug)]
 pub enum ParseDictionaryErrorKind {
     UnknownFlagType(aff::UnknownFlagTypeError),
@@ -271,7 +272,7 @@ pub enum ParseDictionaryErrorKind {
     UnexpectedNonWhitespace(char),
     MismatchedArity { expected: usize, actual: usize },
     MismatchedRowCount { expected: usize, actual: usize },
-    // MalformedCompoundRule(ParseCompoundRuleError),
+    MalformedCompoundRule(aff::parser::ParseCompoundRuleError),
     // MalformedMorphologicalField(String),
     MalformedAffix,
     MalformedCondition(aff::ConditionError),
@@ -313,9 +314,9 @@ impl fmt::Display for ParseDictionaryErrorKind {
             Self::MismatchedRowCount { expected, actual } => {
                 write!(f, "expected {} rows but found {}", expected, actual)
             }
-            // Self::MalformedCompoundRule(err) => {
-            //     write!(f, "compound rule is malformed: {}", err)
-            // }
+            Self::MalformedCompoundRule(err) => {
+                write!(f, "compound rule is malformed: {}", err)
+            }
             // Self::MalformedMorphologicalField(s) => {
             //     write!(f, "morphological field '{}' is malformed", s)
             // }
