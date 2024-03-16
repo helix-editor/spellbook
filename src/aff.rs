@@ -449,7 +449,7 @@ impl<C: CharReader> From<Vec<Affix<C>>> for AffixIndex<C> {
 }
 
 impl<C: CharReader> AffixIndex<C> {
-    fn affixes_of<'a>(&'a self, word: &'a str) -> AffixesIter<'a, C> {
+    pub fn affixes_of<'a>(&'a self, word: &'a str) -> AffixesIter<'a, C> {
         AffixesIter {
             table: &self.table,
             first_char: &self.first_char,
