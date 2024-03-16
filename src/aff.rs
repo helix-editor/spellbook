@@ -112,7 +112,7 @@ impl Condition {
 
 /// Internal container type for a prefix or suffix.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct Affix<K> {
+pub(crate) struct Affix<C> {
     /// The flag that words may use to reference this affix.
     flag: Flag,
     /// Whether the affix is compatible with the opposite affix. For example a word that has both
@@ -133,10 +133,10 @@ pub(crate) struct Affix<K> {
     /// These are included with the `add` in `.aff` files (separated by `/`).
     // TODO: document how they're used.
     flags: FlagSet,
-    phantom_data: PhantomData<K>,
+    phantom_data: PhantomData<C>,
 }
 
-impl<K: AffixKind> Affix<K> {
+impl<C: CharReader> Affix<C> {
     pub fn new(
         flag: Flag,
         crossproduct: bool,
@@ -158,8 +158,8 @@ impl<K: AffixKind> Affix<K> {
         })
     }
 
-    pub fn appending(&self) -> K::Chars<'_> {
-        K::chars(&self.add)
+    pub fn appending(&self) -> C::Chars<'_> {
+        C::chars(&self.add)
     }
 }
 
@@ -173,7 +173,14 @@ pub(crate) type Prefix = Affix<Pfx>;
 /// Rules for replacing characters at the end of a stem.
 pub(crate) type Suffix = Affix<Sfx>;
 
-pub(crate) trait AffixKind {
+/// A helper trait that, together with `Pfx` and `Sfx`, allows generically reading either
+/// characters of a `&str` forwards or backwards.
+///
+/// This is a textbook ["lending iterator"] which uses a generic associated type to express that
+/// the lifetime of the iterator is bound only to the input word.
+///
+/// ["lending iterator"]: https://rust-lang.github.io/generic-associated-types-initiative/design_patterns/iterable.html
+pub(crate) trait CharReader {
     type Chars<'a>: Iterator<Item = char>
     where
         Self: 'a;
@@ -181,7 +188,7 @@ pub(crate) trait AffixKind {
     fn chars(word: &str) -> Self::Chars<'_>;
 }
 
-impl AffixKind for Pfx {
+impl CharReader for Pfx {
     type Chars<'a> = Chars<'a>;
 
     fn chars(word: &str) -> Self::Chars<'_> {
@@ -189,7 +196,7 @@ impl AffixKind for Pfx {
     }
 }
 
-impl AffixKind for Sfx {
+impl CharReader for Sfx {
     type Chars<'a> = core::iter::Rev<Chars<'a>>;
 
     fn chars(word: &str) -> Self::Chars<'_> {
@@ -382,21 +389,21 @@ pub(crate) type SuffixIndex = AffixIndex<Sfx>;
 // TODO: I originally tried a hashing-based approach using `hashbrown::raw::RawTable`. Lift that
 // structure from the commit history and benchmark it against this Vec based approach.
 #[derive(Debug)]
-pub(crate) struct AffixIndex<K> {
-    table: Vec<Affix<K>>,
+pub(crate) struct AffixIndex<C> {
+    table: Vec<Affix<C>>,
     first_char: Vec<char>,
     prefix_idx_with_first_char: Vec<usize>,
 }
 
-impl<K: AffixKind> FromIterator<Affix<K>> for AffixIndex<K> {
-    fn from_iter<T: IntoIterator<Item = Affix<K>>>(iter: T) -> Self {
+impl<C: CharReader> FromIterator<Affix<C>> for AffixIndex<C> {
+    fn from_iter<T: IntoIterator<Item = Affix<C>>>(iter: T) -> Self {
         let table: Vec<_> = iter.into_iter().collect();
         table.into()
     }
 }
 
-impl<K: AffixKind> From<Vec<Affix<K>>> for AffixIndex<K> {
-    fn from(mut table: Vec<Affix<K>>) -> Self {
+impl<C: CharReader> From<Vec<Affix<C>>> for AffixIndex<C> {
+    fn from(mut table: Vec<Affix<C>>) -> Self {
         // Sort the table lexiographically by key. We will use this lexiographical ordering to
         // efficiently search in AffixesIter.
         table.sort_unstable_by(|a, b| a.appending().cmp(b.appending()));
@@ -441,29 +448,29 @@ impl<K: AffixKind> From<Vec<Affix<K>>> for AffixIndex<K> {
     }
 }
 
-impl<K: AffixKind> AffixIndex<K> {
-    fn affixes_of<'a>(&'a self, word: &'a str) -> AffixesIter<'a, K> {
+impl<C: CharReader> AffixIndex<C> {
+    fn affixes_of<'a>(&'a self, word: &'a str) -> AffixesIter<'a, C> {
         AffixesIter {
             table: &self.table,
             first_char: &self.first_char,
             prefix_idx_with_first_char: &self.prefix_idx_with_first_char,
-            chars: K::chars(word),
+            chars: C::chars(word),
             chars_matched: 0,
         }
     }
 }
 
 /// An iterator over the affixes for the
-pub(crate) struct AffixesIter<'a, K: AffixKind> {
-    table: &'a [Affix<K>],
+pub(crate) struct AffixesIter<'a, C: CharReader> {
+    table: &'a [Affix<C>],
     first_char: &'a [char],
     prefix_idx_with_first_char: &'a [usize],
-    chars: K::Chars<'a>,
+    chars: C::Chars<'a>,
     chars_matched: usize,
 }
 
-impl<'a, K: AffixKind> Iterator for AffixesIter<'a, K> {
-    type Item = &'a Affix<K>;
+impl<'a, C: CharReader> Iterator for AffixesIter<'a, C> {
+    type Item = &'a Affix<C>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Return all affixes that append nothing first.
