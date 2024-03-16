@@ -625,25 +625,75 @@ impl BreakTable {
 /// together. The [Spylls docs for `CompoundRule`](https://spylls.readthedocs.io/en/latest/hunspell/data_aff.html?highlight=compound%20rule#spylls.hunspell.data.aff.CompoundRule)
 /// have an excellent explanation of a common use-case for compound rules.
 ///
-/// Trivia: Nuspell doesn't special case `*` and `?` modifiers in its internal representation of
-/// the compound rule. Instead it keeps those flags as characters. (`char16_t` is Nuspell's flag
-/// representation.) This is quite clever because it allows Nuspell to only spend two bytes per
-/// element to store the rule. `CompoundRuleElement` is 4 bytes in comparison. The tradeoff is
-/// ambiguity for some `FlagType` representations. If a `.aff` file used `FlagType::Numeric`,
-/// `*` would be indistinguishable from 42 and `?` indistinguishable from 63. In practice this
-/// doesn't seem to be a problem.
+/// # Representation
+///
+/// Nuspell doesn't special case `*` and `?` modifiers. It stores the entire rule as a string
+/// of `char16_t` (which is also Nuspell flag type). This is quite clever because it allows
+/// Nuspell to only spend two bytes per element to store the rule. `CompoundRuleElement` is
+/// 4 bytes in comparison. The tradeoff is ambiguity for some `FlagType` representations and more
+/// complicated matching code. If a `.aff` file used `FlagType::Numeric`, `*` would be
+/// indistinguishable from 42 and `?` indistinguishable from 63. In practice this doesn't seem to
+/// be a problem. Nuspell looks ahead in the rule string to find wildcards when matching which is
+/// not much more work but is more complicated to understand.
 ///
 /// We use a `Vec<CompoundRuleElement>` in Spellbook only for clarity. Few dictionaries use
 /// compound rules and those that do use them tend to use 12 or fewer entries in the table, with
 /// each rule being only a few elements long.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum CompoundRuleElement {
-    Flag(Flag),
+pub(crate) struct CompoundRuleElement {
+    pub flag: Flag,
+    pub modifier: Option<CompoundRuleModifier>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum CompoundRuleModifier {
     ZeroOrOne,
     ZeroOrMore,
 }
 
 pub(crate) type CompoundRule = Vec<CompoundRuleElement>;
+
+pub(crate) fn compound_rule_matches(pattern: &[CompoundRuleElement], data: &[Flag]) -> bool {
+    use crate::alloc::vec;
+    use CompoundRuleModifier::*;
+
+    let mut stack = vec![(0, 0)];
+
+    while let Some((pattern_idx, data_idx)) = stack.pop() {
+        if pattern_idx == pattern.len() {
+            if data_idx == data.len() {
+                return true;
+            }
+            return false;
+        }
+
+        let flag_matches = match data.get(data_idx) {
+            Some(flag) => *flag == pattern[pattern_idx].flag,
+            None => false,
+        };
+        match pattern[pattern_idx].modifier {
+            Some(ZeroOrOne) => {
+                stack.push((pattern_idx + 1, data_idx));
+                if flag_matches {
+                    stack.push((pattern_idx + 1, data_idx + 1));
+                }
+            }
+            Some(ZeroOrMore) => {
+                stack.push((pattern_idx + 1, data_idx));
+                if flag_matches {
+                    stack.push((pattern_idx, data_idx + 1));
+                }
+            }
+            None => {
+                if flag_matches {
+                    stack.push((pattern_idx + 1, data_idx + 1));
+                }
+            }
+        }
+    }
+
+    false
+}
 
 /// A set of rules that can be used to detect whether constructed compounds are allowed.
 ///
@@ -656,14 +706,7 @@ pub(crate) struct CompoundRuleTable {
 
 impl From<Vec<CompoundRule>> for CompoundRuleTable {
     fn from(rules: Vec<CompoundRule>) -> Self {
-        let all_flags = rules
-            .iter()
-            .flatten()
-            .filter_map(|el| match el {
-                CompoundRuleElement::Flag(flag) => Some(*flag),
-                _ => None,
-            })
-            .collect();
+        let all_flags = rules.iter().flatten().map(|el| el.flag).collect();
 
         Self { rules, all_flags }
     }
@@ -673,6 +716,12 @@ impl CompoundRuleTable {
     #[inline]
     pub fn has_any_flags(&self, flagset: &FlagSet) -> bool {
         self.all_flags.has_intersection(flagset)
+    }
+
+    pub fn any_rule_matches(&self, flags: &[Flag]) -> bool {
+        self.rules
+            .iter()
+            .any(|rule| compound_rule_matches(rule, flags))
     }
 }
 
@@ -965,5 +1014,73 @@ mod test {
         let stem4 = suffix4.to_stem(word);
         assert_eq!(&stem4, "ac");
         assert!(!suffix4.condition_matches(&stem4));
+    }
+
+    #[test]
+    fn compound_rule_matches_literal() {
+        let rule = parser::parse_compound_rule("abc", FlagType::default()).unwrap();
+
+        assert!(compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('c')]
+        ));
+
+        assert!(!compound_rule_matches(&rule, &[flag!('a'), flag!('c')]));
+        assert!(!compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('c'), flag!('d')]
+        ));
+    }
+
+    #[test]
+    fn compound_rule_matches_zero_or_one() {
+        let rule = parser::parse_compound_rule("ab?c", FlagType::default()).unwrap();
+
+        assert!(compound_rule_matches(&rule, &[flag!('a'), flag!('c')]));
+        assert!(compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('c')]
+        ));
+
+        assert!(!compound_rule_matches(&rule, &[flag!('a'), flag!('b')]));
+        assert!(!compound_rule_matches(&rule, &[flag!('b'), flag!('c')]));
+        assert!(!compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('b')]
+        ));
+        assert!(!compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('b'), flag!('c')]
+        ));
+    }
+
+    #[test]
+    fn compound_rule_matches_zero_or_more() {
+        let rule = parser::parse_compound_rule("ab*c", FlagType::default()).unwrap();
+
+        assert!(compound_rule_matches(&rule, &[flag!('a'), flag!('c')]));
+        assert!(compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('c')]
+        ));
+        assert!(compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('b'), flag!('c')]
+        ));
+        assert!(compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('b'), flag!('b'), flag!('c')]
+        ));
+        // etc.
+
+        assert!(!compound_rule_matches(&rule, &[flag!('a'), flag!('b')]));
+        assert!(!compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('b')]
+        ));
+        assert!(!compound_rule_matches(
+            &rule,
+            &[flag!('a'), flag!('b'), flag!('b'), flag!('c'), flag!('c')]
+        ));
     }
 }

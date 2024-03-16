@@ -17,6 +17,7 @@ use core::{
 use hashbrown::HashMap;
 
 use crate::{
+    aff::CompoundRuleModifier,
     alloc::{
         string::{String, ToString},
         vec::Vec,
@@ -1049,11 +1050,11 @@ impl From<ParseCompoundRuleError> for ParseDictionaryErrorKind {
     }
 }
 
-fn parse_compound_rule(
+pub(crate) fn parse_compound_rule(
     input: &str,
     flag_type: FlagType,
 ) -> core::result::Result<CompoundRule, ParseCompoundRuleError> {
-    use super::CompoundRuleElement as Elem;
+    use super::CompoundRuleElement;
 
     let rough_capacity = if matches!(flag_type, FlagType::Long) {
         input.len() / 2
@@ -1064,41 +1065,61 @@ fn parse_compound_rule(
 
     match flag_type {
         FlagType::Short => {
-            for ch in input.chars() {
-                if !ch.is_ascii() {
-                    return Err(ParseFlagError::NonAscii(ch).into());
-                }
-                let element = match ch {
-                    // Can't start with a wildcard.
-                    '*' | '?' if rule.is_empty() => {
-                        return Err(ParseCompoundRuleError::InvalidFormat);
-                    }
-                    '*' => Elem::ZeroOrMore,
-                    '?' => Elem::ZeroOrOne,
-                    _ => Elem::Flag(try_flag_from_char(ch)?),
+            let mut chars = input.chars().peekable();
+
+            loop {
+                let flag = match chars.next() {
+                    Some(ch) if !ch.is_ascii() => return Err(ParseFlagError::NonAscii(ch).into()),
+                    Some(ch) if ch != '?' && ch != '*' => try_flag_from_char(ch)?,
+                    None => break,
+                    _ => return Err(ParseCompoundRuleError::InvalidFormat),
                 };
-                rule.push(element);
+
+                let modifier = match chars.peek() {
+                    Some('?') => {
+                        chars.next();
+                        Some(CompoundRuleModifier::ZeroOrOne)
+                    }
+                    Some('*') => {
+                        chars.next();
+                        Some(CompoundRuleModifier::ZeroOrMore)
+                    }
+                    _ => None,
+                };
+
+                rule.push(CompoundRuleElement { flag, modifier })
             }
         }
         FlagType::Utf8 => {
-            for ch in input.chars() {
-                let element = match ch {
-                    // Can't start with a wildcard.
-                    '*' | '?' if rule.is_empty() => {
-                        return Err(ParseCompoundRuleError::InvalidFormat);
-                    }
-                    '*' => Elem::ZeroOrMore,
-                    '?' => Elem::ZeroOrOne,
-                    _ => Elem::Flag(try_flag_from_char(ch)?),
+            let mut chars = input.chars().peekable();
+
+            loop {
+                let flag = match chars.next() {
+                    Some(ch) if ch != '?' && ch != '*' => try_flag_from_char(ch)?,
+                    None => break,
+                    _ => return Err(ParseCompoundRuleError::InvalidFormat),
                 };
-                rule.push(element);
+
+                let modifier = match chars.peek() {
+                    Some('?') => {
+                        chars.next();
+                        Some(CompoundRuleModifier::ZeroOrOne)
+                    }
+                    Some('*') => {
+                        chars.next();
+                        Some(CompoundRuleModifier::ZeroOrMore)
+                    }
+                    _ => None,
+                };
+
+                rule.push(CompoundRuleElement { flag, modifier })
             }
         }
         FlagType::Long => {
             let mut chars = input.chars().peekable();
 
             loop {
-                match chars.next() {
+                let flag = match chars.next() {
                     Some('(') => {
                         let c1 = match chars.next() {
                             Some(ch) if !ch.is_ascii() => {
@@ -1119,24 +1140,25 @@ fn parse_compound_rule(
                             return Err(ParseCompoundRuleError::InvalidFormat);
                         }
 
-                        let flag = try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))?;
-                        rule.push(Elem::Flag(flag));
+                        try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))?
                     }
                     Some(_) => return Err(ParseCompoundRuleError::InvalidFormat),
                     None => break,
-                }
+                };
 
-                match chars.peek() {
-                    Some('*') => {
-                        rule.push(Elem::ZeroOrMore);
-                        chars.next();
-                    }
+                let modifier = match chars.peek() {
                     Some('?') => {
-                        rule.push(Elem::ZeroOrOne);
                         chars.next();
+                        Some(CompoundRuleModifier::ZeroOrOne)
                     }
-                    _ => (),
-                }
+                    Some('*') => {
+                        chars.next();
+                        Some(CompoundRuleModifier::ZeroOrMore)
+                    }
+                    _ => None,
+                };
+
+                rule.push(CompoundRuleElement { flag, modifier })
             }
         }
         FlagType::Numeric => {
@@ -1145,7 +1167,7 @@ fn parse_compound_rule(
             let mut chars = input.chars().peekable();
 
             loop {
-                match chars.next() {
+                let flag = match chars.next() {
                     Some('(') => {
                         loop {
                             match chars.next() {
@@ -1160,24 +1182,25 @@ fn parse_compound_rule(
                             .map_err(ParseFlagError::ParseIntError)?;
                         number.clear();
 
-                        let flag = try_flag_from_u16(n)?;
-                        rule.push(Elem::Flag(flag));
+                        try_flag_from_u16(n)?
                     }
                     Some(_) => return Err(ParseCompoundRuleError::InvalidFormat),
                     None => break,
-                }
+                };
 
-                match chars.peek() {
-                    Some('*') => {
-                        rule.push(Elem::ZeroOrMore);
-                        chars.next();
-                    }
+                let modifier = match chars.peek() {
                     Some('?') => {
-                        rule.push(Elem::ZeroOrOne);
                         chars.next();
+                        Some(CompoundRuleModifier::ZeroOrOne)
                     }
-                    _ => (),
-                }
+                    Some('*') => {
+                        chars.next();
+                        Some(CompoundRuleModifier::ZeroOrMore)
+                    }
+                    _ => None,
+                };
+
+                rule.push(CompoundRuleElement { flag, modifier })
             }
         }
     }
@@ -1538,16 +1561,26 @@ mod test {
     #[test]
     fn parse_compound_rule_test() {
         use super::ParseCompoundRuleError as Error;
-        use crate::aff::CompoundRuleElement as Elem;
+        use crate::aff::{CompoundRuleElement as Elem, CompoundRuleModifier::*};
 
         assert_eq!(
             Ok(vec![
-                Elem::Flag(flag!('a')),
-                Elem::Flag(flag!('b')),
-                Elem::ZeroOrOne,
-                Elem::Flag(flag!('c')),
-                Elem::ZeroOrMore,
-                Elem::Flag(flag!('d')),
+                Elem {
+                    flag: flag!('a'),
+                    modifier: None
+                },
+                Elem {
+                    flag: flag!('b'),
+                    modifier: Some(ZeroOrOne)
+                },
+                Elem {
+                    flag: flag!('c'),
+                    modifier: Some(ZeroOrMore)
+                },
+                Elem {
+                    flag: flag!('d'),
+                    modifier: None
+                },
             ]),
             parse_compound_rule("ab?c*d", FlagType::Short)
         );
@@ -1555,34 +1588,62 @@ mod test {
         // Hello, en_GB.aff
         assert_eq!(
             Ok(vec![
-                Elem::Flag(flag!('#')),
-                Elem::ZeroOrMore,
-                Elem::Flag(flag!('0')),
-                Elem::Flag(flag!('{')),
+                Elem {
+                    flag: flag!('#'),
+                    modifier: Some(ZeroOrMore)
+                },
+                Elem {
+                    flag: flag!('0'),
+                    modifier: None
+                },
+                Elem {
+                    flag: flag!('{'),
+                    modifier: None
+                },
             ]),
             parse_compound_rule("#*0{", FlagType::Utf8)
         );
 
         assert_eq!(
             Ok(vec![
-                Elem::Flag(flag!(5)),
-                Elem::Flag(flag!(6)),
-                Elem::ZeroOrMore,
-                Elem::Flag(flag!(11)),
-                Elem::ZeroOrOne,
-                Elem::Flag(flag!(99)),
+                Elem {
+                    flag: flag!(5),
+                    modifier: None
+                },
+                Elem {
+                    flag: flag!(6),
+                    modifier: Some(ZeroOrMore)
+                },
+                Elem {
+                    flag: flag!(11),
+                    modifier: Some(ZeroOrOne),
+                },
+                Elem {
+                    flag: flag!(99),
+                    modifier: None,
+                },
             ]),
             parse_compound_rule("(5)(6)*(11)?(99)", FlagType::Numeric)
         );
 
         assert_eq!(
             Ok(vec![
-                Elem::Flag(flag!(10060)),
-                Elem::Flag(flag!(10052)),
-                Elem::ZeroOrMore,
-                Elem::Flag(flag!(10056)),
-                Elem::ZeroOrOne,
-                Elem::Flag(flag!(17218)),
+                Elem {
+                    flag: flag!(10060),
+                    modifier: None
+                },
+                Elem {
+                    flag: flag!(10052),
+                    modifier: Some(ZeroOrMore)
+                },
+                Elem {
+                    flag: flag!(10056),
+                    modifier: Some(ZeroOrOne),
+                },
+                Elem {
+                    flag: flag!(17218),
+                    modifier: None,
+                },
             ]),
             parse_compound_rule("(L')(D')*(H')?(BC)", FlagType::Long)
         );
