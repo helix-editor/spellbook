@@ -1597,4 +1597,26 @@ mod test {
             parse_compound_rule("?", FlagType::Short)
         );
     }
+
+    #[test]
+    fn basic_prefix_test() {
+        let dic = "0";
+        // From `en_GB.aff`.
+        let aff = r#"
+        PFX A Y 2
+        PFX A 0 re [^e]
+        PFX A 0 re- e
+        "#;
+
+        let aff_data = parse(dic, aff, ahash::RandomState::new()).unwrap();
+        assert_eq!(2, aff_data.prefixes.table.len());
+        assert_eq!(
+            Prefix::new(flag!('A'), true, None, "re", Some("[^e]"), flagset![]).unwrap(),
+            aff_data.prefixes.table[0]
+        );
+        assert_eq!(
+            Prefix::new(flag!('A'), true, None, "re-", Some("e"), flagset![]).unwrap(),
+            aff_data.prefixes.table[1]
+        );
+    }
 }
