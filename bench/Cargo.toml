@@ -1,0 +1,15 @@
+[package]
+name = "benches"
+description = "benchmarks for the Spellbook public API"
+version = "0.1.0"
+authors = ["Michael Davis <mcarsondavis@gmail.com>"]
+edition = "2021"
+license = "MPL-2.0"
+# Need "1.66" for `std::hint::black_box` but 1.70 for brunch dependencies.
+rust-version = "1.70"
+
+[dependencies]
+spellbook = { path = "../" }
+ahash = { version = "0.8", default-features = false }
+brunch = "0.5"
+once_cell = "1"
