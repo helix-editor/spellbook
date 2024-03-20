@@ -14,6 +14,7 @@ use alloc::{
 };
 
 pub(crate) mod aff;
+pub(crate) mod checker;
 mod hash_multi_map;
 pub(crate) mod macros;
 
@@ -43,7 +44,7 @@ impl<S: BuildHasher + Clone + Default> Dictionary<S> {
 
 impl<S: BuildHasher> Dictionary<S> {
     pub fn check(&self, word: &str) -> bool {
-        self.aff_data.words.get(word).is_some()
+        checker::check(&self.aff_data, word)
     }
 
     // suggest(&self, word: &str) -> impl Iterator<Item = String> ?
