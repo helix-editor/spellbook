@@ -1,6 +1,12 @@
 use core::hash::BuildHasher;
 
-use crate::{aff::AffData, stdx::is_some_and, FlagSet};
+use crate::alloc::string::String;
+
+use crate::{
+    aff::{AffData, HIDDEN_HOMONYM_FLAG},
+    stdx::is_some_and,
+    FlagSet,
+};
 
 // Nuspell limits the length of the input word:
 // <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/dictionary.cxx#L156>
@@ -114,12 +120,67 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         false
     }
 
-    fn spell_casing(&self, _word: &str) -> Option<&'a FlagSet> {
+    fn spell_casing(&self, word: &'a str) -> Option<&'a FlagSet> {
         // Classify the casing
         // For lowercase, camel & pascal `check_word`
         // For uppercase, spell_casing_upper
         // For title, spell_casing_title
 
+        match classify_casing(word) {
+            Casing::None | Casing::Camel | Casing::Pascal => {
+                self.check_word(word, Forceucase::default(), HiddenHomonym::default())
+            }
+            Casing::All => None,  // spell_casing_upper
+            Casing::Init => None, // spell_casing_title
+        }
+    }
+
+    fn check_word(
+        &self,
+        word: &'a str,
+        allow_bad_forceucase: Forceucase,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<&'a FlagSet> {
+        if let Some(flags) = self.check_simple_word(word, hidden_homonym) {
+            return Some(flags);
+        }
+
+        self.check_compound(word, allow_bad_forceucase)
+            .map(|result| result.flags)
+    }
+
+    fn check_simple_word(
+        &self,
+        word: &'a str,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<&'a FlagSet> {
+        for flags in self.aff.words.get_all(word) {
+            if is_some_and(self.aff.options.need_affix_flag, |flag| {
+                flags.contains(&flag)
+            }) {
+                continue;
+            }
+            if is_some_and(self.aff.options.only_in_compound_flag, |flag| {
+                flags.contains(&flag)
+            }) {
+                continue;
+            }
+            if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                continue;
+            }
+            return Some(flags);
+        }
+
+        // TODO: rest of check_simple_word - prefixing and suffixing
+        None
+    }
+
+    fn check_compound(
+        &self,
+        _word: &str,
+        _allow_bad_forceucase: Forceucase,
+    ) -> Option<CompoundingResult<'a>> {
+        // TODO: compounding
         None
     }
 }
@@ -206,9 +267,70 @@ pub(crate) fn classify_casing(word: &str) -> Casing {
     }
 }
 
+// TODO: rename?
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum Forceucase {
+    ForbidBadForceucase,
+    AllowBadForceucase,
+}
+
+impl Default for Forceucase {
+    fn default() -> Self {
+        Self::ForbidBadForceucase
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum HiddenHomonym {
+    AcceptHiddenHomonym,
+    SkipHiddenHomonym,
+}
+
+impl Default for HiddenHomonym {
+    fn default() -> Self {
+        Self::AcceptHiddenHomonym
+    }
+}
+
+impl HiddenHomonym {
+    #[inline]
+    const fn skip(&self) -> bool {
+        match self {
+            Self::AcceptHiddenHomonym => false,
+            Self::SkipHiddenHomonym => true,
+        }
+    }
+}
+
+// TODO: docs.
+struct CompoundingResult<'a> {
+    stem: &'a String,
+    flags: &'a FlagSet,
+    num_words_modifier: u16,
+    num_syllable_modifier: i16,
+    affixed_and_modified: bool,
+}
+
 #[cfg(test)]
 mod test {
+    // Note: we need the once_cell crate rather than `core::cell::OnceCell` for the cell to be
+    // Sync + Send.
+    use once_cell::sync::OnceCell;
+
     use super::*;
+    use crate::*;
+
+    const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
+    const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
+
+    fn en_us() -> &'static Dictionary<ahash::RandomState> {
+        // It's a little overkill to use a real dictionary for unit tests but it compiles so
+        // quickly that if we only compile it once it doesn't really slow down the test suite.
+        static EN_US: OnceCell<Dictionary<ahash::RandomState>> = OnceCell::new();
+        EN_US.get_or_init(|| {
+            Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, ahash::RandomState::new()).unwrap()
+        })
+    }
 
     #[test]
     fn is_number_nuspell_unit_test() {
@@ -234,5 +356,25 @@ mod test {
         assert_eq!(Casing::All, classify_casing("ЗДРАВО"));
         assert_eq!(Casing::Camel, classify_casing("здРаВо"));
         assert_eq!(Casing::Pascal, classify_casing("ЗдрАво"));
+    }
+
+    #[test]
+    fn check_number_test() {
+        assert!(en_us().check("123456789"));
+    }
+
+    #[test]
+    fn check_exact_word_in_the_wordlist_test() {
+        // adventure/DRSMZG (en_US.dic line 11021)
+        assert!(en_us().check("adventure"));
+    }
+
+    #[test]
+    fn check_exact_words_in_the_wordlist_with_break_patterns_test() {
+        // en_US uses the default break patterns: `^-`, `-`, `-$`.
+        // All of these words are stems in the dictionary.
+        assert!(en_us().check("-any"));
+        assert!(en_us().check("anyway-anywhere"));
+        assert!(en_us().check("ace-"));
     }
 }

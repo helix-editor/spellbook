@@ -11,4 +11,9 @@ rust-version = "1.65"
 hashbrown = { version = "0.14", default-features = false, features = ["raw"] }
 
 [dev-dependencies]
+# Used as a BuildHasher for the hashing data types - hashbrown HashMap and a custom
+# `HashMultiMap` - during unit tests.
 ahash = { version = "0.8", default-features = false }
+# Used in unit tests to prevent compiling the same dictionary twice. Used instead of
+# `core::cell::OnceCell` since it implements `Send + Sync`.
+once_cell = "1.19"

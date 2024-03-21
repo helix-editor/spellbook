@@ -11,8 +11,8 @@ use crate::{
 
 use core::{hash::BuildHasher, marker::PhantomData, str::Chars};
 
-const HIDDEN_HOMONYM_FLAG: u16 = u16::MAX;
-const MAX_SUGGESTIONS: usize = 16;
+pub(crate) const HIDDEN_HOMONYM_FLAG: Flag = unsafe { Flag::new_unchecked(u16::MAX) };
+pub(crate) const MAX_SUGGESTIONS: usize = 16;
 
 /// The representation of a flag in a `.dic` or `.aff` file.
 ///
