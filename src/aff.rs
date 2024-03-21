@@ -67,10 +67,9 @@ impl Condition {
 
         loop {
             match (pattern.next(), input.next()) {
-                // If we're at the end of both inputs, this is a match.
-                (None, None) => return true,
-                // Inputs of different lengths are not a match.
-                (Some(_), None) | (None, Some(_)) => return false,
+                // If we're at the end of both inputs or the pattern is shorter, this is a match.
+                (None, _) => return true,
+                (Some(_), None) => return false,
                 // Wildcard: skip the input character.
                 (Some('.'), Some(_)) => (),
                 // Character classes
@@ -901,6 +900,75 @@ mod test {
         assert!(!condition.matches("xxbx"));
         assert!(!condition.matches("xxcx"));
         assert!(condition.matches("xxdx"));
+    }
+
+    #[test]
+    fn condition_nuspell_unit_test() {
+        // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L167-L299>
+        // Our structure for Condition is different so we only port the prefix tests.
+        let cond = "abcd".parse::<Condition>().unwrap();
+        assert!(cond.matches("abcd"));
+        assert!(cond.matches("abcdXYZ"));
+        assert!(cond.matches("abcdБВГДШ\u{ABCD}\u{10ABCD}"));
+        assert!(!cond.matches(""));
+        assert!(!cond.matches("abc"));
+        assert!(!cond.matches("abcX"));
+        assert!(!cond.matches("XYZ"));
+        assert!(!cond.matches("АаБбВвГгШш\u{ABCD}\u{10ABCD}"));
+
+        let cond = "[vbn]".parse::<Condition>().unwrap();
+        assert!(cond.matches("v"));
+        assert!(cond.matches("vAAш"));
+        assert!(cond.matches("b"));
+        assert!(cond.matches("bBBш"));
+        assert!(cond.matches("n"));
+        assert!(cond.matches("nCCш"));
+        assert!(!cond.matches(""));
+        assert!(!cond.matches("Q"));
+        assert!(!cond.matches("Qqqq"));
+        assert!(!cond.matches("1342234"));
+        assert!(!cond.matches("V"));
+        assert!(!cond.matches("бвгдш"));
+
+        let cond = "[бш\u{1234}]".parse::<Condition>().unwrap();
+        assert!(cond.matches("б"));
+        assert!(cond.matches("бeT"));
+        assert!(cond.matches("ш"));
+        assert!(cond.matches("шок"));
+        assert!(cond.matches("\u{1234}кош"));
+        assert!(!cond.matches(""));
+        assert!(!cond.matches("Q"));
+        assert!(!cond.matches("Qqqq"));
+        assert!(!cond.matches("пан"));
+        assert!(!cond.matches("\u{ABCD}\u{1234}"));
+        assert!(!cond.matches("вбгдш"));
+
+        let cond = "[^zш\u{1234}\u{10ABCD}]".parse::<Condition>().unwrap();
+        assert!(!cond.matches("z"));
+        assert!(!cond.matches("ш"));
+        assert!(!cond.matches("\u{1234}"));
+        assert!(!cond.matches("\u{10ABCD}"));
+        assert!(!cond.matches("zљње"));
+        assert!(!cond.matches("шabc"));
+        assert!(!cond.matches("\u{1234} ytyty"));
+        assert!(!cond.matches("\u{10ABCD} tytyty"));
+        assert!(cond.matches("q"));
+        assert!(cond.matches("r"));
+        assert!(cond.matches("\u{FFFD}"));
+        assert!(cond.matches("\u{10FFFF}"));
+        assert!(cond.matches("qљње"));
+        assert!(cond.matches("фabc"));
+        assert!(cond.matches("\u{FFFD} ytyty"));
+        assert!(cond.matches("\u{10FFFF} tytyty"));
+
+        let cond = "abc АБВ..[zбш\u{1234}][^zш\u{1234}\u{10ABCD}]X"
+            .parse::<Condition>()
+            .unwrap();
+        assert!(cond.matches("abc АБВ \u{2345}z\u{011111}X"));
+        assert!(cond.matches("abc АБВ\u{2345} ш\u{011112}Xопop"));
+        assert!(!cond.matches("abc ШШШ \u{2345}z\u{011111}X"));
+        assert!(!cond.matches("abc АБВ\u{2345} t\u{011112}Xопop"));
+        assert!(!cond.matches("abc АБВ \u{2345}z\u{1234}X"));
     }
 
     #[test]
