@@ -27,7 +27,7 @@ use crate::{
 
 use crate::{Flag, FlagSet};
 
-use super::{AffData, AffOptions, CompoundRule, Condition, FlagType, Prefix, Suffix};
+use super::{AffData, AffOptions, BreakTable, CompoundRule, Condition, FlagType, Prefix, Suffix};
 
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
 type ParseResult = Result<()>;
@@ -160,12 +160,18 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         words.insert(word, flagset);
     }
 
+    let break_table = if cx.break_patterns.is_empty() {
+        BreakTable::default()
+    } else {
+        cx.break_patterns.into()
+    };
+
     // Collect everything into AffData.
     Ok(AffData {
         words,
         prefixes: cx.prefixes.into(),
         suffixes: cx.suffixes.into(),
-        break_table: cx.break_patterns.into(),
+        break_table,
         compound_rules: cx.compound_rules.into(),
         compound_syllable_vowels: cx.compound_syllable_vowels.to_string(),
         // compound_patterns: todo!(),
