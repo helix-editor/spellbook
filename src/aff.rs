@@ -877,6 +877,7 @@ impl Default for AffOptions {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::alloc::vec;
     use crate::*;
 
     #[test]
@@ -913,6 +914,34 @@ mod test {
         assert_eq!(pair.left(), "");
         assert_eq!(pair.right(), "");
         assert_eq!(pair.left_len(), 0);
+    }
+
+    #[test]
+    fn break_table_nuspell_unit_test() {
+        // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L100-L127>
+        let table = BreakTable::from(vec![
+            "bsd", "zxc", "asd", "^bar", "^zoo", "^abc", "car$", "yoyo$", "air$",
+        ]);
+
+        let mut starts: Vec<_> = table
+            .start_word_breaks()
+            .iter()
+            .map(String::as_str)
+            .collect();
+        starts.sort_unstable();
+        assert_eq!(&["abc", "bar", "zoo"], starts.as_slice());
+
+        let mut middles: Vec<_> = table
+            .middle_word_breaks()
+            .iter()
+            .map(String::as_str)
+            .collect();
+        middles.sort_unstable();
+        assert_eq!(&["asd", "bsd", "zxc"], middles.as_slice());
+
+        let mut ends: Vec<_> = table.end_word_breaks().iter().map(String::as_str).collect();
+        ends.sort_unstable();
+        assert_eq!(&["air", "car", "yoyo"], ends.as_slice());
     }
 
     #[test]
