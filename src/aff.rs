@@ -233,6 +233,8 @@ impl Prefix {
     /// This prefix's `strip` is removed from the beginning and replaced with the `add`. This is
     /// the inverse of `Prefix::to_stem`.
     ///
+    /// Nuspell calls this `to_derived.`
+    ///
     /// # Panics
     ///
     /// This function `expect`s that the given `word` starts with this `Prefix`'s `strip`, if this
@@ -293,6 +295,8 @@ impl Suffix {
     ///
     /// This suffix's `strip` is removed from the end and replaced with the `add`. This is
     /// the inverse of `Suffix::to_stem`.
+    ///
+    /// Nuspell calls this `to_derived.`
     ///
     /// # Panics
     ///
@@ -1010,6 +1014,18 @@ mod test {
         let mut ends: Vec<_> = table.end_word_breaks().iter().map(String::as_str).collect();
         ends.sort_unstable();
         assert_eq!(&["air", "car", "yoyo"], ends.as_slice());
+    }
+
+    #[test]
+    fn prefix_suffix_nuspell_unit_test() {
+        // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L301-L313>
+        let prefix = Prefix::new(flag!('F'), false, Some("qw"), "Qwe", None, flagset![]).unwrap();
+        assert_eq!(prefix.to_derived("qwrty").as_str(), "Qwerty");
+        assert_eq!(prefix.to_stem("Qwerty").as_ref(), "qwrty");
+
+        let suffix = Suffix::new(flag!('F'), false, Some("ie"), "ying", None, flagset![]).unwrap();
+        assert_eq!(suffix.to_derived("pie").as_str(), "pying");
+        assert_eq!(suffix.to_stem("pying").as_ref(), "pie");
     }
 
     #[test]
