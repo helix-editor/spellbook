@@ -7,6 +7,7 @@
 extern crate alloc;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
 
+use aff::AffData;
 use alloc::{
     slice,
     string::String,
@@ -22,7 +23,7 @@ pub use aff::parser::{ParseDictionaryError, ParseDictionaryErrorKind, ParseDicti
 
 /// TODO
 pub struct Dictionary<S: BuildHasher> {
-    aff_data: aff::AffData<S>,
+    aff_data: AffData<S>,
 }
 
 impl<S: BuildHasher + Clone> Dictionary<S> {

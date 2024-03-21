@@ -548,7 +548,6 @@ impl<'a, C: CharReader> Iterator for AffixesIter<'a, C> {
 /// anywhere in the middle of a word, and one for patterns that must apply to the end of a word.
 ///
 // TODO: document how breaks are used and what the patterns mean.
-// TODO: use the Default implementation to give what Hunspell considers default?
 #[derive(Debug)]
 pub(crate) struct BreakTable {
     table: Vec<String>,
