@@ -1128,71 +1128,59 @@ mod test {
         assert!(!suffix4.condition_matches(&stem4));
     }
 
+    fn flag_seq(input: &str) -> Vec<Flag> {
+        input.chars().map(|ch| flag!(ch)).collect()
+    }
+
     #[test]
     fn compound_rule_matches_literal() {
         let rule = parser::parse_compound_rule("abc", FlagType::default()).unwrap();
 
-        assert!(compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('c')]
-        ));
+        assert!(compound_rule_matches(&rule, &flag_seq("abc")));
 
-        assert!(!compound_rule_matches(&rule, &[flag!('a'), flag!('c')]));
-        assert!(!compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('c'), flag!('d')]
-        ));
+        assert!(!compound_rule_matches(&rule, &flag_seq("ac")));
+        assert!(!compound_rule_matches(&rule, &flag_seq("abcd")));
     }
 
     #[test]
     fn compound_rule_matches_zero_or_one() {
         let rule = parser::parse_compound_rule("ab?c", FlagType::default()).unwrap();
 
-        assert!(compound_rule_matches(&rule, &[flag!('a'), flag!('c')]));
-        assert!(compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('c')]
-        ));
+        assert!(compound_rule_matches(&rule, &flag_seq("ac")));
+        assert!(compound_rule_matches(&rule, &flag_seq("abc")));
 
-        assert!(!compound_rule_matches(&rule, &[flag!('a'), flag!('b')]));
-        assert!(!compound_rule_matches(&rule, &[flag!('b'), flag!('c')]));
-        assert!(!compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('b')]
-        ));
-        assert!(!compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('b'), flag!('c')]
-        ));
+        assert!(!compound_rule_matches(&rule, &flag_seq("ab")));
+        assert!(!compound_rule_matches(&rule, &flag_seq("bc")));
+        assert!(!compound_rule_matches(&rule, &flag_seq("abb")));
+        assert!(!compound_rule_matches(&rule, &flag_seq("abbc")));
     }
 
     #[test]
     fn compound_rule_matches_zero_or_more() {
         let rule = parser::parse_compound_rule("ab*c", FlagType::default()).unwrap();
 
-        assert!(compound_rule_matches(&rule, &[flag!('a'), flag!('c')]));
-        assert!(compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('c')]
-        ));
-        assert!(compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('b'), flag!('c')]
-        ));
-        assert!(compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('b'), flag!('b'), flag!('c')]
-        ));
+        assert!(compound_rule_matches(&rule, &flag_seq("ac")));
+        assert!(compound_rule_matches(&rule, &flag_seq("abc")));
+        assert!(compound_rule_matches(&rule, &flag_seq("abbc")));
+        assert!(compound_rule_matches(&rule, &flag_seq("abbbc")));
         // etc.
 
-        assert!(!compound_rule_matches(&rule, &[flag!('a'), flag!('b')]));
-        assert!(!compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('b')]
-        ));
-        assert!(!compound_rule_matches(
-            &rule,
-            &[flag!('a'), flag!('b'), flag!('b'), flag!('c'), flag!('c')]
-        ));
+        assert!(!compound_rule_matches(&rule, &flag_seq("ab")));
+        assert!(!compound_rule_matches(&rule, &flag_seq("abb")));
+        assert!(!compound_rule_matches(&rule, &flag_seq("abbcc")));
+    }
+
+    #[test]
+    fn compound_rule_simple_regex_nuspell_unit_test() {
+        // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L384-L393>
+        let rule = parser::parse_compound_rule("abc?de*ff", FlagType::default()).unwrap();
+
+        assert!(compound_rule_matches(&rule, &flag_seq("abdff")));
+        assert!(compound_rule_matches(&rule, &flag_seq("abcdff")));
+        assert!(compound_rule_matches(&rule, &flag_seq("abdeeff")));
+        assert!(compound_rule_matches(&rule, &flag_seq("abcdeff")));
+
+        assert!(!compound_rule_matches(&rule, &flag_seq("abcdeeeefff")));
+        assert!(!compound_rule_matches(&rule, &flag_seq("qwerty")));
     }
 }
