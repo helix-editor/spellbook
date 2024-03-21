@@ -129,10 +129,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 /// Numbers may have a leading `-` and can have separators within the number of `,`, `.` or `-`,
 /// but not more than one separating digits.
 fn is_number(word: &str) -> bool {
-    let input = word.strip_prefix('-').unwrap_or(word);
+    let word = word.strip_prefix('-').unwrap_or(word);
+    if word.is_empty() {
+        return false;
+    }
 
     let mut separated = true;
-    for ch in input.chars() {
+    for ch in word.chars() {
         match ch {
             '0'..='9' => separated = false,
             '.' | '-' | ',' if !separated => separated = true,
@@ -148,12 +151,17 @@ mod test {
     use super::*;
 
     #[test]
-    fn is_number_test() {
-        assert!(is_number("123"));
-        assert!(is_number("-123"));
-        assert!(!is_number("--123"));
-        assert!(!is_number(".123"));
-        assert!(is_number("0.123"));
-        assert!(is_number("8675-309"));
+    fn is_number_nuspell_unit_test() {
+        // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L461-L471>
+
+        assert!(!is_number(""));
+        assert!(is_number("1234567890"));
+        assert!(is_number("-1234567890"));
+        assert!(is_number("123.456.78-9,0"));
+        assert!(is_number("-123.456.78-9,0"));
+        assert!(!is_number("123..456.78-9,0"));
+        assert!(!is_number("123.456.-78-9,0"));
+        assert!(!is_number("123..456.78-9-,0"));
+    }
     }
 }
