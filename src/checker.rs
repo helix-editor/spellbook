@@ -1,9 +1,8 @@
 use core::hash::BuildHasher;
 
-use crate::alloc::string::String;
-
 use crate::{
-    aff::{AffData, HIDDEN_HOMONYM_FLAG},
+    aff::{AffData, Prefix, Suffix, HIDDEN_HOMONYM_FLAG},
+    alloc::{borrow::Cow, string::String},
     stdx::is_some_and,
     FlagSet,
 };
@@ -302,8 +301,18 @@ impl HiddenHomonym {
     }
 }
 
+// Similar to Nuspell's AffixingResult
+pub(crate) struct AffixForm<'a> {
+    word: &'a str,
+    stem: Cow<'a, str>,
+    flags: &'a FlagSet,
+    // Up to 2 prefixes and/or 2 suffixes allowed.
+    prefixes: [Option<Prefix>; 2],
+    suffixes: [Option<Suffix>; 2],
+}
+
 // TODO: docs.
-struct CompoundingResult<'a> {
+pub(crate) struct CompoundingResult<'a> {
     stem: &'a String,
     flags: &'a FlagSet,
     num_words_modifier: u16,
