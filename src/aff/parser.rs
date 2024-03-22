@@ -156,6 +156,14 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
             // Empty lines are skipped.
             None => continue,
         };
+
+        if word.starts_with('/') {
+            // Some dictionaries like it_IT use a leading slash as a comment.
+            // The empty word isn't a valid entry in the word list so it doesn't matter which
+            // flags come after it.
+            continue;
+        }
+
         let (word, flagset) = parse_dic_line(word, cx.flag_type, &cx.flag_aliases, cx.ignore_chars)
             .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
         words.insert(word, flagset);
