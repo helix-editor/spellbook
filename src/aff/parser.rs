@@ -157,7 +157,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         };
         let (word, flagset) = parse_dic_line(word, cx.flag_type, &cx.flag_aliases, cx.ignore_chars)
             .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
-        words.insert(word, flagset);
+        words.insert(word.into_boxed_str(), flagset);
     }
 
     let break_table = if cx.break_patterns.is_empty() {
@@ -921,7 +921,7 @@ fn parse_flags_from_chars(
 
     match flag_type {
         FlagType::Short => {
-            chars
+            let flagset = chars
                 .map(|ch| {
                     if ch.is_ascii() {
                         // The flag is ASCII: it's a valid `u8` so it can fit into a `u16`.
@@ -930,22 +930,23 @@ fn parse_flags_from_chars(
                         Err(ParseFlagError::NonAscii(ch))
                     }
                 })
-                .collect()
+                .collect::<core::result::Result<Vec<Flag>, _>>()?;
+            Ok(flagset.into())
         }
         FlagType::Long => {
-            let mut flags = FlagSet::new();
+            let mut flags = Vec::new();
             while let Some(c1) = chars.next() {
                 let c2 = match chars.next() {
                     Some(ch) => ch,
                     None => return Err(MissingSecondChar(c1)),
                 };
                 let flag = try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))?;
-                flags.insert(flag);
+                flags.push(flag);
             }
-            Ok(flags)
+            Ok(flags.into())
         }
         FlagType::Numeric => {
-            let mut flags = FlagSet::new();
+            let mut flags = Vec::new();
             let mut number = String::new();
             let mut separated = false;
             for ch in chars.by_ref() {
@@ -958,17 +959,22 @@ fn parse_flags_from_chars(
                     if ch == ',' {
                         separated = true;
                         let n = number.parse::<u16>().map_err(ParseIntError)?;
-                        flags.insert(try_flag_from_u16(n)?);
+                        flags.push(try_flag_from_u16(n)?);
                     }
                 }
             }
             if !number.is_empty() {
                 let n = number.parse::<u16>().map_err(ParseIntError)?;
-                flags.insert(try_flag_from_u16(n)?);
+                flags.push(try_flag_from_u16(n)?);
             }
-            Ok(flags)
+            Ok(flags.into())
         }
-        FlagType::Utf8 => chars.map(try_flag_from_char).collect(),
+        FlagType::Utf8 => {
+            let flags = chars
+                .map(try_flag_from_char)
+                .collect::<core::result::Result<Vec<Flag>, _>>()?;
+            Ok(flags.into())
+        }
     }
 }
 

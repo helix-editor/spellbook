@@ -7,9 +7,12 @@ macro_rules! flag {
 
 #[macro_export]
 macro_rules! flagset {
+    () => {{
+        FlagSet::empty()
+    }};
     ( $( $x:expr ),* ) => {
         {
-            FlagSet::from_iter( [ $( Flag::new( $x ).unwrap() ),* ].into_iter() )
+            FlagSet::from( $crate::alloc::vec![ $( Flag::new( $x ).unwrap() ),* ] )
         }
-    }
+    };
 }

@@ -8,11 +8,7 @@ extern crate alloc;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
 
 use aff::AffData;
-use alloc::{
-    slice,
-    string::String,
-    vec::{self, Vec},
-};
+use alloc::{boxed::Box, slice, vec::Vec};
 
 pub(crate) mod aff;
 pub(crate) mod checker;
@@ -87,24 +83,38 @@ pub(crate) type Flag = core::num::NonZeroU16;
 ///
 /// Nuspell represents this as a sorted `std::basic_string<char16_t>` (`char16_t` being the
 /// representation) for flags. Hunspell uses a sorted `unsigned short*` and searches it via
-/// `std::binary_search`. We represent this in Spellbook with a sorted `Vec`.
+/// `std::binary_search`.
+///
+/// We represent this in Spellbook with a sorted boxed slice of flags. We use a boxed slice to cut
+/// down on the storage space required - a `Vec` has an extra capacity field that takes up some
+/// extra bytes. Using a boxed slice reduces `size_of::<FlagSet>()` on my machine from 24 to 16.
+/// This sounds insignificant but a dictionary might have very very many flagsets, so the savings
+/// are potentially noticeable. Boxed slices also remove extra allocated capacity.
 #[derive(Default, PartialEq, Eq, Clone)]
 pub(crate) struct FlagSet {
-    inner: Vec<Flag>,
+    inner: Box<[Flag]>,
 }
 
-impl FromIterator<Flag> for FlagSet {
-    fn from_iter<T: IntoIterator<Item = Flag>>(iter: T) -> Self {
-        let mut inner: Vec<_> = iter.into_iter().collect();
-        inner.sort_unstable();
-        inner.dedup();
-        Self { inner }
+impl From<Vec<Flag>> for FlagSet {
+    fn from(mut flags: Vec<Flag>) -> Self {
+        flags.sort_unstable();
+        flags.dedup();
+        Self {
+            inner: flags.into_boxed_slice(),
+        }
     }
 }
 
 impl FlagSet {
-    pub const fn new() -> Self {
-        Self { inner: Vec::new() }
+    pub fn empty() -> Self {
+        Self {
+            inner: Box::new([]),
+        }
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[Flag] {
+        &self.inner
     }
 
     #[inline]
@@ -113,18 +123,8 @@ impl FlagSet {
     }
 
     #[inline]
-    pub fn into_iter(self) -> vec::IntoIter<Flag> {
-        self.inner.into_iter()
-    }
-
-    #[inline]
     pub fn len(&self) -> usize {
         self.inner.len()
-    }
-
-    pub fn insert(&mut self, flag: Flag) {
-        let partition = self.inner.partition_point(|&f| f < flag);
-        self.inner.insert(partition, flag);
     }
 
     /// Returns `true` if both sets have at least one element in common.
@@ -170,7 +170,7 @@ impl FlagSet {
         }
 
         Self {
-            inner: intersection,
+            inner: intersection.into_boxed_slice(),
         }
     }
 
@@ -208,14 +208,9 @@ impl FlagSet {
             }
         }
 
-        Self { inner: union }
-    }
-
-    // TODO: better name.
-    pub fn merge(&mut self, other: &Self) {
-        self.inner.extend(other.iter().copied());
-        self.inner.sort_unstable();
-        self.inner.dedup();
+        Self {
+            inner: union.into_boxed_slice(),
+        }
     }
 
     /// Checks whether the given flag is contained in the flagset.
@@ -231,22 +226,19 @@ impl fmt::Debug for FlagSet {
     }
 }
 
-pub(crate) type WordList<S> = hash_multi_map::HashMultiMap<String, FlagSet, S>;
+// We represent the stem as a boxed str to save on space.
+pub(crate) type WordList<S> = hash_multi_map::HashMultiMap<Box<str>, FlagSet, S>;
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::alloc::vec;
 
     #[test]
     fn flagset_from_iter() {
         // Items are deduplicated and sorted.
         assert_eq!(
-            vec![1, 2, 3],
-            flagset![1, 3, 2, 1]
-                .iter()
-                .map(|flag| flag.get())
-                .collect::<Vec<_>>()
+            &[flag!(1), flag!(2), flag!(3)],
+            flagset![1, 3, 2, 1].as_slice()
         )
     }
 

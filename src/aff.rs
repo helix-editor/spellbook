@@ -708,9 +708,12 @@ pub(crate) struct CompoundRuleTable {
 
 impl From<Vec<CompoundRule>> for CompoundRuleTable {
     fn from(rules: Vec<CompoundRule>) -> Self {
-        let all_flags = rules.iter().flatten().map(|el| el.flag).collect();
+        let all_flags: Vec<_> = rules.iter().flatten().map(|el| el.flag).collect();
 
-        Self { rules, all_flags }
+        Self {
+            rules,
+            all_flags: all_flags.into(),
+        }
     }
 }
 
