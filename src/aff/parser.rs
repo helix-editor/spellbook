@@ -19,6 +19,7 @@ use hashbrown::HashMap;
 use crate::{
     aff::CompoundRuleModifier,
     alloc::{
+        boxed::Box,
         string::{String, ToString},
         vec::Vec,
     },
@@ -157,7 +158,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         };
         let (word, flagset) = parse_dic_line(word, cx.flag_type, &cx.flag_aliases, cx.ignore_chars)
             .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
-        words.insert(word.into_boxed_str(), flagset);
+        words.insert(word, flagset);
     }
 
     let break_table = if cx.break_patterns.is_empty() {
@@ -1015,9 +1016,22 @@ fn parse_dic_line(
     flag_type: FlagType,
     aliases: &[FlagSet],
     ignore_chars: &str,
-) -> core::result::Result<(String, FlagSet), ParseFlagError> {
-    let mut chars = input.chars();
-    let mut word = String::new();
+) -> core::result::Result<(Box<str>, FlagSet), ParseFlagError> {
+    let slash = match input.find(['/', '\\']) {
+        Some(idx) => idx,
+        // Fast-lane words that don't have flags.
+        None => return Ok((input.into(), FlagSet::empty())),
+    };
+
+    // Backslashes are unlikely. It's more efficient to split the str and allocate directly into
+    // a boxed str than going through a String.
+    if &input[slash..slash + 1] == "/" {
+        let flag_set = decode_flagset(&input[slash + 1..], flag_type, aliases)?;
+        return Ok((input[..slash].into(), flag_set));
+    }
+
+    let mut word = input[..slash].to_string();
+    let mut chars = input[slash..].chars();
     let mut escape = false;
     for ch in chars.by_ref() {
         match ch {
@@ -1032,7 +1046,7 @@ fn parse_dic_line(
     let flags_str: String = chars.collect();
     let flag_set = decode_flagset(&flags_str, flag_type, aliases)?;
 
-    Ok((word, flag_set))
+    Ok((word.into_boxed_str(), flag_set))
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
