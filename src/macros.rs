@@ -12,7 +12,7 @@ macro_rules! flagset {
     }};
     ( $( $x:expr ),* ) => {
         {
-            FlagSet::from( $crate::alloc::vec![ $( Flag::new( $x ).unwrap() ),* ] )
+            FlagSet::from( $crate::alloc::vec![ $( Flag::new( $x as u16 ).unwrap() ),* ] )
         }
     };
 }

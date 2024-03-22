@@ -1714,4 +1714,25 @@ mod test {
             aff_data.prefixes.table[1]
         );
     }
+
+    #[test]
+    fn parse_dic_line_test() {
+        fn parse(input: &str) -> (Box<str>, FlagSet) {
+            parse_dic_line(input, FlagType::default(), &[], "").unwrap()
+        }
+
+        assert_eq!(("stem".into(), flagset![]), parse("stem"));
+        assert_eq!(("stem".into(), flagset![]), parse("stem/"));
+        assert_eq!(
+            ("stem".into(), flagset!['F', 'L', 'A', 'G', 'S']),
+            parse("stem/FLAGS")
+        );
+        // nl_NL
+        assert_eq!(
+            ("Oost/Watergraafsmeer".into(), flagset![]),
+            parse("Oost\\/Watergraafsmeer")
+        );
+        // nn_NO
+        assert_eq!(("Håkon".into(), flagset!['J', '\\']), parse("Håkon/J\\"));
+    }
 }
