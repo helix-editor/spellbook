@@ -102,7 +102,7 @@ where
         })
     }
 
-    pub fn get_all<'a, Q: ?Sized>(&'a self, k: &'a Q) -> GetAllIter<'a, Q, K, V>
+    pub fn get_all<'map, 'key, Q: ?Sized>(&'map self, k: &'key Q) -> GetAllIter<'map, 'key, Q, K, V>
     where
         K: Borrow<Q>,
         Q: Hash + Eq,
@@ -181,22 +181,22 @@ impl<K, V> ExactSizeIterator for Iter<'_, K, V> {
     }
 }
 
-pub struct GetAllIter<'a, Q: ?Sized, K, V>
+pub struct GetAllIter<'map, 'key, Q: ?Sized, K, V>
 where
     K: Borrow<Q>,
     Q: Hash + Eq,
 {
     inner: RawIterHash<(K, V)>,
-    key: &'a Q,
-    marker: PhantomData<(&'a K, &'a V)>,
+    key: &'key Q,
+    marker: PhantomData<(&'map K, &'map V)>,
 }
 
-impl<'a, Q: ?Sized, K, V> Iterator for GetAllIter<'a, Q, K, V>
+impl<'map, 'key, Q: ?Sized, K, V> Iterator for GetAllIter<'map, 'key, Q, K, V>
 where
     K: Borrow<Q>,
     Q: Hash + Eq,
 {
-    type Item = &'a V;
+    type Item = &'map V;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
