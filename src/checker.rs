@@ -173,6 +173,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return Some(form.flags);
         }
 
+        if let Some(form) = self.strip_prefix_only(word, AffixingMode::default(), hidden_homonym) {
+            return Some(form.flags);
+        }
+
         // TODO: rest of check_simple_word - prefixing and suffixing
 
         None
@@ -251,6 +255,75 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     flags,
                     prefixes: Default::default(),
                     suffixes: [Some(suffix), None],
+                });
+            }
+        }
+
+        None
+    }
+
+    fn strip_prefix_only(
+        &self,
+        word: &'a str,
+        mode: AffixingMode,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<AffixForm<'a>> {
+        for prefix in self.aff.prefixes.affixes_of(word) {
+            if !self.is_outer_affix_valid(prefix, mode) {
+                continue;
+            }
+
+            if !prefix.add.is_empty()
+                && mode == AffixingMode::AtCompoundEnd
+                && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
+                    prefix.flags.contains(&flag)
+                })
+            {
+                continue;
+            }
+
+            if self.is_circumfix(prefix) {
+                continue;
+            }
+
+            let stem = prefix.to_stem(word);
+
+            if !prefix.condition_matches(&stem) {
+                continue;
+            }
+
+            for flags in self.aff.words.get_all(stem.as_ref()) {
+                // Nuspell:
+                // if (!cross_valid_inner_outer(word_flags, e))
+                // 	continue;
+                if !flags.contains(&prefix.flag) {
+                    continue;
+                }
+
+                if mode == AffixingMode::FullWord
+                    && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
+                        prefix.flags.contains(&flag)
+                    })
+                {
+                    continue;
+                }
+
+                if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                    continue;
+                }
+
+                if !self.is_valid_inside_compound(flags, mode)
+                    && !self.is_valid_inside_compound(&prefix.flags, mode)
+                {
+                    continue;
+                }
+
+                return Some(AffixForm {
+                    word,
+                    stem,
+                    flags,
+                    prefixes: [Some(prefix), None],
+                    suffixes: Default::default(),
                 });
             }
         }
@@ -526,5 +599,15 @@ mod test {
         assert!(en_us().check("concussive"));
         // regenerate/V (en_US.dic line 38722)
         assert!(en_us().check("regenerative"));
+    }
+
+    #[test]
+    fn check_word_with_single_prefix() {
+        // Prefix 'A' from en_US.aff
+        // PFX A Y 1
+        // PFX A   0     re         .
+
+        // route/ADSG (en_US.dic line 39619)
+        assert!(en_us().check("reroute"));
     }
 }
