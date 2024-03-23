@@ -229,6 +229,20 @@ impl fmt::Debug for FlagSet {
 // We represent the stem as a boxed str to save on space.
 pub(crate) type WordList<S> = hash_multi_map::HashMultiMap<Box<str>, FlagSet, S>;
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum AffixingMode {
+    FullWord,
+    AtCompoundBegin,
+    AtCompoundMiddle,
+    AtCompoundEnd,
+}
+
+impl Default for AffixingMode {
+    fn default() -> Self {
+        Self::FullWord
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

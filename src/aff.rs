@@ -6,7 +6,8 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    Flag, FlagSet, WordList,
+    stdx::is_some_and,
+    AffixingMode, Flag, FlagSet, WordList,
 };
 
 use core::{hash::BuildHasher, marker::PhantomData, str::Chars};
@@ -111,16 +112,16 @@ impl Condition {
 
 /// Internal container type for a prefix or suffix.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct Affix<C> {
+pub(crate) struct Affix<K> {
     /// The flag that words may use to reference this affix.
-    flag: Flag,
+    pub flag: Flag,
     /// Whether the affix is compatible with the opposite affix. For example a word that has both
     /// a prefix and a suffix, both the prefix and suffix should have `crossproduct: true`.
-    crossproduct: bool,
+    pub crossproduct: bool,
     /// What is stripped from the stem when the affix is applied.
     strip: Option<String>,
     /// What should be added when the affix is applied.
-    add: String,
+    pub add: String,
     /// Condition that the stem should be checked against to query if the affix is relevant.
     ///
     /// This is optional in Spellbook. Hunspell and Nuspell represent what we say is `None` as
@@ -131,11 +132,11 @@ pub(crate) struct Affix<C> {
     ///
     /// These are included with the `add` in `.aff` files (separated by `/`).
     // TODO: document how they're used.
-    flags: FlagSet,
-    phantom_data: PhantomData<C>,
+    pub flags: FlagSet,
+    phantom_data: PhantomData<K>,
 }
 
-impl<C: CharReader> Affix<C> {
+impl<K: AffixKind> Affix<K> {
     pub fn new(
         flag: Flag,
         crossproduct: bool,
@@ -157,8 +158,8 @@ impl<C: CharReader> Affix<C> {
         })
     }
 
-    pub fn appending(&self) -> C::Chars<'_> {
-        C::chars(&self.add)
+    pub fn appending(&self) -> K::Chars<'_> {
+        K::chars(&self.add)
     }
 }
 
@@ -179,27 +180,89 @@ pub(crate) type Suffix = Affix<Sfx>;
 /// the lifetime of the iterator is bound only to the input word.
 ///
 /// ["lending iterator"]: https://rust-lang.github.io/generic-associated-types-initiative/design_patterns/iterable.html
-pub(crate) trait CharReader {
+pub(crate) trait AffixKind {
     type Chars<'a>: Iterator<Item = char>
     where
         Self: 'a;
 
     fn chars(word: &str) -> Self::Chars<'_>;
+
+    // Reversed form of `affix_NOT_valid` from Nuspell.
+    fn is_valid(affix: &Affix<Self>, options: &AffOptions, affixing_mode: AffixingMode) -> bool
+    where
+        Self: Sized;
 }
 
-impl CharReader for Pfx {
+impl AffixKind for Pfx {
     type Chars<'a> = Chars<'a>;
 
     fn chars(word: &str) -> Self::Chars<'_> {
         word.chars()
     }
+
+    // TODO: invert? `is_valid`?
+    fn is_valid(prefix: &Prefix, options: &AffOptions, affixing_mode: AffixingMode) -> bool {
+        if affixing_mode == AffixingMode::FullWord
+            && is_some_and(options.only_in_compound_flag, |flag| {
+                prefix.flags.contains(&flag)
+            })
+        {
+            return false;
+        }
+
+        if affixing_mode == AffixingMode::AtCompoundEnd
+            && !is_some_and(options.compound_permit_flag, |flag| {
+                prefix.flags.contains(&flag)
+            })
+        {
+            return false;
+        }
+
+        if affixing_mode == AffixingMode::FullWord
+            && is_some_and(options.compound_forbid_flag, |flag| {
+                prefix.flags.contains(&flag)
+            })
+        {
+            return false;
+        }
+
+        true
+    }
 }
 
-impl CharReader for Sfx {
+impl AffixKind for Sfx {
     type Chars<'a> = core::iter::Rev<Chars<'a>>;
 
     fn chars(word: &str) -> Self::Chars<'_> {
         word.chars().rev()
+    }
+
+    fn is_valid(suffix: &Suffix, options: &AffOptions, affixing_mode: AffixingMode) -> bool {
+        if affixing_mode == AffixingMode::FullWord
+            && is_some_and(options.only_in_compound_flag, |flag| {
+                suffix.flags.contains(&flag)
+            })
+        {
+            return false;
+        }
+
+        if affixing_mode == AffixingMode::AtCompoundEnd
+            && !is_some_and(options.compound_permit_flag, |flag| {
+                suffix.flags.contains(&flag)
+            })
+        {
+            return false;
+        }
+
+        if affixing_mode == AffixingMode::FullWord
+            && is_some_and(options.compound_forbid_flag, |flag| {
+                suffix.flags.contains(&flag)
+            })
+        {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -398,14 +461,14 @@ pub(crate) struct AffixIndex<C> {
     prefix_idx_with_first_char: Vec<usize>,
 }
 
-impl<C: CharReader> FromIterator<Affix<C>> for AffixIndex<C> {
+impl<C: AffixKind> FromIterator<Affix<C>> for AffixIndex<C> {
     fn from_iter<T: IntoIterator<Item = Affix<C>>>(iter: T) -> Self {
         let table: Vec<_> = iter.into_iter().collect();
         table.into()
     }
 }
 
-impl<C: CharReader> From<Vec<Affix<C>>> for AffixIndex<C> {
+impl<C: AffixKind> From<Vec<Affix<C>>> for AffixIndex<C> {
     fn from(mut table: Vec<Affix<C>>) -> Self {
         // Sort the table lexiographically by key. We will use this lexiographical ordering to
         // efficiently search in AffixesIter.
@@ -451,7 +514,7 @@ impl<C: CharReader> From<Vec<Affix<C>>> for AffixIndex<C> {
     }
 }
 
-impl<C: CharReader> AffixIndex<C> {
+impl<C: AffixKind> AffixIndex<C> {
     pub fn affixes_of<'a>(&'a self, word: &'a str) -> AffixesIter<'a, C> {
         AffixesIter {
             table: &self.table,
@@ -464,7 +527,7 @@ impl<C: CharReader> AffixIndex<C> {
 }
 
 /// An iterator over the affixes for the
-pub(crate) struct AffixesIter<'a, C: CharReader> {
+pub(crate) struct AffixesIter<'a, C: AffixKind> {
     table: &'a [Affix<C>],
     first_char: &'a [char],
     prefix_idx_with_first_char: &'a [usize],
@@ -472,7 +535,7 @@ pub(crate) struct AffixesIter<'a, C: CharReader> {
     chars_matched: usize,
 }
 
-impl<'a, C: CharReader> Iterator for AffixesIter<'a, C> {
+impl<'a, C: AffixKind> Iterator for AffixesIter<'a, C> {
     type Item = &'a Affix<C>;
 
     fn next(&mut self) -> Option<Self::Item> {

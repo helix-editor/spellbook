@@ -1,10 +1,10 @@
 use core::hash::BuildHasher;
 
 use crate::{
-    aff::{AffData, Prefix, Suffix, HIDDEN_HOMONYM_FLAG},
+    aff::{AffData, Affix, AffixKind, Prefix, Suffix, HIDDEN_HOMONYM_FLAG},
     alloc::{borrow::Cow, string::String},
     stdx::is_some_and,
-    FlagSet,
+    AffixingMode, FlagSet,
 };
 
 // Nuspell limits the length of the input word:
@@ -35,7 +35,6 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return true;
         }
 
-        // TODO: abbreviation
         let trimmed_word = word.trim_end_matches('.');
         let abbreviated = trimmed_word.len() != word.len();
 
@@ -170,7 +169,12 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return Some(flags);
         }
 
+        if let Some(form) = self.strip_suffix_only(word, AffixingMode::default(), hidden_homonym) {
+            return Some(form.flags);
+        }
+
         // TODO: rest of check_simple_word - prefixing and suffixing
+
         None
     }
 
@@ -181,6 +185,130 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     ) -> Option<CompoundingResult<'a>> {
         // TODO: compounding
         None
+    }
+
+    // TODO: experiment with const generics to replace the affixing mode
+
+    fn strip_suffix_only(
+        &self,
+        word: &'a str,
+        mode: AffixingMode,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<AffixForm<'a>> {
+        for suffix in self.aff.suffixes.affixes_of(word) {
+            if !self.is_outer_affix_valid(suffix, mode) {
+                continue;
+            }
+
+            if !suffix.add.is_empty()
+                && mode == AffixingMode::AtCompoundEnd
+                && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
+                    suffix.flags.contains(&flag)
+                })
+            {
+                continue;
+            }
+
+            if self.is_circumfix(suffix) {
+                continue;
+            }
+
+            let stem = suffix.to_stem(word);
+
+            if !suffix.condition_matches(&stem) {
+                continue;
+            }
+
+            for flags in self.aff.words.get_all(stem.as_ref()) {
+                // Nuspell:
+                // if (!cross_valid_inner_outer(word_flags, e))
+                // 	continue;
+                if !flags.contains(&suffix.flag) {
+                    continue;
+                }
+
+                if mode == AffixingMode::FullWord
+                    && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
+                        suffix.flags.contains(&flag)
+                    })
+                {
+                    continue;
+                }
+
+                if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                    continue;
+                }
+
+                if !self.is_valid_inside_compound(flags, mode)
+                    && !self.is_valid_inside_compound(&suffix.flags, mode)
+                {
+                    continue;
+                }
+
+                return Some(AffixForm {
+                    word,
+                    stem,
+                    flags,
+                    prefixes: Default::default(),
+                    suffixes: [Some(suffix), None],
+                });
+            }
+        }
+
+        None
+    }
+
+    // Reversed form of Nuspell's `outer_affix_NOT_valid`
+    fn is_outer_affix_valid<K: AffixKind>(&self, affix: &Affix<K>, mode: AffixingMode) -> bool {
+        if !K::is_valid(affix, &self.aff.options, mode) {
+            return false;
+        }
+
+        if is_some_and(self.aff.options.need_affix_flag, |flag| {
+            affix.flags.contains(&flag)
+        }) {
+            return false;
+        }
+
+        true
+    }
+
+    fn is_circumfix<K: AffixKind>(&self, affix: &Affix<K>) -> bool {
+        is_some_and(self.aff.options.circumfix_flag, |flag| {
+            affix.flags.contains(&flag)
+        })
+    }
+
+    fn is_valid_inside_compound(&self, flags: &FlagSet, mode: AffixingMode) -> bool {
+        let is_compound = is_some_and(self.aff.options.compound_flag, |flag| flags.contains(&flag));
+
+        match mode {
+            AffixingMode::AtCompoundBegin
+                if !is_compound
+                    && !is_some_and(self.aff.options.compound_begin_flag, |flag| {
+                        flags.contains(&flag)
+                    }) =>
+            {
+                false
+            }
+            AffixingMode::AtCompoundMiddle
+                if !is_compound
+                    && !is_some_and(self.aff.options.compound_middle_flag, |flag| {
+                        flags.contains(&flag)
+                    }) =>
+            {
+                false
+            }
+            AffixingMode::AtCompoundEnd
+                if !is_compound
+                    && !is_some_and(self.aff.options.compound_last_flag, |flag| {
+                        flags.contains(&flag)
+                    }) =>
+            {
+                false
+            }
+            _ => true,
+        }
     }
 }
 
@@ -302,13 +430,13 @@ impl HiddenHomonym {
 }
 
 // Similar to Nuspell's AffixingResult
-pub(crate) struct AffixForm<'a> {
-    word: &'a str,
-    stem: Cow<'a, str>,
-    flags: &'a FlagSet,
+pub(crate) struct AffixForm<'aff> {
+    word: &'aff str,
+    stem: Cow<'aff, str>,
+    flags: &'aff FlagSet,
     // Up to 2 prefixes and/or 2 suffixes allowed.
-    prefixes: [Option<Prefix>; 2],
-    suffixes: [Option<Suffix>; 2],
+    prefixes: [Option<&'aff Prefix>; 2],
+    suffixes: [Option<&'aff Suffix>; 2],
 }
 
 // TODO: docs.
@@ -385,5 +513,18 @@ mod test {
         assert!(en_us().check("-any"));
         assert!(en_us().check("anyway-anywhere"));
         assert!(en_us().check("ace-"));
+    }
+
+    #[test]
+    fn check_word_with_single_suffix() {
+        // Suffix 'V' from en_US.aff:
+        // SFX V N 2
+        // SFX V   e     ive        e
+        // SFX V   0     ive        [^e]
+
+        // concuss/V (en_US.dic line 17451)
+        assert!(en_us().check("concussive"));
+        // regenerate/V (en_US.dic line 38722)
+        assert!(en_us().check("regenerative"));
     }
 }
