@@ -515,7 +515,10 @@ impl<C: AffixKind> From<Vec<Affix<C>>> for AffixIndex<C> {
 }
 
 impl<C: AffixKind> AffixIndex<C> {
-    pub fn affixes_of<'a>(&'a self, word: &'a str) -> AffixesIter<'a, C> {
+    pub fn affixes_of<'index, 'word>(
+        &'index self,
+        word: &'word str,
+    ) -> AffixesIter<'index, 'word, C> {
         AffixesIter {
             table: &self.table,
             first_char: &self.first_char,
@@ -527,16 +530,16 @@ impl<C: AffixKind> AffixIndex<C> {
 }
 
 /// An iterator over the affixes for the
-pub(crate) struct AffixesIter<'a, C: AffixKind> {
-    table: &'a [Affix<C>],
-    first_char: &'a [char],
-    prefix_idx_with_first_char: &'a [usize],
-    chars: C::Chars<'a>,
+pub(crate) struct AffixesIter<'index, 'word, C: AffixKind + 'word> {
+    table: &'index [Affix<C>],
+    first_char: &'index [char],
+    prefix_idx_with_first_char: &'index [usize],
+    chars: C::Chars<'word>,
     chars_matched: usize,
 }
 
-impl<'a, C: AffixKind> Iterator for AffixesIter<'a, C> {
-    type Item = &'a Affix<C>;
+impl<'index, 'word, C: AffixKind> Iterator for AffixesIter<'index, 'word, C> {
+    type Item = &'index Affix<C>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Return all affixes that append nothing first.
