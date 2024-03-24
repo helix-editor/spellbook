@@ -6,8 +6,7 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    stdx::is_some_and,
-    AffixingMode, Flag, FlagSet, WordList,
+    has_flag, AffixingMode, Flag, FlagSet, WordList,
 };
 
 use core::{hash::BuildHasher, marker::PhantomData, str::Chars};
@@ -200,28 +199,21 @@ impl AffixKind for Pfx {
         word.chars()
     }
 
-    // TODO: invert? `is_valid`?
     fn is_valid(prefix: &Prefix, options: &AffOptions, affixing_mode: AffixingMode) -> bool {
         if affixing_mode == AffixingMode::FullWord
-            && is_some_and(options.only_in_compound_flag, |flag| {
-                prefix.flags.contains(&flag)
-            })
+            && has_flag!(prefix.flags, options.only_in_compound_flag)
         {
             return false;
         }
 
         if affixing_mode == AffixingMode::AtCompoundEnd
-            && !is_some_and(options.compound_permit_flag, |flag| {
-                prefix.flags.contains(&flag)
-            })
+            && !has_flag!(prefix.flags, options.compound_permit_flag)
         {
             return false;
         }
 
         if affixing_mode == AffixingMode::FullWord
-            && is_some_and(options.compound_forbid_flag, |flag| {
-                prefix.flags.contains(&flag)
-            })
+            && has_flag!(prefix.flags, options.compound_forbid_flag)
         {
             return false;
         }
@@ -239,25 +231,19 @@ impl AffixKind for Sfx {
 
     fn is_valid(suffix: &Suffix, options: &AffOptions, affixing_mode: AffixingMode) -> bool {
         if affixing_mode == AffixingMode::FullWord
-            && is_some_and(options.only_in_compound_flag, |flag| {
-                suffix.flags.contains(&flag)
-            })
+            && has_flag!(suffix.flags, options.only_in_compound_flag)
         {
             return false;
         }
 
         if affixing_mode == AffixingMode::AtCompoundEnd
-            && !is_some_and(options.compound_permit_flag, |flag| {
-                suffix.flags.contains(&flag)
-            })
+            && !has_flag!(suffix.flags, options.compound_permit_flag)
         {
             return false;
         }
 
         if affixing_mode == AffixingMode::FullWord
-            && is_some_and(options.compound_forbid_flag, |flag| {
-                suffix.flags.contains(&flag)
-            })
+            && has_flag!(suffix.flags, options.compound_forbid_flag)
         {
             return false;
         }

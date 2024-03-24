@@ -3,8 +3,7 @@ use core::hash::BuildHasher;
 use crate::{
     aff::{AffData, Affix, AffixKind, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG},
     alloc::{borrow::Cow, string::String},
-    stdx::is_some_and,
-    AffixingMode, FlagSet,
+    has_flag, AffixingMode, FlagSet,
 };
 
 // Nuspell limits the length of the input word:
@@ -61,15 +60,11 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     /// each broken word is correct.
     fn spell_break(&self, word: &str, depth: usize) -> bool {
         if let Some(flags) = &self.spell_casing(word) {
-            if is_some_and(self.aff.options.forbidden_word_flag, |flag| {
-                flags.contains(&flag)
-            }) {
+            if has_flag!(flags, self.aff.options.forbidden_word_flag) {
                 return false;
             }
 
-            if self.aff.options.forbid_warn
-                && is_some_and(self.aff.options.warn_flag, |flag| flags.contains(&flag))
-            {
+            if self.aff.options.forbid_warn && has_flag!(flags, self.aff.options.warn_flag) {
                 return false;
             }
 
@@ -153,14 +148,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         hidden_homonym: HiddenHomonym,
     ) -> Option<&'a FlagSet> {
         for flags in self.aff.words.get_all(word) {
-            if is_some_and(self.aff.options.need_affix_flag, |flag| {
-                flags.contains(&flag)
-            }) {
+            if has_flag!(flags, self.aff.options.need_affix_flag) {
                 continue;
             }
-            if is_some_and(self.aff.options.only_in_compound_flag, |flag| {
-                flags.contains(&flag)
-            }) {
+            if has_flag!(flags, self.aff.options.only_in_compound_flag) {
                 continue;
             }
             if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
@@ -230,9 +221,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
             if !suffix.add.is_empty()
                 && mode == AffixingMode::AtCompoundEnd
-                && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
-                    suffix.flags.contains(&flag)
-                })
+                && has_flag!(suffix.flags, self.aff.options.only_in_compound_flag)
             {
                 continue;
             }
@@ -256,9 +245,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 }
 
                 if mode == AffixingMode::FullWord
-                    && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
-                        suffix.flags.contains(&flag)
-                    })
+                    && has_flag!(suffix.flags, self.aff.options.only_in_compound_flag)
                 {
                     continue;
                 }
@@ -298,9 +285,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
             if !prefix.add.is_empty()
                 && mode == AffixingMode::AtCompoundEnd
-                && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
-                    prefix.flags.contains(&flag)
-                })
+                && has_flag!(prefix.flags, self.aff.options.only_in_compound_flag)
             {
                 continue;
             }
@@ -324,9 +309,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 }
 
                 if mode == AffixingMode::FullWord
-                    && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
-                        prefix.flags.contains(&flag)
-                    })
+                    && has_flag!(prefix.flags, self.aff.options.only_in_compound_flag)
                 {
                     continue;
                 }
@@ -359,9 +342,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return false;
         }
 
-        if is_some_and(self.aff.options.need_affix_flag, |flag| {
-            affix.flags.contains(&flag)
-        }) {
+        if has_flag!(affix.flags, self.aff.options.need_affix_flag) {
             return false;
         }
 
@@ -369,36 +350,25 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     }
 
     fn is_circumfix<K: AffixKind>(&self, affix: &Affix<K>) -> bool {
-        is_some_and(self.aff.options.circumfix_flag, |flag| {
-            affix.flags.contains(&flag)
-        })
+        has_flag!(affix.flags, self.aff.options.circumfix_flag)
     }
 
     fn is_valid_inside_compound(&self, flags: &FlagSet, mode: AffixingMode) -> bool {
-        let is_compound = is_some_and(self.aff.options.compound_flag, |flag| flags.contains(&flag));
+        let is_compound = has_flag!(flags, self.aff.options.compound_flag);
 
         match mode {
             AffixingMode::AtCompoundBegin
-                if !is_compound
-                    && !is_some_and(self.aff.options.compound_begin_flag, |flag| {
-                        flags.contains(&flag)
-                    }) =>
+                if !is_compound && !has_flag!(flags, self.aff.options.compound_begin_flag) =>
             {
                 false
             }
             AffixingMode::AtCompoundMiddle
-                if !is_compound
-                    && !is_some_and(self.aff.options.compound_middle_flag, |flag| {
-                        flags.contains(&flag)
-                    }) =>
+                if !is_compound && !has_flag!(flags, self.aff.options.compound_middle_flag) =>
             {
                 false
             }
             AffixingMode::AtCompoundEnd
-                if !is_compound
-                    && !is_some_and(self.aff.options.compound_last_flag, |flag| {
-                        flags.contains(&flag)
-                    }) =>
+                if !is_compound && !has_flag!(flags, self.aff.options.compound_last_flag) =>
             {
                 false
             }
@@ -429,9 +399,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             }
 
             // Inlined translation of `strip_pfx_then_sfx_comm_2` from Nuspell.
-            let has_needaffix_prefix = is_some_and(self.aff.options.need_affix_flag, |flag| {
-                prefix.flags.contains(&flag)
-            });
+            let has_needaffix_prefix = has_flag!(prefix.flags, self.aff.options.need_affix_flag);
             let is_circumfix_prefix = self.is_circumfix(prefix);
 
             for suffix in self.aff.suffixes.affixes_of(&stem_without_prefix) {
@@ -443,11 +411,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                // TODO: add a macro around `match` so we don't need `is_some_and`? It's just
-                // convenience and yet it's still pretty verbose.
-                let has_needaffix_suffix = is_some_and(self.aff.options.need_affix_flag, |flag| {
-                    suffix.flags.contains(&flag)
-                });
+                let has_needaffix_suffix =
+                    has_flag!(suffix.flags, self.aff.options.need_affix_flag);
 
                 if has_needaffix_prefix && has_needaffix_suffix {
                     continue;
@@ -477,9 +442,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     if mode == AffixingMode::FullWord
-                        && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
-                            flags.contains(&flag)
-                        })
+                        && has_flag!(flags, self.aff.options.only_in_compound_flag)
                     {
                         continue;
                     }
@@ -571,9 +534,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
                     // Note: assumed `AffixingMode::FullWord`
-                    if is_some_and(self.aff.options.only_in_compound_flag, |flag| {
-                        inner_suffix.flags.contains(&flag)
-                    }) {
+                    if has_flag!(inner_suffix.flags, self.aff.options.only_in_compound_flag) {
                         continue;
                     }
 
@@ -679,9 +640,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         }
 
                         // Note: assumed `AffixingMode::FullWord`
-                        if is_some_and(self.aff.options.only_in_compound_flag, |flag| {
-                            inner_suffix.flags.contains(&flag)
-                        }) {
+                        if has_flag!(inner_suffix.flags, self.aff.options.only_in_compound_flag) {
                             continue;
                         }
 

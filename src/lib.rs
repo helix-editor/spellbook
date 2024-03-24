@@ -14,7 +14,6 @@ pub(crate) mod aff;
 pub(crate) mod checker;
 mod hash_multi_map;
 pub(crate) mod macros;
-pub(crate) mod stdx;
 
 pub use aff::parser::{ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource};
 use checker::Checker;
