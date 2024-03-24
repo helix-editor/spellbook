@@ -25,18 +25,21 @@ brunch::benches!(
     )),
     Bench::spacer(),
     // Checking
-    Bench::new("In-dictionary word (\"drink\")")
+    Bench::new("In-dictionary word (\"earth\")")
         .with_samples(SAMPLES)
-        .run_seeded_with(en_us, |dict| dict.check(black_box("drink"))),
-    Bench::new("Word with a suffix (\"drinkable\")")
+        .run_seeded_with(en_us, |dict| dict.check(black_box("earth"))),
+    Bench::new("Word with suffix (\"earthly\")")
         .with_samples(SAMPLES)
-        .run_seeded_with(en_us, |dict| dict.check(black_box("drinkable"))),
-    Bench::new("Multi-affix (\"undrinkable\")")
+        .run_seeded_with(en_us, |dict| dict.check(black_box("earthly"))),
+    Bench::new("Word with prefix (\"unearth\")")
         .with_samples(SAMPLES)
-        .run_seeded_with(en_us, |dict| dict.check(black_box("undrinkable"))),
-    Bench::new("Incorrect prefix (\"undrink\")")
+        .run_seeded_with(en_us, |dict| dict.check(black_box("unearth"))),
+    Bench::new("Word with prefix and suffix (\"unearthed\")")
         .with_samples(SAMPLES)
-        .run_seeded_with(en_us, |dict| dict.check(black_box("undrink"))),
+        .run_seeded_with(en_us, |dict| dict.check(black_box("unearthed"))),
+    Bench::new("Incorrect prefix (\"reearth\")")
+        .with_samples(SAMPLES)
+        .run_seeded_with(en_us, |dict| dict.check(black_box("reearth"))),
     Bench::new("Breaks (\"light-weight-like\")")
         .with_samples(SAMPLES)
         .run_seeded_with(en_us, |dict| dict.check(black_box("light-weight-like"))),

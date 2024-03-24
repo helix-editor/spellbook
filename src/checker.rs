@@ -1,7 +1,7 @@
 use core::hash::BuildHasher;
 
 use crate::{
-    aff::{AffData, Affix, AffixKind, Prefix, Suffix, HIDDEN_HOMONYM_FLAG},
+    aff::{AffData, Affix, AffixKind, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG},
     alloc::{borrow::Cow, string::String},
     stdx::is_some_and,
     AffixingMode, FlagSet,
@@ -177,7 +177,22 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return Some(form.flags);
         }
 
-        // TODO: rest of check_simple_word - prefixing and suffixing
+        if let Some(form) =
+            self.strip_prefix_then_suffix_commutative(word, AffixingMode::default(), hidden_homonym)
+        {
+            return Some(form.flags);
+        }
+
+        // TODO: rest of check_simple_word:
+        // strip_prefix_then_suffix_commutative
+        // strip_suffix_then_suffix
+        // strip_prefix_then_2_suffixes
+        // strip_suffix_prefix_suffix
+        // strip_2_suffixes_then_prefix (slow and unused, commented out)
+        // strip_prefix_then_prefix
+        // strip_suffix_then_2_prefixes
+        // strip_prefix_suffix_prefix
+        // strip_2_prefixes_then_suffix (slow and unused, commented out)
 
         None
     }
@@ -250,7 +265,6 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 }
 
                 return Some(AffixForm {
-                    word,
                     stem,
                     flags,
                     prefixes: Default::default(),
@@ -319,7 +333,6 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 }
 
                 return Some(AffixForm {
-                    word,
                     stem,
                     flags,
                     prefixes: [Some(prefix), None],
@@ -382,6 +395,114 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             }
             _ => true,
         }
+    }
+
+    fn strip_prefix_then_suffix_commutative(
+        &self,
+        word: &'a str,
+        mode: AffixingMode,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<AffixForm<'a>> {
+        // TODO: elide this into `strip_prefix_only`?
+        for prefix in self.aff.prefixes.affixes_of(word) {
+            if !prefix.crossproduct {
+                continue;
+            }
+
+            if !Pfx::is_valid(prefix, &self.aff.options, AffixingMode::default()) {
+                continue;
+            }
+
+            let stem_without_prefix = prefix.to_stem(word);
+
+            if !prefix.condition_matches(&stem_without_prefix) {
+                continue;
+            }
+
+            // Inlined translation of `strip_pfx_then_sfx_comm_2` from Nuspell.
+            let has_needaffix_prefix = is_some_and(self.aff.options.need_affix_flag, |flag| {
+                prefix.flags.contains(&flag)
+            });
+            let is_circumfix_prefix = self.is_circumfix(prefix);
+
+            for suffix in self.aff.suffixes.affixes_of(&stem_without_prefix) {
+                if !suffix.crossproduct {
+                    continue;
+                }
+
+                if !Sfx::is_valid(suffix, &self.aff.options, AffixingMode::default()) {
+                    continue;
+                }
+
+                // TODO: add a macro around `match` so we don't need `is_some_and`? It's just
+                // convenience and yet it's still pretty verbose.
+                let has_needaffix_suffix = is_some_and(self.aff.options.need_affix_flag, |flag| {
+                    suffix.flags.contains(&flag)
+                });
+
+                if has_needaffix_prefix && has_needaffix_suffix {
+                    continue;
+                }
+
+                if is_circumfix_prefix != self.is_circumfix(suffix) {
+                    continue;
+                }
+
+                let stem_without_suffix = suffix.to_stem(&stem_without_prefix);
+
+                if !suffix.condition_matches(&stem_without_suffix) {
+                    continue;
+                }
+
+                for flags in self.aff.words.get_all(stem_without_suffix.as_ref()) {
+                    let valid_cross_prefix_outer = !has_needaffix_prefix
+                        && flags.contains(&suffix.flag)
+                        && (suffix.flags.contains(&prefix.flag) || flags.contains(&prefix.flag));
+
+                    let valid_cross_suffix_outer = !has_needaffix_suffix
+                        && flags.contains(&suffix.flag)
+                        && (prefix.flags.contains(&suffix.flag) || flags.contains(&suffix.flag));
+
+                    if !valid_cross_prefix_outer && !valid_cross_suffix_outer {
+                        continue;
+                    }
+
+                    if mode == AffixingMode::FullWord
+                        && is_some_and(self.aff.options.only_in_compound_flag, |flag| {
+                            flags.contains(&flag)
+                        })
+                    {
+                        continue;
+                    }
+
+                    if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                        continue;
+                    }
+
+                    if !self.is_valid_inside_compound(flags, mode)
+                        && !self.is_valid_inside_compound(&suffix.flags, mode)
+                        && !self.is_valid_inside_compound(&prefix.flags, mode)
+                    {
+                        continue;
+                    }
+
+                    return Some(AffixForm {
+                        // Unfortunately we need an owned value here. Returning a borrowed Cow
+                        // would be returning a reference to `stem_without_prefix`. If
+                        // `stem_without_prefix` needs to be owned we would be returning a
+                        // reference to a local `String` which would not live long enough.
+                        // TODO: can we use some phantomdata/marker trick to get around this and
+                        // bind the lifetime of the maybe owned String to the prefix table?
+                        stem: stem_without_suffix.into_owned().into(),
+                        flags,
+                        prefixes: [Some(prefix), None],
+                        suffixes: [Some(suffix), None],
+                    });
+                }
+            }
+        }
+
+        None
     }
 }
 
@@ -504,7 +625,6 @@ impl HiddenHomonym {
 
 // Similar to Nuspell's AffixingResult
 pub(crate) struct AffixForm<'aff> {
-    word: &'aff str,
     stem: Cow<'aff, str>,
     flags: &'aff FlagSet,
     // Up to 2 prefixes and/or 2 suffixes allowed.
@@ -609,5 +729,29 @@ mod test {
 
         // route/ADSG (en_US.dic line 39619)
         assert!(en_us().check("reroute"));
+    }
+
+    #[test]
+    fn false_prefix_test() {
+        // "un" is a prefix in en_US and "drink" is a stem. "drink"'s flags don't allow you to use
+        // the "un" prefix though, so this word isn't correct.
+        assert!(!en_us().check("undrink"));
+    }
+
+    #[test]
+    fn check_word_with_prefix_and_suffix() {
+        // Prefix 'U' from en_US.aff
+        // PFX U Y 1
+        // PFX U   0     un         .
+
+        // Suffix 'D' from en_US.aff
+        // SFX D Y 4
+        // SFX D   0     d          e
+        // SFX D   y     ied        [^aeiou]y
+        // SFX D   0     ed         [^ey]
+        // SFX D   0     ed         [aeiou]y
+
+        // earth/UDYG (en_US.dic line 20997)
+        assert!(en_us().check("unearthed"));
     }
 }
