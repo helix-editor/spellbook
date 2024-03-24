@@ -190,7 +190,11 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             if let Some(form) = self.strip_prefix_then_2_suffixes(word, hidden_homonym) {
                 return Some(form.flags);
             }
-            // strip_suffix_prefix_suffix
+
+            if let Some(form) = self.strip_suffix_then_prefix_then_suffix(word, hidden_homonym) {
+                return Some(form.flags);
+            }
+
             // strip_2_suffixes_then_prefix (slow and unused, commented out)
         }
 
@@ -661,6 +665,124 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         None
     }
+
+    // This is the same as the prior function except for the ordering.
+    fn strip_suffix_then_prefix_then_suffix(
+        &self,
+        word: &'a str,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<AffixForm<'a>> {
+        // Fastlane
+        if self.aff.prefixes.all_flags.is_empty() && self.aff.suffixes.all_flags.is_empty() {
+            return None;
+        }
+
+        for outer_suffix in self.aff.suffixes.affixes_of(word) {
+            // Fastlane
+            if !self.aff.prefixes.all_flags.contains(&outer_suffix.flag)
+                && !self.aff.suffixes.all_flags.contains(&outer_suffix.flag)
+            {
+                continue;
+            }
+
+            if !outer_suffix.crossproduct {
+                continue;
+            }
+
+            if !self.is_outer_affix_valid(outer_suffix, AffixingMode::FullWord) {
+                continue;
+            }
+
+            let stem = outer_suffix.to_stem(word);
+
+            if !outer_suffix.condition_matches(&stem) {
+                continue;
+            }
+
+            for prefix in self.aff.prefixes.affixes_of(&stem) {
+                if !prefix.crossproduct {
+                    continue;
+                }
+
+                if !Pfx::is_valid(prefix, &self.aff.options, AffixingMode::FullWord) {
+                    continue;
+                }
+
+                let stem2 = prefix.to_stem(&stem);
+
+                if !prefix.condition_matches(&stem) {
+                    continue;
+                }
+
+                let prefix_flags_contains_outer_suffix_flag =
+                    prefix.flags.contains(&outer_suffix.flag);
+
+                // Inlined version of Nuspell's `strip_s_p_s_3`. Here kitty kitty.
+                for inner_suffix in self.aff.suffixes.affixes_of(&stem2) {
+                    if !inner_suffix.crossproduct {
+                        continue;
+                    }
+
+                    if !inner_suffix.flags.contains(&outer_suffix.flag)
+                        && !prefix_flags_contains_outer_suffix_flag
+                    {
+                        continue;
+                    }
+
+                    if !Sfx::is_valid(inner_suffix, &self.aff.options, AffixingMode::FullWord) {
+                        continue;
+                    }
+
+                    let prefix_circumfix = self.is_circumfix(prefix);
+                    let inner_suffix_circumfix = self.is_circumfix(inner_suffix);
+                    let outer_suffix_circumfix = self.is_circumfix(outer_suffix);
+                    let circumfix_ok_1 =
+                        (prefix_circumfix == outer_suffix_circumfix) && !inner_suffix_circumfix;
+                    let circumfix_ok_2 =
+                        (prefix_circumfix == inner_suffix_circumfix) && !outer_suffix_circumfix;
+                    if !circumfix_ok_1 && !circumfix_ok_2 {
+                        continue;
+                    }
+
+                    let stem3 = inner_suffix.to_stem(&stem2);
+
+                    if !inner_suffix.condition_matches(&stem3) {
+                        continue;
+                    }
+
+                    for flags in self.aff.words.get_all(stem3.as_ref()) {
+                        if !inner_suffix.flags.contains(&prefix.flag)
+                            && !flags.contains(&prefix.flag)
+                        {
+                            continue;
+                        }
+
+                        if !flags.contains(&inner_suffix.flag) {
+                            continue;
+                        }
+
+                        // Note: assumed `AffixingMode::FullWord`
+                        if has_flag!(inner_suffix.flags, self.aff.options.only_in_compound_flag) {
+                            continue;
+                        }
+
+                        if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                            continue;
+                        }
+
+                        return Some(AffixForm {
+                            stem: stem3.into_owned().into(),
+                            flags,
+                            prefixes: [Some(prefix), None],
+                            suffixes: [Some(outer_suffix), Some(inner_suffix)],
+                        });
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
 /// Checks if the input word is a number.
@@ -964,5 +1086,37 @@ mod test {
         assert!(dict.check("trazabilidades"));
         // Prefix and double suffix. 'S' is the outer suffix then 'J' is the inner suffix.
         assert!(dict.check("intrazabilidades"));
+    }
+
+    #[test]
+    fn check_word_with_suffix_then_prefix_then_suffix() {
+        // I'm not sure if any real dictionaries use this feature. If you can find one please
+        // open an issue or PR to update this unit test.
+        // 'o' is the outer suffix. It's a continuation of 'i', the inner suffix, so it's only
+        // valid when the 'i' suffix is also present. 'p' is just a regular prefix.
+        let aff = r#"
+        SFX o Y 1
+        SFX o 0 suf2 .
+
+        SFX i Y 1
+        SFX i 0 suf1/o .
+
+        PFX p Y 1
+        PFX p 0 pre .
+        "#;
+
+        let dic = r#"1
+        stem/pi
+        "#;
+
+        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+
+        assert!(dict.check("stem"));
+        assert!(dict.check("prestem"));
+        assert!(dict.check("prestemsuf1"));
+        assert!(dict.check("prestemsuf1suf2"));
+
+        assert!(!dict.check("stemsuf2"));
+        assert!(!dict.check("prestemsuf2"));
     }
 }
