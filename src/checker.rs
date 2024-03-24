@@ -184,15 +184,21 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         }
 
         // TODO: rest of check_simple_word:
-        // strip_prefix_then_suffix_commutative
-        // strip_suffix_then_suffix
-        // strip_prefix_then_2_suffixes
-        // strip_suffix_prefix_suffix
-        // strip_2_suffixes_then_prefix (slow and unused, commented out)
-        // strip_prefix_then_prefix
-        // strip_suffix_then_2_prefixes
-        // strip_prefix_suffix_prefix
-        // strip_2_prefixes_then_suffix (slow and unused, commented out)
+
+        if self.aff.options.complex_prefixes {
+            // strip_prefix_then_prefix
+            // strip_suffix_then_2_prefixes
+            // strip_prefix_suffix_prefix
+            // strip_2_prefixes_then_suffix (slow and unused, commented out)
+            todo!()
+        } else {
+            if let Some(form) = self.strip_suffix_then_suffix(word, hidden_homonym) {
+                return Some(form.flags);
+            }
+            // strip_prefix_then_2_suffixes
+            // strip_suffix_prefix_suffix
+            // strip_2_suffixes_then_prefix (slow and unused, commented out)
+        }
 
         None
     }
@@ -504,6 +510,86 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         None
     }
+
+    fn strip_suffix_then_suffix(
+        &self,
+        word: &'a str,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<AffixForm<'a>> {
+        // Nuspell notes that this is a fast-lane and doesn't affect correctness.
+        if self.aff.suffixes.all_flags.is_empty() {
+            return None;
+        }
+
+        for outer_suffix in self.aff.suffixes.affixes_of(word) {
+            // Another fast lane:
+            if !self.aff.suffixes.all_flags.contains(&outer_suffix.flag) {
+                continue;
+            }
+
+            if !self.is_outer_affix_valid(outer_suffix, AffixingMode::default()) {
+                continue;
+            }
+
+            if self.is_circumfix(outer_suffix) {
+                continue;
+            }
+
+            let stem = outer_suffix.to_stem(word);
+
+            if !outer_suffix.condition_matches(&stem) {
+                continue;
+            }
+
+            // Inline version of strip_sfx_then_sfx_2. Assume `AffixingMode::FullWord` here.
+            for inner_suffix in self.aff.suffixes.affixes_of(stem.as_ref()) {
+                // Nuspell:
+                // if (!cross_valid_inner_outer(word_flags, se2))
+                // 	continue;
+                if !inner_suffix.flags.contains(&outer_suffix.flag) {
+                    continue;
+                }
+
+                if !Sfx::is_valid(inner_suffix, &self.aff.options, AffixingMode::FullWord) {
+                    continue;
+                }
+                if self.is_circumfix(inner_suffix) {
+                    continue;
+                }
+
+                let stem2 = inner_suffix.to_stem(&stem);
+
+                if !inner_suffix.condition_matches(&stem2) {
+                    continue;
+                }
+
+                for flags in self.aff.words.get_all(stem2.as_ref()) {
+                    if !flags.contains(&inner_suffix.flag) {
+                        continue;
+                    }
+                    // Note: assumed `AffixingMode::FullWord`
+                    if is_some_and(self.aff.options.only_in_compound_flag, |flag| {
+                        inner_suffix.flags.contains(&flag)
+                    }) {
+                        continue;
+                    }
+
+                    if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                        continue;
+                    }
+
+                    return Some(AffixForm {
+                        stem: stem2.into_owned().into(),
+                        flags,
+                        prefixes: Default::default(),
+                        suffixes: [Some(outer_suffix), Some(inner_suffix)],
+                    });
+                }
+            }
+        }
+
+        None
+    }
 }
 
 /// Checks if the input word is a number.
@@ -753,5 +839,36 @@ mod test {
 
         // earth/UDYG (en_US.dic line 20997)
         assert!(en_us().check("unearthed"));
+    }
+
+    #[test]
+    fn check_word_with_double_suffix() {
+        // en_US doesn't use continuation flags in prefixes or suffixes so we need to create a
+        // small custom dictionary to check this. We'll use part of es_ANY, suffixes 'S' and 'J'
+        // trimmed to only the clauses we need.
+        let aff = r#"
+        SFX J Y 1
+        SFX J le ilidad/S ble
+
+        SFX S Y 2
+        SFX S 0 s [aceéfgiíkoóptuúw]
+        SFX S 0 es [bdhíjlmrúxy]
+        "#;
+
+        // es_ANY.dic line 48787
+        let dic = r#"1
+        perdurable/JS
+        "#;
+
+        let dict = Dictionary::new_with_hasher(dic, aff, ahash::RandomState::new()).unwrap();
+
+        // Stem
+        assert!(dict.check("perdurable"));
+        // Single suffix 'J'
+        assert!(dict.check("perdurabilidad"));
+        // Single suffix 'S'
+        assert!(dict.check("perdurables"));
+        // Double suffix. 'S' is the outer suffix then 'J' is the inner suffix.
+        assert!(dict.check("perdurabilidades"));
     }
 }

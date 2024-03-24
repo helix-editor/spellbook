@@ -459,6 +459,7 @@ pub(crate) struct AffixIndex<C> {
     table: Vec<Affix<C>>,
     first_char: Vec<char>,
     prefix_idx_with_first_char: Vec<usize>,
+    pub all_flags: FlagSet,
 }
 
 impl<C: AffixKind> FromIterator<Affix<C>> for AffixIndex<C> {
@@ -506,10 +507,17 @@ impl<C: AffixKind> From<Vec<Affix<C>>> for AffixIndex<C> {
         // element longer than `first_char`.
         prefix_idx_with_first_char.push(table.len());
 
+        let flags = table
+            .iter()
+            .flat_map(|affix| affix.flags.iter().copied())
+            .collect::<Vec<Flag>>()
+            .into();
+
         Self {
             table,
             first_char,
             prefix_idx_with_first_char,
+            all_flags: flags,
         }
     }
 }

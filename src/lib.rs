@@ -127,6 +127,11 @@ impl FlagSet {
         self.inner.len()
     }
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Returns `true` if both sets have at least one element in common.
     pub fn has_intersection(&self, other: &Self) -> bool {
         let mut xs = self.iter().peekable();
