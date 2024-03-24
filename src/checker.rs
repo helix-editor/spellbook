@@ -195,7 +195,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             if let Some(form) = self.strip_suffix_then_suffix(word, hidden_homonym) {
                 return Some(form.flags);
             }
-            // strip_prefix_then_2_suffixes
+
+            if let Some(form) = self.strip_prefix_then_2_suffixes(word, hidden_homonym) {
+                return Some(form.flags);
+            }
             // strip_suffix_prefix_suffix
             // strip_2_suffixes_then_prefix (slow and unused, commented out)
         }
@@ -590,6 +593,115 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         None
     }
+
+    fn strip_prefix_then_2_suffixes(
+        &self,
+        word: &'a str,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<AffixForm<'a>> {
+        // Fastlane
+        if self.aff.suffixes.all_flags.is_empty() {
+            return None;
+        }
+
+        // Strip the prefix.
+        for prefix in self.aff.prefixes.affixes_of(word) {
+            if !prefix.crossproduct {
+                continue;
+            }
+
+            if !self.is_outer_affix_valid(prefix, AffixingMode::FullWord) {
+                continue;
+            }
+
+            // TODO: check whether the condition matches while producing the stem - avoid allocations
+            let stem = prefix.to_stem(word);
+
+            if !prefix.condition_matches(&stem) {
+                continue;
+            }
+
+            // Strip the outer suffix.
+            for outer_suffix in self.aff.suffixes.affixes_of(&stem) {
+                // Fastlane
+                if !self.aff.suffixes.all_flags.contains(&outer_suffix.flag) {
+                    continue;
+                }
+
+                if !outer_suffix.crossproduct {
+                    continue;
+                }
+
+                if !Sfx::is_valid(outer_suffix, &self.aff.options, AffixingMode::FullWord) {
+                    continue;
+                }
+
+                if self.is_circumfix(prefix) != self.is_circumfix(outer_suffix) {
+                    continue;
+                }
+
+                let stem2 = outer_suffix.to_stem(&stem);
+
+                if !outer_suffix.condition_matches(&stem2) {
+                    continue;
+                }
+
+                // Strip the inner suffix.
+                for inner_suffix in self.aff.suffixes.affixes_of(&stem2) {
+                    if !inner_suffix.flags.contains(&outer_suffix.flag) {
+                        continue;
+                    }
+
+                    if !Sfx::is_valid(inner_suffix, &self.aff.options, AffixingMode::FullWord) {
+                        continue;
+                    }
+
+                    if self.is_circumfix(inner_suffix) {
+                        continue;
+                    }
+
+                    let stem3 = inner_suffix.to_stem(&stem2);
+
+                    if !inner_suffix.condition_matches(&stem3) {
+                        continue;
+                    }
+
+                    // Check that the fully stripped word is a stem in the dictionary.
+                    for flags in self.aff.words.get_all(stem3.as_ref()) {
+                        if !outer_suffix.flags.contains(&prefix.flag)
+                            && !flags.contains(&prefix.flag)
+                        {
+                            continue;
+                        }
+
+                        if !flags.contains(&outer_suffix.flag) {
+                            continue;
+                        }
+
+                        // Note: assumed `AffixingMode::FullWord`
+                        if is_some_and(self.aff.options.only_in_compound_flag, |flag| {
+                            inner_suffix.flags.contains(&flag)
+                        }) {
+                            continue;
+                        }
+
+                        if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                            continue;
+                        }
+
+                        return Some(AffixForm {
+                            stem: stem3.into_owned().into(),
+                            flags,
+                            prefixes: [Some(prefix), None],
+                            suffixes: [Some(outer_suffix), Some(inner_suffix)],
+                        });
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
 /// Checks if the input word is a number.
@@ -729,6 +841,7 @@ pub(crate) struct CompoundingResult<'a> {
 
 #[cfg(test)]
 mod test {
+    use ahash::RandomState;
     // Note: we need the once_cell crate rather than `core::cell::OnceCell` for the cell to be
     // Sync + Send.
     use once_cell::sync::OnceCell;
@@ -739,12 +852,12 @@ mod test {
     const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
     const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
 
-    fn en_us() -> &'static Dictionary<ahash::RandomState> {
+    fn en_us() -> &'static Dictionary<RandomState> {
         // It's a little overkill to use a real dictionary for unit tests but it compiles so
         // quickly that if we only compile it once it doesn't really slow down the test suite.
-        static EN_US: OnceCell<Dictionary<ahash::RandomState>> = OnceCell::new();
+        static EN_US: OnceCell<Dictionary<RandomState>> = OnceCell::new();
         EN_US.get_or_init(|| {
-            Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, ahash::RandomState::new()).unwrap()
+            Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, RandomState::new()).unwrap()
         })
     }
 
@@ -845,7 +958,7 @@ mod test {
     fn check_word_with_double_suffix() {
         // en_US doesn't use continuation flags in prefixes or suffixes so we need to create a
         // small custom dictionary to check this. We'll use part of es_ANY, suffixes 'S' and 'J'
-        // trimmed to only the clauses we need.
+        // and prefix 'k' trimmed to only the clauses we need.
         let aff = r#"
         SFX J Y 1
         SFX J le ilidad/S ble
@@ -853,14 +966,19 @@ mod test {
         SFX S Y 2
         SFX S 0 s [aceéfgiíkoóptuúw]
         SFX S 0 es [bdhíjlmrúxy]
+
+        PFX k Y 1
+        PFX k 0 in [^blpr]
         "#;
 
         // es_ANY.dic line 48787
-        let dic = r#"1
+        // es_ANY.dic line 63299
+        let dic = r#"2
         perdurable/JS
+        trazable/kSJ
         "#;
 
-        let dict = Dictionary::new_with_hasher(dic, aff, ahash::RandomState::new()).unwrap();
+        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
 
         // Stem
         assert!(dict.check("perdurable"));
@@ -870,5 +988,22 @@ mod test {
         assert!(dict.check("perdurables"));
         // Double suffix. 'S' is the outer suffix then 'J' is the inner suffix.
         assert!(dict.check("perdurabilidades"));
+
+        // Stem
+        assert!(dict.check("trazable"));
+        // Single prefix
+        assert!(dict.check("intrazable"));
+        // Single suffix 'J'
+        assert!(dict.check("trazabilidad"));
+        // Single suffix 'S'
+        assert!(dict.check("trazables"));
+        // Prefix and suffix 'J'
+        assert!(dict.check("intrazabilidad"));
+        // Prefix and suffix 'S'
+        assert!(dict.check("intrazables"));
+        // Double suffix. 'S' is the outer suffix then 'J' is the inner suffix.
+        assert!(dict.check("trazabilidades"));
+        // Prefix and double suffix. 'S' is the outer suffix then 'J' is the inner suffix.
+        assert!(dict.check("intrazabilidades"));
     }
 }
