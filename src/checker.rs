@@ -174,14 +174,20 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return Some(form.flags);
         }
 
-        // TODO: rest of check_simple_word:
-
         if self.aff.options.complex_prefixes {
-            // strip_prefix_then_prefix
-            // strip_suffix_then_2_prefixes
-            // strip_prefix_suffix_prefix
+            if let Some(form) = self.strip_prefix_then_prefix(word, hidden_homonym) {
+                return Some(form.flags);
+            }
+
+            if let Some(form) = self.strip_suffix_then_2_prefixes(word, hidden_homonym) {
+                return Some(form.flags);
+            }
+
+            if let Some(form) = self.strip_prefix_then_suffix_then_prefix(word, hidden_homonym) {
+                return Some(form.flags);
+            }
+
             // strip_2_prefixes_then_suffix (slow and unused, commented out)
-            todo!()
         } else {
             if let Some(form) = self.strip_suffix_then_suffix(word, hidden_homonym) {
                 return Some(form.flags);
@@ -559,6 +565,81 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         None
     }
 
+    fn strip_prefix_then_prefix(
+        &self,
+        word: &'a str,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<AffixForm<'a>> {
+        // Fastlane
+        if self.aff.prefixes.all_flags.is_empty() {
+            return None;
+        }
+
+        for outer_prefix in self.aff.prefixes.affixes_of(word) {
+            // Fastlane
+            if !self.aff.prefixes.all_flags.contains(&outer_prefix.flag) {
+                continue;
+            }
+
+            if !self.is_outer_affix_valid(outer_prefix, AffixingMode::default()) {
+                continue;
+            }
+
+            if self.is_circumfix(outer_prefix) {
+                continue;
+            }
+
+            let stem = outer_prefix.to_stem(word);
+
+            if !outer_prefix.condition_matches(&stem) {
+                continue;
+            }
+
+            // Inline version of strip_pfx_then_pfx_2. Assume `AffixingMode::FullWord` here.
+            for inner_prefix in self.aff.prefixes.affixes_of(stem.as_ref()) {
+                if !inner_prefix.flags.contains(&outer_prefix.flag) {
+                    continue;
+                }
+
+                if !Pfx::is_valid(inner_prefix, &self.aff.options, AffixingMode::FullWord) {
+                    continue;
+                }
+                if self.is_circumfix(inner_prefix) {
+                    continue;
+                }
+
+                let stem2 = inner_prefix.to_stem(&stem);
+
+                if !inner_prefix.condition_matches(&stem2) {
+                    continue;
+                }
+
+                for flags in self.aff.words.get_all(stem2.as_ref()) {
+                    if !flags.contains(&inner_prefix.flag) {
+                        continue;
+                    }
+                    // Note: assumed `AffixingMode::FullWord`
+                    if has_flag!(inner_prefix.flags, self.aff.options.only_in_compound_flag) {
+                        continue;
+                    }
+
+                    if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                        continue;
+                    }
+
+                    return Some(AffixForm {
+                        stem: stem2.into_owned().into(),
+                        flags,
+                        prefixes: [Some(outer_prefix), Some(inner_prefix)],
+                        suffixes: Default::default(),
+                    });
+                }
+            }
+        }
+
+        None
+    }
+
     fn strip_prefix_then_2_suffixes(
         &self,
         word: &'a str,
@@ -639,7 +720,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                             continue;
                         }
 
-                        if !flags.contains(&outer_suffix.flag) {
+                        if !flags.contains(&inner_suffix.flag) {
                             continue;
                         }
 
@@ -666,7 +747,26 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         None
     }
 
-    // This is the same as the prior function except for the ordering.
+    /// Strip an outer suffix, then a prefix and then an inner suffix.
+    ///
+    /// This is very similar to the above function but what we're checking is slightly different.
+    ///
+    /// * `strip_prefix_then_2_suffixes` we care that (AND):
+    ///     * the inner suffix's flags contains the outer suffix's flag
+    ///     * either (OR):
+    ///         * the outer suffix's flags contains the prefix's flag
+    ///         * the word flags contain the prefix's flag
+    /// * `strip_suffix_then_prefix_then_suffix` we care that (AND):
+    ///     * either (OR):
+    ///         * the inner suffix's flags contains the outer suffix's flag
+    ///         * the prefix's flags contains the outer suffix's flag
+    ///     * either (OR):
+    ///         * the inner suffix's flag contains the prefix's flag
+    ///         * the word flags contain the prefix's flag
+    ///
+    /// By stripping a suffix first and then a prefix in this function, we allow words where the
+    /// inner suffix's contination flags might contain the prefix's flag, or where the prefix's
+    /// flag allows the outer suffix.
     fn strip_suffix_then_prefix_then_suffix(
         &self,
         word: &'a str,
@@ -775,6 +875,249 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                             flags,
                             prefixes: [Some(prefix), None],
                             suffixes: [Some(outer_suffix), Some(inner_suffix)],
+                        });
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn strip_suffix_then_2_prefixes(
+        &self,
+        word: &'a str,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<AffixForm<'a>> {
+        // Fastlane
+        if self.aff.suffixes.all_flags.is_empty() {
+            return None;
+        }
+
+        // Strip the suffix.
+        for suffix in self.aff.suffixes.affixes_of(word) {
+            if !suffix.crossproduct {
+                continue;
+            }
+
+            if !self.is_outer_affix_valid(suffix, AffixingMode::FullWord) {
+                continue;
+            }
+
+            let stem = suffix.to_stem(word);
+
+            if !suffix.condition_matches(&stem) {
+                continue;
+            }
+
+            // Strip the outer prefix.
+            for outer_prefix in self.aff.prefixes.affixes_of(&stem) {
+                // Fastlane
+                if !self.aff.suffixes.all_flags.contains(&outer_prefix.flag) {
+                    continue;
+                }
+
+                if !outer_prefix.crossproduct {
+                    continue;
+                }
+
+                if !Pfx::is_valid(outer_prefix, &self.aff.options, AffixingMode::FullWord) {
+                    continue;
+                }
+
+                if self.is_circumfix(suffix) != self.is_circumfix(outer_prefix) {
+                    continue;
+                }
+
+                let stem2 = outer_prefix.to_stem(&stem);
+
+                if !outer_prefix.condition_matches(&stem2) {
+                    continue;
+                }
+
+                // Strip the inner prefix.
+                for inner_prefix in self.aff.prefixes.affixes_of(&stem2) {
+                    if !inner_prefix.flags.contains(&outer_prefix.flag) {
+                        continue;
+                    }
+
+                    if !Pfx::is_valid(inner_prefix, &self.aff.options, AffixingMode::FullWord) {
+                        continue;
+                    }
+
+                    if self.is_circumfix(inner_prefix) {
+                        continue;
+                    }
+
+                    let stem3 = inner_prefix.to_stem(&stem2);
+
+                    if !inner_prefix.condition_matches(&stem3) {
+                        continue;
+                    }
+
+                    // Check that the fully stripped word is a stem in the dictionary.
+                    for flags in self.aff.words.get_all(stem3.as_ref()) {
+                        if !outer_prefix.flags.contains(&suffix.flag)
+                            && !flags.contains(&suffix.flag)
+                        {
+                            continue;
+                        }
+
+                        if !flags.contains(&inner_prefix.flag) {
+                            continue;
+                        }
+
+                        // Note: assumed `AffixingMode::FullWord`
+                        if has_flag!(inner_prefix.flags, self.aff.options.only_in_compound_flag) {
+                            continue;
+                        }
+
+                        if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                            continue;
+                        }
+
+                        return Some(AffixForm {
+                            stem: stem3.into_owned().into(),
+                            flags,
+                            prefixes: [Some(outer_prefix), Some(inner_prefix)],
+                            suffixes: [Some(suffix), None],
+                        });
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Strip an outer prefix, then a suffix and then an inner prefix.
+    ///
+    /// This is very similar to the above function but what we're checking is slightly different.
+    ///
+    /// * `strip_suffix_then_2_prefixes` we care that (AND):
+    ///     * the inner prefix's flags contains the outer prefix's flag
+    ///     * either (OR):
+    ///         * the outer prefix's flags contains the suffix's flag
+    ///         * the word flags contains the suffix's flag
+    /// * `strip_prefix_then_suffix_then_prefix` we care that (AND):
+    ///     * either (OR):
+    ///         * the inner prefix's flags includes the outer prefix's flag
+    ///         * the suffix's flags contains the outer prefix's flag
+    ///     * either (OR):
+    ///       * the inner prefix's flags contains the suffix's flag
+    ///       * the word flags contains the suffix's flag
+    ///
+    /// By stripping a prefix first and then a suffix in this function, we allow words where the
+    /// inner prefix's continuation flag might contain the suffix's flag, or where the suffix's
+    /// flag allows the outer prefix.
+    fn strip_prefix_then_suffix_then_prefix(
+        &self,
+        word: &'a str,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<AffixForm<'a>> {
+        // Fastlane
+        if self.aff.prefixes.all_flags.is_empty() && self.aff.suffixes.all_flags.is_empty() {
+            return None;
+        }
+
+        for outer_prefix in self.aff.prefixes.affixes_of(word) {
+            // Fastlane
+            if !self.aff.prefixes.all_flags.contains(&outer_prefix.flag)
+                && !self.aff.suffixes.all_flags.contains(&outer_prefix.flag)
+            {
+                continue;
+            }
+
+            if !outer_prefix.crossproduct {
+                continue;
+            }
+
+            if !self.is_outer_affix_valid(outer_prefix, AffixingMode::FullWord) {
+                continue;
+            }
+
+            let stem = outer_prefix.to_stem(word);
+
+            if !outer_prefix.condition_matches(&stem) {
+                continue;
+            }
+
+            for suffix in self.aff.suffixes.affixes_of(&stem) {
+                if !suffix.crossproduct {
+                    continue;
+                }
+
+                if !Sfx::is_valid(suffix, &self.aff.options, AffixingMode::FullWord) {
+                    continue;
+                }
+
+                let stem2 = suffix.to_stem(&stem);
+
+                if !suffix.condition_matches(&stem) {
+                    continue;
+                }
+
+                // TODO: can we eagerly evaluate this in other loops?
+                let suffix_flags_contains_outer_prefix_flag =
+                    suffix.flags.contains(&outer_prefix.flag);
+
+                for inner_prefix in self.aff.prefixes.affixes_of(&stem2) {
+                    if !inner_prefix.crossproduct {
+                        continue;
+                    }
+
+                    if !inner_prefix.flags.contains(&outer_prefix.flag)
+                        && !suffix_flags_contains_outer_prefix_flag
+                    {
+                        continue;
+                    }
+
+                    if !Pfx::is_valid(inner_prefix, &self.aff.options, AffixingMode::FullWord) {
+                        continue;
+                    }
+
+                    let prefix_circumfix = self.is_circumfix(suffix);
+                    let inner_suffix_circumfix = self.is_circumfix(inner_prefix);
+                    let outer_suffix_circumfix = self.is_circumfix(outer_prefix);
+                    let circumfix_ok_1 =
+                        (prefix_circumfix == outer_suffix_circumfix) && !inner_suffix_circumfix;
+                    let circumfix_ok_2 =
+                        (prefix_circumfix == inner_suffix_circumfix) && !outer_suffix_circumfix;
+                    if !circumfix_ok_1 && !circumfix_ok_2 {
+                        continue;
+                    }
+
+                    let stem3 = inner_prefix.to_stem(&stem2);
+
+                    if !inner_prefix.condition_matches(&stem3) {
+                        continue;
+                    }
+
+                    for flags in self.aff.words.get_all(stem3.as_ref()) {
+                        if !inner_prefix.flags.contains(&suffix.flag)
+                            && !flags.contains(&suffix.flag)
+                        {
+                            continue;
+                        }
+
+                        if !flags.contains(&inner_prefix.flag) {
+                            continue;
+                        }
+
+                        // Note: assumed `AffixingMode::FullWord`
+                        if has_flag!(inner_prefix.flags, self.aff.options.only_in_compound_flag) {
+                            continue;
+                        }
+
+                        if hidden_homonym.skip() && flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                            continue;
+                        }
+
+                        return Some(AffixForm {
+                            stem: stem3.into_owned().into(),
+                            flags,
+                            prefixes: [Some(outer_prefix), Some(inner_prefix)],
+                            suffixes: [Some(suffix), None],
                         });
                     }
                 }
@@ -1118,5 +1461,50 @@ mod test {
 
         assert!(!dict.check("stemsuf2"));
         assert!(!dict.check("prestemsuf2"));
+    }
+
+    #[test]
+    fn complex_prefixes_test() {
+        // I believe no real dictionaries use this feature ("COMPLEXPREFIXES"). So we'll have to
+        // make our own with fake prefixes/suffixes.
+        let aff = r#"
+        COMPLEXPREFIXES
+
+        FLAG long
+
+        PFX p1 Y 1
+        PFX p1 0 pfx1 .
+
+        PFX p2 Y 1
+        PFX p2 0 pfx2/p1 .
+
+        SFX s1 Y 1
+        SFX s1 0 suf1 .
+
+        SFX s2 Y 1
+        SFX s2 0 suf2/p1 .
+        "#;
+
+        let dic = r#"2
+        stem1/p1p2s1
+        stem2/p2s2
+        "#;
+
+        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+        assert!(dict.aff_data.options.complex_prefixes);
+
+        assert!(dict.check("stem1"));
+        assert!(dict.check("pfx1stem1"));
+        assert!(dict.check("pfx2stem1"));
+        assert!(dict.check("pfx1pfx2stem1"));
+        assert!(!dict.check("pfx2pfx1stem1"));
+        assert!(dict.check("pfx1pfx2stem1suf1"));
+
+        assert!(dict.check("stem2"));
+        // p1 prefix is not allowed unless the s2 suffix is present.
+        assert!(!dict.check("pfx1stem2"));
+        assert!(dict.check("pfx1stem2suf2"));
+        assert!(dict.check("pfx1pfx2stem2suf2"));
+        assert!(!dict.check("pfx2pfx1stem2suf2"));
     }
 }
