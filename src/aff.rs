@@ -9,7 +9,7 @@ use crate::{
     has_flag, AffixingMode, Flag, FlagSet, WordList,
 };
 
-use core::{hash::BuildHasher, marker::PhantomData, str::Chars};
+use core::{hash::BuildHasher, marker::PhantomData, num::NonZeroU16, str::Chars};
 
 pub(crate) const HIDDEN_HOMONYM_FLAG: Flag = unsafe { Flag::new_unchecked(u16::MAX) };
 pub(crate) const MAX_SUGGESTIONS: usize = 16;
@@ -370,20 +370,18 @@ impl Suffix {
         };
 
         // Length in bytes is greater than or equal to length in chars.
-        if word.len() < condition.chars {
+        let len_bytes = word.len();
+        if len_bytes < condition.chars {
             return false;
         }
 
-        let buffer = &mut [0; 4];
-        let (chars, bytes) =
-            word.chars()
-                .rev()
-                .take(condition.chars)
-                .fold((0, 0), |(chars, bytes), ch| {
-                    // TODO: convert to a u32 instead and check with bit math how many bytes
-                    // the code point takes.
-                    (chars + 1, bytes + ch.encode_utf8(buffer).len())
-                });
+        let (chars, bytes) = word
+            .char_indices()
+            .rev()
+            .take(condition.chars)
+            .fold((0, 0), |(chars, _bytes), (byte_index, _ch)| {
+                (chars + 1, len_bytes - byte_index)
+            });
 
         if chars < condition.chars {
             return false;
