@@ -3,8 +3,8 @@ use core::hash::BuildHasher;
 use crate::{
     aff::{AffData, Affix, AffixKind, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG},
     alloc::{borrow::Cow, string::String},
-    has_flag, AffixingMode, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE,
-    FULL_WORD,
+    flag, has_flag, AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END,
+    AT_COMPOUND_MIDDLE, FULL_WORD,
 };
 
 // Nuspell limits the length of the input word:
@@ -1206,6 +1206,159 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     ) -> Option<CompoundingResult<'a>> {
         None
     }
+
+    fn check_word_in_compound<const MODE: AffixingMode>(
+        &self,
+        word: &str,
+    ) -> Option<CompoundingResult<'a>> {
+        let compound_flag = match MODE {
+            AT_COMPOUND_BEGIN => self.aff.options.compound_begin_flag,
+            AT_COMPOUND_MIDDLE => self.aff.options.compound_middle_flag,
+            AT_COMPOUND_END => self.aff.options.compound_last_flag,
+            _ => None,
+        };
+
+        for flags in self.aff.words.get_all(word) {
+            if has_flag!(flags, self.aff.options.need_affix_flag) {
+                continue;
+            }
+
+            if !has_flag!(flags, self.aff.options.compound_flag) && !has_flag!(flags, compound_flag)
+            {
+                continue;
+            }
+
+            if flags.contains(&HIDDEN_HOMONYM_FLAG) {
+                continue;
+            }
+
+            let num_syllable_modifier = self.calculate_syllable_modifier::<MODE>(flags);
+
+            return Some(CompoundingResult {
+                // word,
+                flags,
+                num_words_modifier: Default::default(),
+                num_syllable_modifier,
+                affixed_and_modified: Default::default(),
+            });
+        }
+
+        if let Some(affix_form) =
+            self.strip_suffix_only::<MODE>(word, HiddenHomonym::SkipHiddenHomonym)
+        {
+            // `strip_suffix_only` always produces one suffix.
+            let suffix = affix_form.suffixes[0].unwrap();
+            let num_syllable_modifier =
+                self.calculate_syllable_modifier_with_suffix::<MODE>(affix_form.flags, suffix);
+            return Some(CompoundingResult {
+                // word,
+                flags: affix_form.flags,
+                num_words_modifier: Default::default(),
+                num_syllable_modifier,
+                affixed_and_modified: suffix.is_modifying(),
+            });
+        }
+
+        if let Some(affix_form) =
+            self.strip_prefix_only::<MODE>(word, HiddenHomonym::SkipHiddenHomonym)
+        {
+            // `strip_prefix_only` always produces one prefix.
+            let prefix = affix_form.prefixes[0].unwrap();
+            let num_words_modifier = self.calculate_num_words_modifier(prefix);
+            return Some(CompoundingResult {
+                // word,
+                flags: affix_form.flags,
+                num_words_modifier,
+                num_syllable_modifier: Default::default(),
+                affixed_and_modified: prefix.is_modifying(),
+            });
+        }
+
+        if let Some(affix_form) = self
+            .strip_prefix_then_suffix_commutative::<MODE>(word, HiddenHomonym::SkipHiddenHomonym)
+        {
+            // `strip_prefix_then_suffix_commutative` always produces one suffix and one prefix.
+            let prefix = affix_form.prefixes[0].unwrap();
+            let num_words_modifier = self.calculate_num_words_modifier(prefix);
+            let suffix = affix_form.suffixes[0].unwrap();
+            let num_syllable_modifier =
+                self.calculate_syllable_modifier_with_suffix::<MODE>(affix_form.flags, suffix);
+            return Some(CompoundingResult {
+                // word,
+                flags: affix_form.flags,
+                num_words_modifier,
+                num_syllable_modifier,
+                affixed_and_modified: prefix.is_modifying() || suffix.is_modifying(),
+            });
+        }
+
+        None
+    }
+
+    fn calculate_num_words_modifier(&self, prefix: &Prefix) -> u16 {
+        if self.aff.compound_syllable_vowels.is_empty() {
+            return 0;
+        }
+
+        // TODO: introduce a short circuiting `has_syllable` function?
+        let syllables = self.count_syllables(&prefix.add);
+        syllables.max(1) as u16
+    }
+
+    fn calculate_syllable_modifier<const MODE: AffixingMode>(&self, flags: &FlagSet) -> i16 {
+        // TODO: what do these flags mean?
+        let subtract_syllable = MODE == AT_COMPOUND_END
+            && !self.aff.compound_syllable_vowels.is_empty()
+            && flags.contains(&flag!('I'))
+            && !flags.contains(&flag!('J'));
+
+        0 - subtract_syllable as i16
+    }
+
+    fn calculate_syllable_modifier_with_suffix<const MODE: AffixingMode>(
+        &self,
+        flags: &FlagSet,
+        suffix: &Suffix,
+    ) -> i16 {
+        if MODE != AT_COMPOUND_END {
+            return 0;
+        }
+
+        let append = &suffix.add;
+        // TODO: count syllables
+        let mut num_syllable_mod = 0 - self.count_syllables(append) as i16;
+        // TODO: what are these hardcoded checks?
+        let suffix_extra = append.ends_with('i')
+            && matches!(append.chars().nth_back(1), Some(c) if c != 'y' && c != 't');
+        num_syllable_mod -= suffix_extra as i16;
+
+        if self.aff.options.compound_syllable_num {
+            match char::from_u32(suffix.flag.get() as u32) {
+                Some('c') => num_syllable_mod += 2,
+                Some('J') => num_syllable_mod += 1,
+                Some('I') => {
+                    num_syllable_mod += flags.contains(&flag!('J')) as i16;
+                }
+                _ => (),
+            }
+        }
+
+        num_syllable_mod
+    }
+
+    fn count_syllables(&self, word: &str) -> usize {
+        fn count_appearances_of(haystack: &str, needles: &str) -> usize {
+            let mut occurences = 0;
+
+            for ch in haystack.chars() {
+                occurences += needles.matches(ch).count();
+            }
+
+            occurences
+        }
+
+        count_appearances_of(word, &self.aff.compound_syllable_vowels)
+    }
 }
 
 /// Checks if the input word is a number.
@@ -1372,7 +1525,8 @@ pub(crate) struct AffixForm<'aff> {
 
 // TODO: docs.
 pub(crate) struct CompoundingResult<'a> {
-    word: String,
+    // TODO: figure out a type for the `word` field.
+    // word: String,
     flags: &'a FlagSet,
     num_words_modifier: u16,
     num_syllable_modifier: i16,

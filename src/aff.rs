@@ -160,6 +160,11 @@ impl<K: AffixKind> Affix<K> {
     pub fn appending(&self) -> K::Chars<'_> {
         K::chars(&self.add)
     }
+
+    #[inline]
+    pub fn is_modifying(&self) -> bool {
+        self.strip.is_some() || !self.add.is_empty()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
