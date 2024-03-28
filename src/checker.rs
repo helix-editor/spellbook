@@ -1230,6 +1230,42 @@ fn is_number(word: &str) -> bool {
     true
 }
 
+/// Checks if the three chars around byte index `idx` are the same.
+///
+/// If `idx` is at the end of the word, this means the last three chars. Otherwise this means the
+/// character at byte `idx`, the previous character and the next character.
+///
+/// # Panics
+/// `idx` is assumed to be a valid byte index for the given word.
+fn are_three_chars_equal(word: &str, idx: usize) -> bool {
+    let mut chars_ahead = word[idx..].chars();
+    let mut chars_behind = word[..idx].chars().rev();
+    let ch = match chars_ahead.next() {
+        Some(c) => c,
+        None => return false,
+    };
+    let prev_ch = match chars_behind.next() {
+        Some(c) => c,
+        None => return false,
+    };
+
+    if prev_ch == ch {
+        if let Some(next_ch) = chars_ahead.next() {
+            if next_ch == ch {
+                return true;
+            }
+        }
+
+        if let Some(prev_prev_ch) = chars_behind.next() {
+            if prev_prev_ch == ch {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 /// The capitalization of a word.
 // Hunspell: <https://github.com/hunspell/hunspell/blob/8f9bb2957bfd74ca153fad96083a54488b518ca5/src/hunspell/csutil.hxx#L91-L96>
 // Nuspell: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/utils.hxx#L91-L104>
@@ -1363,6 +1399,19 @@ mod test {
         EN_US.get_or_init(|| {
             Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, RandomState::new()).unwrap()
         })
+    }
+
+    #[test]
+    fn are_three_chars_equal_test() {
+        assert!(are_three_chars_equal("aaa", 1));
+        // The three chars are equal but not around byte idx 1 or 4.
+        assert!(!are_three_chars_equal("baaab", 1));
+        assert!(are_three_chars_equal("baaab", 2));
+        assert!(are_three_chars_equal("baaab", 3));
+        assert!(!are_three_chars_equal("baaab", 4));
+
+        assert!(!are_three_chars_equal("", 0));
+        assert!(!are_three_chars_equal("ab", 1));
     }
 
     #[test]
