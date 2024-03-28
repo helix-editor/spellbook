@@ -6,7 +6,7 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    has_flag, AffixingMode, Flag, FlagSet, WordList,
+    has_flag, AffixingMode, Flag, FlagSet, WordList, AT_COMPOUND_END, FULL_WORD,
 };
 
 use core::{hash::BuildHasher, marker::PhantomData, num::NonZeroU16, str::Chars};
@@ -187,7 +187,7 @@ pub(crate) trait AffixKind {
     fn chars(word: &str) -> Self::Chars<'_>;
 
     // Reversed form of `affix_NOT_valid` from Nuspell.
-    fn is_valid(affix: &Affix<Self>, options: &AffOptions, affixing_mode: AffixingMode) -> bool
+    fn is_valid<const MODE: AffixingMode>(affix: &Affix<Self>, options: &AffOptions) -> bool
     where
         Self: Sized;
 }
@@ -199,22 +199,16 @@ impl AffixKind for Pfx {
         word.chars()
     }
 
-    fn is_valid(prefix: &Prefix, options: &AffOptions, affixing_mode: AffixingMode) -> bool {
-        if affixing_mode == AffixingMode::FullWord
-            && has_flag!(prefix.flags, options.only_in_compound_flag)
-        {
+    fn is_valid<const MODE: AffixingMode>(prefix: &Prefix, options: &AffOptions) -> bool {
+        if MODE == FULL_WORD && has_flag!(prefix.flags, options.only_in_compound_flag) {
             return false;
         }
 
-        if affixing_mode == AffixingMode::AtCompoundEnd
-            && !has_flag!(prefix.flags, options.compound_permit_flag)
-        {
+        if MODE == AT_COMPOUND_END && !has_flag!(prefix.flags, options.compound_permit_flag) {
             return false;
         }
 
-        if affixing_mode == AffixingMode::FullWord
-            && has_flag!(prefix.flags, options.compound_forbid_flag)
-        {
+        if MODE == FULL_WORD && has_flag!(prefix.flags, options.compound_forbid_flag) {
             return false;
         }
 
@@ -229,22 +223,16 @@ impl AffixKind for Sfx {
         word.chars().rev()
     }
 
-    fn is_valid(suffix: &Suffix, options: &AffOptions, affixing_mode: AffixingMode) -> bool {
-        if affixing_mode == AffixingMode::FullWord
-            && has_flag!(suffix.flags, options.only_in_compound_flag)
-        {
+    fn is_valid<const MODE: AffixingMode>(suffix: &Suffix, options: &AffOptions) -> bool {
+        if MODE == FULL_WORD && has_flag!(suffix.flags, options.only_in_compound_flag) {
             return false;
         }
 
-        if affixing_mode == AffixingMode::AtCompoundEnd
-            && !has_flag!(suffix.flags, options.compound_permit_flag)
-        {
+        if MODE == AT_COMPOUND_END && !has_flag!(suffix.flags, options.compound_permit_flag) {
             return false;
         }
 
-        if affixing_mode == AffixingMode::FullWord
-            && has_flag!(suffix.flags, options.compound_forbid_flag)
-        {
+        if MODE == FULL_WORD && has_flag!(suffix.flags, options.compound_forbid_flag) {
             return false;
         }
 

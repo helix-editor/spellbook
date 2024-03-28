@@ -3,7 +3,8 @@ use core::hash::BuildHasher;
 use crate::{
     aff::{AffData, Affix, AffixKind, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG},
     alloc::{borrow::Cow, string::String},
-    has_flag, AffixingMode, FlagSet,
+    has_flag, AffixingMode, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE,
+    FULL_WORD,
 };
 
 // Nuspell limits the length of the input word:
@@ -138,7 +139,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return Some(flags);
         }
 
-        self.check_compound(word, AffixingMode::default(), allow_bad_forceucase)
+        self.check_compound::<FULL_WORD>(word, allow_bad_forceucase)
             .map(|result| result.flags)
     }
 
@@ -160,16 +161,16 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return Some(flags);
         }
 
-        if let Some(form) = self.strip_suffix_only(word, AffixingMode::default(), hidden_homonym) {
+        if let Some(form) = self.strip_suffix_only::<FULL_WORD>(word, hidden_homonym) {
             return Some(form.flags);
         }
 
-        if let Some(form) = self.strip_prefix_only(word, AffixingMode::default(), hidden_homonym) {
+        if let Some(form) = self.strip_prefix_only::<FULL_WORD>(word, hidden_homonym) {
             return Some(form.flags);
         }
 
         if let Some(form) =
-            self.strip_prefix_then_suffix_commutative(word, AffixingMode::default(), hidden_homonym)
+            self.strip_prefix_then_suffix_commutative::<FULL_WORD>(word, hidden_homonym)
         {
             return Some(form.flags);
         }
@@ -207,21 +208,18 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         None
     }
 
-    // TODO: experiment with const generics to replace the affixing mode
-
-    fn strip_suffix_only(
+    fn strip_suffix_only<const MODE: AffixingMode>(
         &self,
         word: &'a str,
-        mode: AffixingMode,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         for suffix in self.aff.suffixes.affixes_of(word) {
-            if !self.is_outer_affix_valid(suffix, mode) {
+            if !self.is_outer_affix_valid::<_, MODE>(suffix) {
                 continue;
             }
 
             if !suffix.add.is_empty()
-                && mode == AffixingMode::AtCompoundEnd
+                && MODE == AT_COMPOUND_END
                 && has_flag!(suffix.flags, self.aff.options.only_in_compound_flag)
             {
                 continue;
@@ -245,7 +243,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if mode == AffixingMode::FullWord
+                if MODE == FULL_WORD
                     && has_flag!(suffix.flags, self.aff.options.only_in_compound_flag)
                 {
                     continue;
@@ -255,8 +253,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !self.is_valid_inside_compound(flags, mode)
-                    && !self.is_valid_inside_compound(&suffix.flags, mode)
+                if !self.is_valid_inside_compound::<MODE>(flags)
+                    && !self.is_valid_inside_compound::<MODE>(&suffix.flags)
                 {
                     continue;
                 }
@@ -273,19 +271,18 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         None
     }
 
-    fn strip_prefix_only(
+    fn strip_prefix_only<const MODE: AffixingMode>(
         &self,
         word: &'a str,
-        mode: AffixingMode,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         for prefix in self.aff.prefixes.affixes_of(word) {
-            if !self.is_outer_affix_valid(prefix, mode) {
+            if !self.is_outer_affix_valid::<_, MODE>(prefix) {
                 continue;
             }
 
             if !prefix.add.is_empty()
-                && mode == AffixingMode::AtCompoundEnd
+                && MODE == AT_COMPOUND_END
                 && has_flag!(prefix.flags, self.aff.options.only_in_compound_flag)
             {
                 continue;
@@ -309,7 +306,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if mode == AffixingMode::FullWord
+                if MODE == FULL_WORD
                     && has_flag!(prefix.flags, self.aff.options.only_in_compound_flag)
                 {
                     continue;
@@ -319,8 +316,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !self.is_valid_inside_compound(flags, mode)
-                    && !self.is_valid_inside_compound(&prefix.flags, mode)
+                if !self.is_valid_inside_compound::<MODE>(flags)
+                    && !self.is_valid_inside_compound::<MODE>(&prefix.flags)
                 {
                     continue;
                 }
@@ -338,8 +335,11 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     }
 
     // Reversed form of Nuspell's `outer_affix_NOT_valid`
-    fn is_outer_affix_valid<K: AffixKind>(&self, affix: &Affix<K>, mode: AffixingMode) -> bool {
-        if !K::is_valid(affix, &self.aff.options, mode) {
+    fn is_outer_affix_valid<K: AffixKind, const MODE: AffixingMode>(
+        &self,
+        affix: &Affix<K>,
+    ) -> bool {
+        if !K::is_valid::<MODE>(affix, &self.aff.options) {
             return false;
         }
 
@@ -354,21 +354,21 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         has_flag!(affix.flags, self.aff.options.circumfix_flag)
     }
 
-    fn is_valid_inside_compound(&self, flags: &FlagSet, mode: AffixingMode) -> bool {
+    fn is_valid_inside_compound<const MODE: AffixingMode>(&self, flags: &FlagSet) -> bool {
         let is_compound = has_flag!(flags, self.aff.options.compound_flag);
 
-        match mode {
-            AffixingMode::AtCompoundBegin
+        match MODE {
+            AT_COMPOUND_BEGIN
                 if !is_compound && !has_flag!(flags, self.aff.options.compound_begin_flag) =>
             {
                 false
             }
-            AffixingMode::AtCompoundMiddle
+            AT_COMPOUND_MIDDLE
                 if !is_compound && !has_flag!(flags, self.aff.options.compound_middle_flag) =>
             {
                 false
             }
-            AffixingMode::AtCompoundEnd
+            AT_COMPOUND_END
                 if !is_compound && !has_flag!(flags, self.aff.options.compound_last_flag) =>
             {
                 false
@@ -377,10 +377,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         }
     }
 
-    fn strip_prefix_then_suffix_commutative(
+    fn strip_prefix_then_suffix_commutative<const MODE: AffixingMode>(
         &self,
         word: &'a str,
-        mode: AffixingMode,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         for prefix in self.aff.prefixes.affixes_of(word) {
@@ -388,7 +387,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            if !Pfx::is_valid(prefix, &self.aff.options, AffixingMode::default()) {
+            if !Pfx::is_valid::<MODE>(prefix, &self.aff.options) {
                 continue;
             }
 
@@ -407,7 +406,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !Sfx::is_valid(suffix, &self.aff.options, AffixingMode::default()) {
+                if !Sfx::is_valid::<MODE>(suffix, &self.aff.options) {
                     continue;
                 }
 
@@ -441,8 +440,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    if mode == AffixingMode::FullWord
-                        && has_flag!(flags, self.aff.options.only_in_compound_flag)
+                    if MODE == FULL_WORD && has_flag!(flags, self.aff.options.only_in_compound_flag)
                     {
                         continue;
                     }
@@ -451,9 +449,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    if !self.is_valid_inside_compound(flags, mode)
-                        && !self.is_valid_inside_compound(&suffix.flags, mode)
-                        && !self.is_valid_inside_compound(&prefix.flags, mode)
+                    if !self.is_valid_inside_compound::<MODE>(flags)
+                        && !self.is_valid_inside_compound::<MODE>(&suffix.flags)
+                        && !self.is_valid_inside_compound::<MODE>(&prefix.flags)
                     {
                         continue;
                     }
@@ -493,7 +491,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            if !self.is_outer_affix_valid(outer_suffix, AffixingMode::default()) {
+            if !self.is_outer_affix_valid::<_, FULL_WORD>(outer_suffix) {
                 continue;
             }
 
@@ -516,7 +514,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !Sfx::is_valid(inner_suffix, &self.aff.options, AffixingMode::FullWord) {
+                if !Sfx::is_valid::<FULL_WORD>(inner_suffix, &self.aff.options) {
                     continue;
                 }
                 if self.is_circumfix(inner_suffix) {
@@ -571,7 +569,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            if !self.is_outer_affix_valid(outer_prefix, AffixingMode::default()) {
+            if !self.is_outer_affix_valid::<_, FULL_WORD>(outer_prefix) {
                 continue;
             }
 
@@ -591,7 +589,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !Pfx::is_valid(inner_prefix, &self.aff.options, AffixingMode::FullWord) {
+                if !Pfx::is_valid::<FULL_WORD>(inner_prefix, &self.aff.options) {
                     continue;
                 }
                 if self.is_circumfix(inner_prefix) {
@@ -646,7 +644,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            if !self.is_outer_affix_valid(prefix, AffixingMode::FullWord) {
+            if !self.is_outer_affix_valid::<_, FULL_WORD>(prefix) {
                 continue;
             }
 
@@ -668,7 +666,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !Sfx::is_valid(outer_suffix, &self.aff.options, AffixingMode::FullWord) {
+                if !Sfx::is_valid::<FULL_WORD>(outer_suffix, &self.aff.options) {
                     continue;
                 }
 
@@ -688,7 +686,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    if !Sfx::is_valid(inner_suffix, &self.aff.options, AffixingMode::FullWord) {
+                    if !Sfx::is_valid::<FULL_WORD>(inner_suffix, &self.aff.options) {
                         continue;
                     }
 
@@ -779,7 +777,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            if !self.is_outer_affix_valid(outer_suffix, AffixingMode::FullWord) {
+            if !self.is_outer_affix_valid::<_, FULL_WORD>(outer_suffix) {
                 continue;
             }
 
@@ -794,7 +792,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !Pfx::is_valid(prefix, &self.aff.options, AffixingMode::FullWord) {
+                if !Pfx::is_valid::<FULL_WORD>(prefix, &self.aff.options) {
                     continue;
                 }
 
@@ -819,7 +817,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    if !Sfx::is_valid(inner_suffix, &self.aff.options, AffixingMode::FullWord) {
+                    if !Sfx::is_valid::<FULL_WORD>(inner_suffix, &self.aff.options) {
                         continue;
                     }
 
@@ -890,7 +888,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            if !self.is_outer_affix_valid(suffix, AffixingMode::FullWord) {
+            if !self.is_outer_affix_valid::<_, FULL_WORD>(suffix) {
                 continue;
             }
 
@@ -911,7 +909,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !Pfx::is_valid(outer_prefix, &self.aff.options, AffixingMode::FullWord) {
+                if !Pfx::is_valid::<FULL_WORD>(outer_prefix, &self.aff.options) {
                     continue;
                 }
 
@@ -931,7 +929,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    if !Pfx::is_valid(inner_prefix, &self.aff.options, AffixingMode::FullWord) {
+                    if !Pfx::is_valid::<FULL_WORD>(inner_prefix, &self.aff.options) {
                         continue;
                     }
 
@@ -1022,7 +1020,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            if !self.is_outer_affix_valid(outer_prefix, AffixingMode::FullWord) {
+            if !self.is_outer_affix_valid::<_, FULL_WORD>(outer_prefix) {
                 continue;
             }
 
@@ -1037,7 +1035,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !Sfx::is_valid(suffix, &self.aff.options, AffixingMode::FullWord) {
+                if !Sfx::is_valid::<FULL_WORD>(suffix, &self.aff.options) {
                     continue;
                 }
 
@@ -1062,7 +1060,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    if !Pfx::is_valid(inner_prefix, &self.aff.options, AffixingMode::FullWord) {
+                    if !Pfx::is_valid::<FULL_WORD>(inner_prefix, &self.aff.options) {
                         continue;
                     }
 
@@ -1119,10 +1117,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     // Compounding
 
-    fn check_compound(
+    fn check_compound<const MODE: AffixingMode>(
         &self,
         word: &str,
-        mode: AffixingMode,
         allow_bad_forceucase: Forceucase,
     ) -> Option<CompoundingResult<'a>> {
         if self.aff.options.compound_flag.is_some()
@@ -1130,9 +1127,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             || self.aff.options.compound_middle_flag.is_some()
             || self.aff.options.compound_last_flag.is_some()
         {
-            if let Some(result) =
-                self.check_compound_impl(word, 0, 0, &mut String::new(), mode, allow_bad_forceucase)
-            {
+            if let Some(result) = self.check_compound_impl::<MODE>(
+                word,
+                0,
+                0,
+                &mut String::new(),
+                allow_bad_forceucase,
+            ) {
                 return Some(result);
             }
         }
@@ -1144,13 +1145,12 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         None
     }
 
-    fn check_compound_impl(
+    fn check_compound_impl<const MODE: AffixingMode>(
         &self,
         word: &str,
         start_pos: usize,
         num_parts: usize,
         part: &mut String,
-        mode: AffixingMode,
         allow_bad_forceucase: Forceucase,
     ) -> Option<CompoundingResult<'a>> {
         let min_num_chars = self
@@ -1175,19 +1175,18 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         }
 
         for (byte, _ch) in word[i..last_i].char_indices() {
-            if let Some(result) = self.check_compound_classic(
+            if let Some(result) = self.check_compound_classic::<MODE>(
                 word,
                 start_pos,
                 byte,
                 num_parts,
                 part,
-                mode,
                 allow_bad_forceucase,
             ) {
                 return Some(result);
             }
 
-            // if let Some(result) = self.check_compound_with_pattern_replacements(word, start_pos, i, num_part, part, mode, allow_bad_forceucase) {
+            // if let Some(result) = self.check_compound_with_pattern_replacements::<MODE>(word, start_pos, i, num_part, part, allow_bad_forceucase) {
             //     return Some(result);
             // }
         }
@@ -1195,15 +1194,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         None
     }
 
-    #[allow(clippy::too_many_arguments, clippy::ptr_arg)]
-    fn check_compound_classic(
+    #[allow(clippy::ptr_arg)]
+    fn check_compound_classic<const MODE: AffixingMode>(
         &self,
         _word: &str,
         _start_pos: usize,
         _i: usize,
         _num_parts: usize,
         _part: &mut String,
-        _mode: AffixingMode,
         _allow_bad_forceucase: Forceucase,
     ) -> Option<CompoundingResult<'a>> {
         None
