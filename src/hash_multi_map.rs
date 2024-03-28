@@ -196,7 +196,7 @@ where
     K: Borrow<Q>,
     Q: Hash + Eq,
 {
-    type Item = &'map V;
+    type Item = (&'map K, &'map V);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -207,7 +207,7 @@ where
                     // modifications to the table.
                     let element = unsafe { bucket.as_ref() };
                     if self.key.eq(element.0.borrow()) {
-                        return Some(&element.1);
+                        return Some((&element.0, &element.1));
                     }
                     continue;
                 }
@@ -233,7 +233,7 @@ mod test {
         assert!(map.len() == 3);
         assert!(map.get(&5) == Some(&5));
 
-        let mut vals: Vec<_> = map.get_all(&1).copied().collect();
+        let mut vals: Vec<_> = map.get_all(&1).map(|kv| kv.1).copied().collect();
         vals.sort_unstable();
         assert_eq!(&[1, 2], vals.as_slice());
     }
@@ -245,7 +245,7 @@ mod test {
         map.insert("hello".to_string(), "world");
         map.insert("bye".to_string(), "bob");
 
-        let mut hellos: Vec<_> = map.get_all("hello").copied().collect();
+        let mut hellos: Vec<_> = map.get_all("hello").map(|kv| kv.1).copied().collect();
         hellos.sort_unstable();
         assert_eq!(&["bob", "world"], hellos.as_slice());
 

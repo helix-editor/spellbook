@@ -2,7 +2,7 @@ use core::hash::BuildHasher;
 
 use crate::{
     aff::{AffData, Affix, AffixKind, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG},
-    alloc::{borrow::Cow, string::String},
+    alloc::string::String,
     flag, has_flag, AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END,
     AT_COMPOUND_MIDDLE, FULL_WORD,
 };
@@ -148,7 +148,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         word: &'a str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<&'a FlagSet> {
-        for flags in self.aff.words.get_all(word) {
+        for (_stem, flags) in self.aff.words.get_all(word) {
             if has_flag!(flags, self.aff.options.need_affix_flag) {
                 continue;
             }
@@ -210,7 +210,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn strip_suffix_only<const MODE: AffixingMode>(
         &self,
-        word: &'a str,
+        word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         for suffix in self.aff.suffixes.affixes_of(word) {
@@ -235,7 +235,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            for flags in self.aff.words.get_all(stem.as_ref()) {
+            for (stem, flags) in self.aff.words.get_all(stem.as_ref()) {
                 // Nuspell:
                 // if (!cross_valid_inner_outer(word_flags, e))
                 // 	continue;
@@ -273,7 +273,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn strip_prefix_only<const MODE: AffixingMode>(
         &self,
-        word: &'a str,
+        word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         for prefix in self.aff.prefixes.affixes_of(word) {
@@ -298,7 +298,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            for flags in self.aff.words.get_all(stem.as_ref()) {
+            for (stem, flags) in self.aff.words.get_all(stem.as_ref()) {
                 // Nuspell:
                 // if (!cross_valid_inner_outer(word_flags, e))
                 // 	continue;
@@ -379,7 +379,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn strip_prefix_then_suffix_commutative<const MODE: AffixingMode>(
         &self,
-        word: &'a str,
+        word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         for prefix in self.aff.prefixes.affixes_of(word) {
@@ -427,7 +427,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                for flags in self.aff.words.get_all(stem_without_suffix.as_ref()) {
+                for (stem, flags) in self.aff.words.get_all(stem_without_suffix.as_ref()) {
                     let valid_cross_prefix_outer = !has_needaffix_prefix
                         && flags.contains(&suffix.flag)
                         && (suffix.flags.contains(&prefix.flag) || flags.contains(&prefix.flag));
@@ -457,13 +457,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     return Some(AffixForm {
-                        // Unfortunately we need an owned value here. Returning a borrowed Cow
-                        // would be returning a reference to `stem_without_prefix`. If
-                        // `stem_without_prefix` needs to be owned we would be returning a
-                        // reference to a local `String` which would not live long enough.
-                        // TODO: can we use some phantomdata/marker trick to get around this and
-                        // bind the lifetime of the maybe owned String to the prefix table?
-                        stem: stem_without_suffix.into_owned().into(),
+                        stem,
                         flags,
                         prefixes: [Some(prefix), None],
                         suffixes: [Some(suffix), None],
@@ -477,7 +471,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn strip_suffix_then_suffix(
         &self,
-        word: &'a str,
+        word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         // Nuspell notes that this is a fast-lane and doesn't affect correctness.
@@ -527,7 +521,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                for flags in self.aff.words.get_all(stem2.as_ref()) {
+                for (stem, flags) in self.aff.words.get_all(stem2.as_ref()) {
                     if !flags.contains(&inner_suffix.flag) {
                         continue;
                     }
@@ -541,7 +535,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     return Some(AffixForm {
-                        stem: stem2.into_owned().into(),
+                        stem,
                         flags,
                         prefixes: Default::default(),
                         suffixes: [Some(outer_suffix), Some(inner_suffix)],
@@ -555,7 +549,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn strip_prefix_then_prefix(
         &self,
-        word: &'a str,
+        word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         // Fastlane
@@ -602,7 +596,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                for flags in self.aff.words.get_all(stem2.as_ref()) {
+                for (stem, flags) in self.aff.words.get_all(stem2.as_ref()) {
                     if !flags.contains(&inner_prefix.flag) {
                         continue;
                     }
@@ -616,7 +610,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     return Some(AffixForm {
-                        stem: stem2.into_owned().into(),
+                        stem,
                         flags,
                         prefixes: [Some(outer_prefix), Some(inner_prefix)],
                         suffixes: Default::default(),
@@ -630,7 +624,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn strip_prefix_then_2_suffixes(
         &self,
-        word: &'a str,
+        word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         // Fastlane
@@ -701,7 +695,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     // Check that the fully stripped word is a stem in the dictionary.
-                    for flags in self.aff.words.get_all(stem3.as_ref()) {
+                    for (stem, flags) in self.aff.words.get_all(stem3.as_ref()) {
                         if !outer_suffix.flags.contains(&prefix.flag)
                             && !flags.contains(&prefix.flag)
                         {
@@ -722,7 +716,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         }
 
                         return Some(AffixForm {
-                            stem: stem3.into_owned().into(),
+                            stem,
                             flags,
                             prefixes: [Some(prefix), None],
                             suffixes: [Some(outer_suffix), Some(inner_suffix)],
@@ -757,7 +751,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     /// flag allows the outer suffix.
     fn strip_suffix_then_prefix_then_suffix(
         &self,
-        word: &'a str,
+        word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         // Fastlane
@@ -838,7 +832,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    for flags in self.aff.words.get_all(stem3.as_ref()) {
+                    for (stem, flags) in self.aff.words.get_all(stem3.as_ref()) {
                         if !inner_suffix.flags.contains(&prefix.flag)
                             && !flags.contains(&prefix.flag)
                         {
@@ -859,7 +853,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         }
 
                         return Some(AffixForm {
-                            stem: stem3.into_owned().into(),
+                            stem,
                             flags,
                             prefixes: [Some(prefix), None],
                             suffixes: [Some(outer_suffix), Some(inner_suffix)],
@@ -874,7 +868,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn strip_suffix_then_2_prefixes(
         &self,
-        word: &'a str,
+        word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         // Fastlane
@@ -944,7 +938,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     // Check that the fully stripped word is a stem in the dictionary.
-                    for flags in self.aff.words.get_all(stem3.as_ref()) {
+                    for (stem, flags) in self.aff.words.get_all(stem3.as_ref()) {
                         if !outer_prefix.flags.contains(&suffix.flag)
                             && !flags.contains(&suffix.flag)
                         {
@@ -965,7 +959,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         }
 
                         return Some(AffixForm {
-                            stem: stem3.into_owned().into(),
+                            stem,
                             flags,
                             prefixes: [Some(outer_prefix), Some(inner_prefix)],
                             suffixes: [Some(suffix), None],
@@ -1000,7 +994,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     /// flag allows the outer prefix.
     fn strip_prefix_then_suffix_then_prefix(
         &self,
-        word: &'a str,
+        word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
         // Fastlane
@@ -1081,7 +1075,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    for flags in self.aff.words.get_all(stem3.as_ref()) {
+                    for (stem, flags) in self.aff.words.get_all(stem3.as_ref()) {
                         if !inner_prefix.flags.contains(&suffix.flag)
                             && !flags.contains(&suffix.flag)
                         {
@@ -1102,7 +1096,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         }
 
                         return Some(AffixForm {
-                            stem: stem3.into_owned().into(),
+                            stem,
                             flags,
                             prefixes: [Some(outer_prefix), Some(inner_prefix)],
                             suffixes: [Some(suffix), None],
@@ -1218,7 +1212,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             _ => None,
         };
 
-        for flags in self.aff.words.get_all(word) {
+        for (stem, flags) in self.aff.words.get_all(word) {
             if has_flag!(flags, self.aff.options.need_affix_flag) {
                 continue;
             }
@@ -1235,7 +1229,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             let num_syllable_modifier = self.calculate_syllable_modifier::<MODE>(flags);
 
             return Some(CompoundingResult {
-                // word,
+                stem,
                 flags,
                 num_words_modifier: Default::default(),
                 num_syllable_modifier,
@@ -1251,7 +1245,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             let num_syllable_modifier =
                 self.calculate_syllable_modifier_with_suffix::<MODE>(affix_form.flags, suffix);
             return Some(CompoundingResult {
-                // word,
+                stem: affix_form.stem,
                 flags: affix_form.flags,
                 num_words_modifier: Default::default(),
                 num_syllable_modifier,
@@ -1266,7 +1260,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             let prefix = affix_form.prefixes[0].unwrap();
             let num_words_modifier = self.calculate_num_words_modifier(prefix);
             return Some(CompoundingResult {
-                // word,
+                stem: affix_form.stem,
                 flags: affix_form.flags,
                 num_words_modifier,
                 num_syllable_modifier: Default::default(),
@@ -1284,7 +1278,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             let num_syllable_modifier =
                 self.calculate_syllable_modifier_with_suffix::<MODE>(affix_form.flags, suffix);
             return Some(CompoundingResult {
-                // word,
+                stem: affix_form.stem,
                 flags: affix_form.flags,
                 num_words_modifier,
                 num_syllable_modifier,
@@ -1516,7 +1510,7 @@ impl HiddenHomonym {
 
 // Similar to Nuspell's AffixingResult
 pub(crate) struct AffixForm<'aff> {
-    stem: Cow<'aff, str>,
+    stem: &'aff str,
     flags: &'aff FlagSet,
     // Up to 2 prefixes and/or 2 suffixes allowed.
     prefixes: [Option<&'aff Prefix>; 2],
@@ -1524,10 +1518,9 @@ pub(crate) struct AffixForm<'aff> {
 }
 
 // TODO: docs.
-pub(crate) struct CompoundingResult<'a> {
-    // TODO: figure out a type for the `word` field.
-    // word: String,
-    flags: &'a FlagSet,
+pub(crate) struct CompoundingResult<'aff> {
+    stem: &'aff str,
+    flags: &'aff FlagSet,
     num_words_modifier: u16,
     num_syllable_modifier: i16,
     affixed_and_modified: bool,
