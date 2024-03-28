@@ -779,6 +779,11 @@ impl From<Vec<CompoundRule>> for CompoundRuleTable {
 
 impl CompoundRuleTable {
     #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty()
+    }
+
+    #[inline]
     pub fn has_any_flags(&self, flagset: &FlagSet) -> bool {
         self.all_flags.has_intersection(flagset)
     }
@@ -875,7 +880,7 @@ pub(crate) struct AffOptions {
     pub compound_begin_flag: Option<Flag>,
     pub compound_middle_flag: Option<Flag>,
     pub compound_last_flag: Option<Flag>,
-    pub compound_min_length: u16,
+    pub compound_min_length: Option<NonZeroU16>,
     pub compound_max_word_count: u16,
     pub compound_permit_flag: Option<Flag>,
     pub compound_forbid_flag: Option<Flag>,

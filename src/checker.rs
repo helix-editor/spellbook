@@ -138,7 +138,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return Some(flags);
         }
 
-        self.check_compound(word, allow_bad_forceucase)
+        self.check_compound(word, AffixingMode::default(), allow_bad_forceucase)
             .map(|result| result.flags)
     }
 
@@ -204,15 +204,6 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             // strip_2_suffixes_then_prefix (slow and unused, commented out)
         }
 
-        None
-    }
-
-    fn check_compound(
-        &self,
-        _word: &str,
-        _allow_bad_forceucase: Forceucase,
-    ) -> Option<CompoundingResult<'a>> {
-        // TODO: compounding
         None
     }
 
@@ -392,7 +383,6 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         mode: AffixingMode,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
-        // TODO: elide this into `strip_prefix_only`?
         for prefix in self.aff.prefixes.affixes_of(word) {
             if !prefix.crossproduct {
                 continue;
@@ -1126,6 +1116,98 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         None
     }
+
+    // Compounding
+
+    fn check_compound(
+        &self,
+        word: &str,
+        mode: AffixingMode,
+        allow_bad_forceucase: Forceucase,
+    ) -> Option<CompoundingResult<'a>> {
+        if self.aff.options.compound_flag.is_some()
+            || self.aff.options.compound_begin_flag.is_some()
+            || self.aff.options.compound_middle_flag.is_some()
+            || self.aff.options.compound_last_flag.is_some()
+        {
+            if let Some(result) =
+                self.check_compound_impl(word, 0, 0, &mut String::new(), mode, allow_bad_forceucase)
+            {
+                return Some(result);
+            }
+        }
+
+        // if !self.aff.compound_rules.is_empty() {
+        //     todo!("check_compound_with_rules");
+        // }
+
+        None
+    }
+
+    fn check_compound_impl(
+        &self,
+        word: &str,
+        start_pos: usize,
+        num_parts: usize,
+        part: &mut String,
+        mode: AffixingMode,
+        allow_bad_forceucase: Forceucase,
+    ) -> Option<CompoundingResult<'a>> {
+        let min_num_chars = self
+            .aff
+            .options
+            .compound_min_length
+            .map(|len| len.get())
+            .unwrap_or(3) as usize;
+
+        let i = word
+            .char_indices()
+            .nth(min_num_chars)
+            .map(|(byte_no, _ch)| byte_no)?;
+        let last_i = word
+            .char_indices()
+            .rev()
+            .nth(min_num_chars)
+            .map(|(byte_no, _ch)| byte_no)
+            .expect("nth above would return none if str was less than min_num_chars long");
+        if last_i < i {
+            return None;
+        }
+
+        for (byte, _ch) in word[i..last_i].char_indices() {
+            if let Some(result) = self.check_compound_classic(
+                word,
+                start_pos,
+                byte,
+                num_parts,
+                part,
+                mode,
+                allow_bad_forceucase,
+            ) {
+                return Some(result);
+            }
+
+            // if let Some(result) = self.check_compound_with_pattern_replacements(word, start_pos, i, num_part, part, mode, allow_bad_forceucase) {
+            //     return Some(result);
+            // }
+        }
+
+        None
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::ptr_arg)]
+    fn check_compound_classic(
+        &self,
+        _word: &str,
+        _start_pos: usize,
+        _i: usize,
+        _num_parts: usize,
+        _part: &mut String,
+        _mode: AffixingMode,
+        _allow_bad_forceucase: Forceucase,
+    ) -> Option<CompoundingResult<'a>> {
+        None
+    }
 }
 
 /// Checks if the input word is a number.
@@ -1256,7 +1338,7 @@ pub(crate) struct AffixForm<'aff> {
 
 // TODO: docs.
 pub(crate) struct CompoundingResult<'a> {
-    stem: &'a String,
+    word: String,
     flags: &'a FlagSet,
     num_words_modifier: u16,
     num_syllable_modifier: i16,
