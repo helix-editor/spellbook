@@ -115,17 +115,12 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     }
 
     fn spell_casing(&self, word: &str) -> Option<&FlagSet> {
-        // Classify the casing
-        // For lowercase, camel & pascal `check_word`
-        // For uppercase, spell_casing_upper
-        // For title, spell_casing_title
-
         match classify_casing(word) {
             Casing::None | Casing::Camel | Casing::Pascal => {
                 self.check_word(word, Forceucase::default(), HiddenHomonym::default())
             }
-            Casing::All => None,  // spell_casing_upper
-            Casing::Init => None, // spell_casing_title
+            Casing::All => None, // spell_casing_upper
+            Casing::Init => self.spell_casing_title(word),
         }
     }
 
@@ -141,6 +136,36 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         self.check_compound::<FULL_WORD>(word, allow_bad_forceucase)
             .map(|result| result.flags)
+    }
+
+    fn spell_casing_title(&self, word: &str) -> Option<&FlagSet> {
+        // First try the word as-is.
+        if let Some(flags) = self.check_word(
+            word,
+            Forceucase::AllowBadForceucase,
+            HiddenHomonym::SkipHiddenHomonym,
+        ) {
+            return Some(flags);
+        }
+
+        // Then try lowercase.
+        // TODO: the stdlib only gets us so far. Casing is based on locale, for example see:
+        // <https://github.com/nuspell/nuspell/blob/6e46eb31708003fa02796ee8dc0c9e57248ba141/tests/unit_test.cxx#L440-L448>
+        let lower_word = word.to_lowercase();
+        let flags = self.check_word(
+            &lower_word,
+            Forceucase::AllowBadForceucase,
+            HiddenHomonym::default(),
+        )?;
+
+        // Nuspell: with CHECKSHARPS, ß is allowed too in KEEPCASE words with title case.
+        if has_flag!(flags, self.aff.options.keep_case_flag)
+            && !(self.aff.options.checksharps && lower_word.contains('ß'))
+        {
+            return None;
+        }
+
+        Some(flags)
     }
 
     fn check_simple_word(&self, word: &str, hidden_homonym: HiddenHomonym) -> Option<&FlagSet> {
@@ -1624,6 +1649,11 @@ mod test {
 
         // route/ADSG (en_US.dic line 39619)
         assert!(en_us().check("reroute"));
+    }
+
+    #[test]
+    fn check_titlecase_word() {
+        assert!(en_us().check("Drink"));
     }
 
     #[test]
