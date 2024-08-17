@@ -871,8 +871,10 @@ pub(crate) struct AffOptions {
     pub compound_begin_flag: Option<Flag>,
     pub compound_middle_flag: Option<Flag>,
     pub compound_last_flag: Option<Flag>,
+    // These `Option<NonZeroU16>`s represent counts or sizes and a zero value isn't accepted.
+    // Being the same as a flag's representation is coincidence.
     pub compound_min_length: Option<NonZeroU16>,
-    pub compound_max_word_count: u16,
+    pub compound_max_word_count: Option<NonZeroU16>,
     pub compound_permit_flag: Option<Flag>,
     pub compound_forbid_flag: Option<Flag>,
     pub compound_force_uppercase_flag: Option<Flag>,
@@ -883,7 +885,7 @@ pub(crate) struct AffOptions {
     pub compound_check_triple: bool,
     pub compound_simplified_triple: bool,
     pub compound_syllable_num: bool,
-    pub compound_syllable_max: u16,
+    pub compound_syllable_max: Option<NonZeroU16>,
     pub max_compound_suggestions: u16,
     pub no_suggest_flag: Option<Flag>,
     pub substandard_flag: Option<Flag>,

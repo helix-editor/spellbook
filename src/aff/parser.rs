@@ -371,7 +371,7 @@ fn parse_compound_min_length(cx: &mut AffLineParser, lines: &mut Lines) -> Parse
 fn parse_compound_max_word_count(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
     lines
         .parse_short()
-        .map(|s| cx.options.compound_max_word_count = s)
+        .map(|s| cx.options.compound_max_word_count = NonZeroU16::new(s))
 }
 
 fn parse_max_compound_suggestions(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
@@ -470,6 +470,7 @@ fn parse_compound_syllable<'aff>(
 
     cx.options.compound_syllable_max = max
         .parse::<u16>()
+        .map(NonZeroU16::new)
         .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedNumber(err)))?;
     cx.compound_syllable_vowels = vowels;
 
