@@ -149,7 +149,17 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         }
 
         // TODO: handle apostrophes
-        // TODO: handle sharps
+
+        // Special-case for sharps (ß).
+        if self.aff.options.checksharps && word.contains("SS") {
+            if let Some(flags) = self.spell_sharps(&word.to_lowercase()) {
+                return Some(flags);
+            }
+
+            if let Some(flags) = self.spell_sharps(&to_titlecase(word)) {
+                return Some(flags);
+            }
+        }
 
         // Try as title-case.
         if let Some(flags) = self
@@ -170,6 +180,60 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             HiddenHomonym::default(),
         )
         .filter(|flags| !has_flag!(flags, self.aff.options.keep_case_flag))
+    }
+
+    fn spell_sharps(&self, word: &str) -> Option<&FlagSet> {
+        self.do_spell_sharps(&mut String::from(word), 0, 0, 0)
+    }
+
+    fn do_spell_sharps(
+        &self,
+        word: &mut String,
+        position: usize,
+        depth: usize,
+        replacements: usize,
+    ) -> Option<&FlagSet> {
+        const MAX_DEPTH: usize = 5;
+        const SHARP_S_BYTES: &[u8] = "ß".as_bytes();
+        debug_assert_eq!(SHARP_S_BYTES.len(), 2);
+
+        if let Some(idx) = word[position..].find("ss").filter(|_| depth < MAX_DEPTH) {
+            // idx is the relative offset since we're subslicing 'word'. Turn it into the absolute
+            // byte index of the first 's'.
+            let idx = position + idx;
+
+            // SAFETY: This is a little bit hacky but avoids any extra allocations (other than
+            // the new String above). "ss" and "ß" are both two bytes so we update the bytes
+            // in-place.
+            unsafe {
+                // Replace the "ss" with "ß".
+                let bytes = word.as_mut_vec();
+                bytes[idx] = SHARP_S_BYTES[0];
+                bytes[idx + 1] = SHARP_S_BYTES[1];
+            }
+            // NOTE: we use `+ 2` here because and "ß") is two bytes.
+            if let Some(flags) = self.do_spell_sharps(word, idx + 2, depth + 1, replacements + 1) {
+                return Some(flags);
+            }
+            unsafe {
+                // Replace the "ß" with "ss" and continue the recursion to try another
+                // permutation.
+                let bytes = word.as_mut_vec();
+                bytes[idx] = b's';
+                bytes[idx + 1] = b's';
+            }
+
+            if let Some(flags) = self.do_spell_sharps(word, idx + 2, depth + 1, replacements + 1) {
+                return Some(flags);
+            }
+        } else if replacements > 0 {
+            return self.check_word(
+                word,
+                Forceucase::AllowBadForceucase,
+                HiddenHomonym::default(),
+            );
+        }
+        None
     }
 
     fn spell_casing_title(&self, word: &str) -> Option<&FlagSet> {
@@ -1709,6 +1773,24 @@ mod test {
         assert!(!en_us().check("bbq"));
         assert!(!en_us().check("Bbq"));
         assert!(en_us().check("BBQ"));
+    }
+
+    #[test]
+    fn check_sharp_casing() {
+        let aff = r#"
+        CHECKSHARPS
+        "#;
+
+        // aussaß/Z from de_DE_frami.dic line 118186. It has both a "ss" and a "ß".
+        let dic = r#"1
+        aussaß/Z
+        "#;
+
+        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+
+        assert!(dict.check("aussaß"));
+        assert!(dict.check("Aussaß"));
+        assert!(dict.check("AUSSASS"));
     }
 
     #[test]
