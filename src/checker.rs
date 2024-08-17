@@ -114,7 +114,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         false
     }
 
-    fn spell_casing(&self, word: &'a str) -> Option<&'a FlagSet> {
+    fn spell_casing(&self, word: &str) -> Option<&FlagSet> {
         // Classify the casing
         // For lowercase, camel & pascal `check_word`
         // For uppercase, spell_casing_upper
@@ -131,10 +131,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn check_word(
         &self,
-        word: &'a str,
+        word: &str,
         allow_bad_forceucase: Forceucase,
         hidden_homonym: HiddenHomonym,
-    ) -> Option<&'a FlagSet> {
+    ) -> Option<&FlagSet> {
         if let Some(flags) = self.check_simple_word(word, hidden_homonym) {
             return Some(flags);
         }
@@ -143,11 +143,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             .map(|result| result.flags)
     }
 
-    fn check_simple_word(
-        &self,
-        word: &'a str,
-        hidden_homonym: HiddenHomonym,
-    ) -> Option<&'a FlagSet> {
+    fn check_simple_word(&self, word: &str, hidden_homonym: HiddenHomonym) -> Option<&FlagSet> {
         for (_stem, flags) in self.aff.words.get_all(word) {
             if has_flag!(flags, self.aff.options.need_affix_flag) {
                 continue;
