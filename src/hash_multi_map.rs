@@ -89,10 +89,10 @@ where
         self.table.len()
     }
 
-    pub fn get<Q: ?Sized>(&self, k: &Q) -> Option<&V>
+    pub fn get<Q>(&self, k: &Q) -> Option<&V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         let hash = make_hash(&self.build_hasher, &k);
         self.table.find(hash, |(p, _v)| p.borrow() == k).map(|b| {
@@ -102,10 +102,10 @@ where
         })
     }
 
-    pub fn get_all<'map, 'key, Q: ?Sized>(&'map self, k: &'key Q) -> GetAllIter<'map, 'key, Q, K, V>
+    pub fn get_all<'map, 'key, Q>(&'map self, k: &'key Q) -> GetAllIter<'map, 'key, Q, K, V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         let hash = make_hash(&self.build_hasher, k);
 
