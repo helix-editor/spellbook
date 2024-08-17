@@ -1614,6 +1614,13 @@ impl Default for Forceucase {
     }
 }
 
+impl Forceucase {
+    #[inline]
+    const fn forbid(&self) -> bool {
+        matches!(self, Self::ForbidBadForceucase)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum HiddenHomonym {
     AcceptHiddenHomonym,
@@ -1629,14 +1636,12 @@ impl Default for HiddenHomonym {
 impl HiddenHomonym {
     #[inline]
     const fn skip(&self) -> bool {
-        match self {
-            Self::AcceptHiddenHomonym => false,
-            Self::SkipHiddenHomonym => true,
-        }
+        matches!(self, Self::SkipHiddenHomonym)
     }
 }
 
 // Similar to Nuspell's AffixingResult
+#[derive(Debug)]
 pub(crate) struct AffixForm<'aff> {
     stem: &'aff str,
     flags: &'aff FlagSet,
@@ -1646,6 +1651,7 @@ pub(crate) struct AffixForm<'aff> {
 }
 
 // TODO: docs.
+#[derive(Debug)]
 pub(crate) struct CompoundingResult<'aff> {
     stem: &'aff str,
     flags: &'aff FlagSet,
