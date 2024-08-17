@@ -56,7 +56,7 @@ struct AffLineParser<'aff> {
 type Parser = for<'aff> fn(&mut AffLineParser<'aff>, &mut Lines<'aff>) -> ParseResult;
 
 // These parsers are only used for the `.aff` file's contents. The `.dic` file is handled ad-hoc.
-const AFF_PARSERS: [(&str, Parser); 45] = [
+const AFF_PARSERS: [(&str, Parser); 46] = [
     ("FLAG", parse_flag_type),
     // Flags
     ("FORBIDDENWORD", parse_forbidden_word_flag),
@@ -73,6 +73,7 @@ const AFF_PARSERS: [(&str, Parser); 45] = [
     ("ONLYINCOMPOUND", parse_only_in_compound_flag),
     ("COMPOUNDPERMITFLAG", parse_compound_permit_flag),
     ("COMPOUNDFORBIDFLAG", parse_compound_forbid_flag),
+    ("COMPOUNDROOT", parse_compound_root_flag),
     ("FORCEUCASE", parse_compound_force_uppercase_flag),
     // Bools
     ("COMPLEXPREFIXES", parse_complex_prefixes),
@@ -282,6 +283,12 @@ fn parse_compound_forbid_flag(cx: &mut AffLineParser, lines: &mut Lines) -> Pars
     lines
         .parse_flag(cx)
         .map(|flag| cx.options.compound_forbid_flag = Some(flag))
+}
+
+fn parse_compound_root_flag(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
+    lines
+        .parse_flag(cx)
+        .map(|flag| cx.options.compound_root_flag = Some(flag))
 }
 
 fn parse_compound_force_uppercase_flag(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
