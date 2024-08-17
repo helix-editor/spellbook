@@ -1502,7 +1502,7 @@ fn is_number(word: &str) -> bool {
 /// character at byte `idx`, the previous character and the next character.
 ///
 /// # Panics
-/// `idx` is assumed to be a valid byte index for the given word.
+/// `idx` is assumed to be at a valid UTF-8 boundary within the word.
 fn are_three_chars_equal(word: &str, idx: usize) -> bool {
     let mut chars_ahead = word[idx..].chars();
     let mut chars_behind = word[..idx].chars().rev();
