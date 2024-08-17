@@ -119,7 +119,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             Casing::None | Casing::Camel | Casing::Pascal => {
                 self.check_word(word, Forceucase::default(), HiddenHomonym::default())
             }
-            Casing::All => None, // spell_casing_upper
+            Casing::All => self.spell_casing_upper(word),
             Casing::Init => self.spell_casing_title(word),
         }
     }
@@ -136,6 +136,40 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         self.check_compound::<FULL_WORD>(word, allow_bad_forceucase)
             .map(|result| result.flags)
+    }
+
+    fn spell_casing_upper(&self, word: &str) -> Option<&FlagSet> {
+        // First try the word as-is.
+        if let Some(flags) = self.check_word(
+            word,
+            Forceucase::AllowBadForceucase,
+            HiddenHomonym::default(),
+        ) {
+            return Some(flags);
+        }
+
+        // TODO: handle apostrophes
+        // TODO: handle sharps
+
+        // Try as title-case.
+        if let Some(flags) = self
+            .check_word(
+                &to_titlecase(word),
+                Forceucase::AllowBadForceucase,
+                HiddenHomonym::default(),
+            )
+            .filter(|flags| !has_flag!(flags, self.aff.options.keep_case_flag))
+        {
+            return Some(flags);
+        }
+
+        // Try as lowercase.
+        self.check_word(
+            &word.to_lowercase(),
+            Forceucase::AllowBadForceucase,
+            HiddenHomonym::default(),
+        )
+        .filter(|flags| !has_flag!(flags, self.aff.options.keep_case_flag))
     }
 
     fn spell_casing_title(&self, word: &str) -> Option<&FlagSet> {
@@ -1463,7 +1497,7 @@ pub(crate) enum Casing {
     Pascal,
 }
 
-pub(crate) fn classify_casing(word: &str) -> Casing {
+fn classify_casing(word: &str) -> Casing {
     let mut upper = 0;
     let mut lower = 0;
 
@@ -1492,6 +1526,15 @@ pub(crate) fn classify_casing(word: &str) -> Casing {
     } else {
         Casing::Camel
     }
+}
+
+fn to_titlecase(s: &str) -> String {
+    // TODO: case conversion is locale specific (e.g. in tr_TR).
+    let mut output = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    output.extend(chars.next().expect("non empty input").to_uppercase());
+    output.extend(chars.flat_map(|ch| ch.to_lowercase()));
+    output
 }
 
 // TODO: rename?
@@ -1652,8 +1695,20 @@ mod test {
     }
 
     #[test]
-    fn check_titlecase_word() {
+    fn check_other_casings() {
+        // "drink" is a stem and should be recognized in any case.
+        assert!(en_us().check("drink"));
         assert!(en_us().check("Drink"));
+        assert!(en_us().check("DRINK"));
+        // Achilles/M from en_US.dic line 116, should be recognized in titlecase and uppercase but
+        // not lowercase.
+        assert!(!en_us().check("achilles"));
+        assert!(en_us().check("Achilles"));
+        assert!(en_us().check("ACHILLES"));
+        // BBQ from en_US.dic line 810, should only be recognized in uppercase.
+        assert!(!en_us().check("bbq"));
+        assert!(!en_us().check("Bbq"));
+        assert!(en_us().check("BBQ"));
     }
 
     #[test]
