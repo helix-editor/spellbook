@@ -211,7 +211,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 bytes[idx] = SHARP_S_BYTES[0];
                 bytes[idx + 1] = SHARP_S_BYTES[1];
             }
-            // NOTE: we use `+ 2` here because and "ß") is two bytes.
+            // NOTE: we use `+ 2` here because "ss" (and "ß") is two bytes.
             if let Some(flags) = self.do_spell_sharps(word, idx + 2, depth + 1, replacements + 1) {
                 return Some(flags);
             }

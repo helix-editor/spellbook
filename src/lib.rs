@@ -66,9 +66,9 @@ impl<S: BuildHasher> Dictionary<S> {
 /// * `FlagType::Long`: the first ASCII character occupies the higher 8 bits and the second ASCII
 ///   character occupies the lower 8 bits.
 /// * `FlagType::Numeric`: the flag is represented as a 16 bit integer.
-/// * `FlagType::Utf8`: if the flag is fit into two bytes. Hunspell and Nuspell restrict UTF8
-///   flags to UTF8 code-points representable in one or two bytes. Flags are just attributes, so
-///   using symbols, emoji or non-latin alphabets is unnecessary. Languages like `ar` (Arabic)
+/// * `FlagType::Utf8`: the flag is fit into two bytes if possible. Hunspell and Nuspell restrict
+///   UTF8 flags to UTF8 code-points representable in one or two bytes. Flags are just attributes,
+///   so using symbols, emoji or non-latin alphabets is unnecessary. Languages like `ar` (Arabic)
 ///   use the `FlagType::Numeric` encoding for example.
 ///
 /// Finally, a flag with a value of zero is not valid for any `FlagType`, so we can safely
@@ -76,19 +76,27 @@ impl<S: BuildHasher> Dictionary<S> {
 /// optimizations allow us to represent `Option<Flag>` in 16 bits.
 ///
 /// Hunspell uses an `unsigned short` for flags while Nuspell uses a `char16_t`.
+// TODO: experiment with using a regular u16 instead. Because the flags are not defined as zero
+// in `.aff` files, we can use regular u16 comparison to check if a flag is set rather than
+// checking an option. For example what we do now is basically
+// `flag.is_some_and(|flag| flagset.contains(flag))` but could be simply `flagset.contains(flag)`,
+// and we could optionally also modify `FlagSet::contains` to bail early if it sees 0u16.
 pub(crate) type Flag = core::num::NonZeroU16;
 
 /// A collection of flags belonging to a word.
 ///
 /// Nuspell represents this as a sorted `std::basic_string<char16_t>` (`char16_t` being the
-/// representation) for flags. Hunspell uses a sorted `unsigned short*` and searches it via
+/// representation for flags). Hunspell uses a sorted `unsigned short*` and searches it via
 /// `std::binary_search`.
 ///
 /// We represent this in Spellbook with a sorted boxed slice of flags. We use a boxed slice to cut
 /// down on the storage space required - a `Vec` has an extra capacity field that takes up some
 /// extra bytes. Using a boxed slice reduces `size_of::<FlagSet>()` on my machine from 24 to 16.
 /// This sounds insignificant but a dictionary might have very very many flagsets, so the savings
-/// are potentially noticeable. Boxed slices also remove extra allocated capacity.
+/// are potentially noticeable. Boxed slices also remove extra allocated capacity. Generally
+/// there's no need to use a Vec, String or other similar owned types over a boxed equivalent
+/// unless the value needs to be mutated at some point. Once a dictionary is initialized it's
+/// immutable so we don't need a Vec.
 #[derive(Default, PartialEq, Eq, Clone)]
 pub(crate) struct FlagSet {
     inner: Box<[Flag]>,
@@ -220,6 +228,9 @@ impl FlagSet {
     /// Checks whether the given flag is contained in the flagset.
     #[inline]
     pub fn contains(&self, flag: &Flag) -> bool {
+        // See the docs for `slice::binary_search`: it's preferrable to `slice::contains` since
+        // it runs in logarithmic time rather than linear w.r.t. slice length. It requires that
+        // the slice is sorted (true for flagsets, see `new`).
         self.inner.binary_search(flag).is_ok()
     }
 }
@@ -233,6 +244,7 @@ impl fmt::Debug for FlagSet {
 // We represent the stem as a boxed str to save on space.
 pub(crate) type WordList<S> = hash_multi_map::HashMultiMap<Box<str>, FlagSet, S>;
 
+// Ideally these would be an enum but const generics do not yet support custom enums.
 pub(crate) type AffixingMode = u8;
 pub(crate) const FULL_WORD: AffixingMode = 0;
 pub(crate) const AT_COMPOUND_BEGIN: AffixingMode = 1;

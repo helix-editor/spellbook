@@ -29,7 +29,7 @@ pub(crate) enum FlagType {
     Short,
     /// Two adjacent ascii characters.
     ///
-    /// The french dictionary uses this. For example for some proper nouns like `Asimov/L'D'Q'`,
+    /// The french dictionary uses this. For example for some proper nouns like `Asimov/L'D'Q'`:
     /// `L'` is a flag, `D'` another, `Q'` another.
     Long,
     /// A number in the range `1..=65000`.
@@ -49,6 +49,7 @@ pub(crate) struct Condition {
     /// over it directly to attempt to match the pattern.
     ///
     /// This string is non-empty.
+    // TODO: Box<str>?
     pattern: String,
     /// The number of `char`s that the pattern describes.
     ///
