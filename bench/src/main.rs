@@ -40,6 +40,12 @@ brunch::benches!(
     Bench::new("Incorrect prefix (\"reearth\")")
         .with_samples(SAMPLES)
         .run_seeded_with(en_us, |dict| dict.check(black_box("reearth"))),
+    Bench::new("UPPERCASE in-dictionary word (\"EARTH\")")
+        .with_samples(SAMPLES)
+        .run_seeded_with(en_us, |dict| dict.check(black_box("EARTH"))),
+    Bench::new("Titlecase in-dictionary word (\"Earth\")")
+        .with_samples(SAMPLES)
+        .run_seeded_with(en_us, |dict| dict.check(black_box("Earth"))),
     Bench::new("Breaks (\"light-weight-like\")")
         .with_samples(SAMPLES)
         .run_seeded_with(en_us, |dict| dict.check(black_box("light-weight-like"))),
