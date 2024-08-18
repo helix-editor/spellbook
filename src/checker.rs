@@ -152,7 +152,42 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return Some(flags);
         }
 
-        // TODO: handle apostrophes
+        // Handle prefixes separated by an apostrophe. This is used for Catalan, French and
+        // Italian. Nuspell gives the example: SANT'ELIA => Sant'+Elia. Find an apostrophe that
+        // isn't at the very end of the word.
+        if let Some(mut idx) = word.find('\'').filter(|idx| *idx != word.len() - 1) {
+            // `find` returns the index of the found character. We want to include that apostrophe
+            // in `part1` so move the index after the apostrophe.
+            debug_assert_eq!("'".as_bytes().len(), 1);
+            idx += 1;
+            // Slice up the word into two parts: part1 has the apostrophe and part2 is the rest.
+            let part1 = &word[..idx];
+            let part2 = &word[idx..];
+
+            // Try two permutations: part1 as lowercase and part1 as titlecase with part2 always
+            // being titlecase.
+            let part2 = to_titlecase(part2);
+
+            let mut lower = part1.to_lowercase();
+            lower.push_str(&part2);
+            if let Some(flags) = self.check_word(
+                &lower,
+                Forceucase::AllowBadForceucase,
+                HiddenHomonym::default(),
+            ) {
+                return Some(flags);
+            }
+
+            let mut title = to_titlecase(part1);
+            title.push_str(&part2);
+            if let Some(flags) = self.check_word(
+                &title,
+                Forceucase::AllowBadForceucase,
+                HiddenHomonym::default(),
+            ) {
+                return Some(flags);
+            }
+        }
 
         // Special-case for sharps (ß).
         if self.aff.options.checksharps && word.contains("SS") {
@@ -1776,7 +1811,7 @@ mod test {
     }
 
     #[test]
-    fn check_sharp_casing() {
+    fn check_sharp_upper_casing() {
         let aff = r#"
         CHECKSHARPS
         "#;
@@ -1791,6 +1826,30 @@ mod test {
         assert!(dict.check("aussaß"));
         assert!(dict.check("Aussaß"));
         assert!(dict.check("AUSSASS"));
+    }
+
+    #[test]
+    fn check_apostrophe_upper_casing() {
+        let aff = "";
+        // from it_IT
+        let dic = r#"4
+        cent'anni
+        d'Intelvi
+        Anch'Egli
+        anch'Ella
+        "#;
+
+        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+
+        assert!(dict.check("cent'anni"));
+        assert!(dict.check("d'Intelvi"));
+        assert!(dict.check("Anch'Egli"));
+        assert!(dict.check("anch'Ella"));
+
+        assert!(dict.check("CENT'ANNI"));
+        assert!(dict.check("D'INTELVI"));
+        assert!(dict.check("ANCH'EGLI"));
+        assert!(dict.check("ANCH'ELLA"));
     }
 
     #[test]
