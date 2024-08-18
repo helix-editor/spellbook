@@ -11,8 +11,6 @@ use crate::{
 // <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/dictionary.cxx#L156>
 const MAX_WORD_LEN: usize = 360;
 
-const MAX_BREAK_DEPTH: usize = 9;
-
 // TODO: expose type and add options to it?
 pub(crate) struct Checker<'a, S: BuildHasher> {
     aff: &'a AffData<S>,
@@ -44,14 +42,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         // TODO: erase chars in `trimmed_word`
 
-        if self.spell_break(trimmed_word, 0) {
+        if self.spell_break(trimmed_word) {
             return true;
         }
 
         if abbreviated {
             // TODO: erase chars in `word` - or figure out abbreviation after ignore-chars.
             // TODO: only keep one `.`?
-            return self.spell_break(word, 0);
+            return self.spell_break(word);
         }
 
         false
@@ -59,7 +57,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     /// Recursively breaks up a word according to the dictionary's `BREAK` rules and checks that
     /// each broken word is correct.
-    fn spell_break(&self, word: &str, depth: usize) -> bool {
+    fn spell_break(&self, word: &str) -> bool {
+        self.do_spell_break(word, 0)
+    }
+
+    fn do_spell_break(&self, word: &str, depth: usize) -> bool {
+        const MAX_DEPTH: usize = 9;
+
         if let Some(flags) = &self.spell_casing(word) {
             if has_flag!(flags, self.aff.options.forbidden_word_flag) {
                 return false;
@@ -72,13 +76,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return true;
         }
 
-        if depth == MAX_BREAK_DEPTH {
+        if depth == MAX_DEPTH {
             return false;
         }
 
         for pattern in self.aff.break_table.start_word_breaks() {
             if let Some(rest) = word.strip_prefix(pattern) {
-                if self.spell_break(rest, depth + 1) {
+                if self.do_spell_break(rest, depth + 1) {
                     return true;
                 }
             }
@@ -86,7 +90,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         for pattern in self.aff.break_table.end_word_breaks() {
             if let Some(rest) = word.strip_suffix(pattern) {
-                if self.spell_break(rest, depth + 1) {
+                if self.do_spell_break(rest, depth + 1) {
                     return true;
                 }
             }
@@ -101,11 +105,11 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if !self.spell_break(part1, depth + 1) {
+                if !self.do_spell_break(part1, depth + 1) {
                     continue;
                 }
 
-                if self.spell_break(part2, depth + 1) {
+                if self.do_spell_break(part2, depth + 1) {
                     return true;
                 }
             }
