@@ -1,5 +1,7 @@
 pub(crate) mod parser;
 
+use alloc::boxed::Box;
+
 use crate::{
     alloc::{
         borrow::Cow,
@@ -604,7 +606,7 @@ impl<'index, 'word, C: AffixKind> Iterator for AffixesIter<'index, 'word, C> {
 // TODO: document how breaks are used and what the patterns mean.
 #[derive(Debug)]
 pub(crate) struct BreakTable {
-    table: Vec<String>,
+    table: Box<[Box<str>]>,
     start_word_breaks_last_idx: usize,
     // Nuspell keeps the entries partitioned in the order "start, end, middle." I've re-arranged
     // this to be "start, middle, end" since I think it's more natural.
@@ -631,11 +633,11 @@ impl From<Vec<&str>> for BreakTable {
             }
 
             if let Some(b) = b.strip_prefix('^') {
-                start.push(b.to_string());
+                start.push(b.into());
             } else if let Some(b) = b.strip_suffix('$') {
-                end.push(b.to_string());
+                end.push(b.into());
             } else {
-                middle.push(b.to_string());
+                middle.push(b.into());
             }
         }
 
@@ -646,7 +648,7 @@ impl From<Vec<&str>> for BreakTable {
         table.append(&mut end);
 
         Self {
-            table,
+            table: table.into_boxed_slice(),
             start_word_breaks_last_idx,
             middle_word_breaks_last_idx,
         }
@@ -655,18 +657,24 @@ impl From<Vec<&str>> for BreakTable {
 
 impl BreakTable {
     #[inline]
-    pub fn start_word_breaks(&self) -> &[String] {
-        &self.table[..self.start_word_breaks_last_idx]
+    pub fn start_word_breaks(&self) -> impl Iterator<Item = &str> {
+        self.table[..self.start_word_breaks_last_idx]
+            .iter()
+            .map(AsRef::as_ref)
     }
 
     #[inline]
-    pub fn middle_word_breaks(&self) -> &[String] {
-        &self.table[self.start_word_breaks_last_idx..self.middle_word_breaks_last_idx]
+    pub fn middle_word_breaks(&self) -> impl Iterator<Item = &str> {
+        self.table[self.start_word_breaks_last_idx..self.middle_word_breaks_last_idx]
+            .iter()
+            .map(AsRef::as_ref)
     }
 
     #[inline]
-    pub fn end_word_breaks(&self) -> &[String] {
-        &self.table[self.middle_word_breaks_last_idx..]
+    pub fn end_word_breaks(&self) -> impl Iterator<Item = &str> {
+        self.table[self.middle_word_breaks_last_idx..]
+            .iter()
+            .map(AsRef::as_ref)
     }
 }
 
@@ -1058,23 +1066,15 @@ mod test {
             "bsd", "zxc", "asd", "^bar", "^zoo", "^abc", "car$", "yoyo$", "air$",
         ]);
 
-        let mut starts: Vec<_> = table
-            .start_word_breaks()
-            .iter()
-            .map(String::as_str)
-            .collect();
+        let mut starts: Vec<_> = table.start_word_breaks().collect();
         starts.sort_unstable();
         assert_eq!(&["abc", "bar", "zoo"], starts.as_slice());
 
-        let mut middles: Vec<_> = table
-            .middle_word_breaks()
-            .iter()
-            .map(String::as_str)
-            .collect();
+        let mut middles: Vec<_> = table.middle_word_breaks().collect();
         middles.sort_unstable();
         assert_eq!(&["asd", "bsd", "zxc"], middles.as_slice());
 
-        let mut ends: Vec<_> = table.end_word_breaks().iter().map(String::as_str).collect();
+        let mut ends: Vec<_> = table.end_word_breaks().collect();
         ends.sort_unstable();
         assert_eq!(&["air", "car", "yoyo"], ends.as_slice());
     }
