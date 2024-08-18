@@ -1602,16 +1602,11 @@ fn to_titlecase(s: &str) -> String {
 }
 
 // TODO: rename?
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub(crate) enum Forceucase {
+    #[default]
     ForbidBadForceucase,
     AllowBadForceucase,
-}
-
-impl Default for Forceucase {
-    fn default() -> Self {
-        Self::ForbidBadForceucase
-    }
 }
 
 impl Forceucase {
@@ -1621,16 +1616,11 @@ impl Forceucase {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub(crate) enum HiddenHomonym {
+    #[default]
     AcceptHiddenHomonym,
     SkipHiddenHomonym,
-}
-
-impl Default for HiddenHomonym {
-    fn default() -> Self {
-        Self::AcceptHiddenHomonym
-    }
 }
 
 impl HiddenHomonym {

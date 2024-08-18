@@ -20,11 +20,12 @@ pub(crate) const MAX_SUGGESTIONS: usize = 16;
 ///
 /// This representation also decides how we encode flags into `Flag`. This is controlled by the
 /// `FLAG` directive in a `.aff` file.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub(crate) enum FlagType {
     /// A single ascii character.
     ///
     /// This is the default representation if a `.aff` file does not specify another.
+    #[default]
     Short,
     /// Two adjacent ascii characters.
     ///
@@ -38,12 +39,6 @@ pub(crate) enum FlagType {
     Numeric,
     /// One UTF8 character described by at most two bytes.
     Utf8,
-}
-
-impl Default for FlagType {
-    fn default() -> Self {
-        Self::Short
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
