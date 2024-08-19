@@ -43,6 +43,8 @@ struct AffLineParser<'aff> {
     flag_aliases: Vec<FlagSet>,
     // wordchars: String, deprecated?
     replacements: Vec<(&'aff str, &'aff str)>,
+    input_conversions: Vec<(&'aff str, &'aff str)>,
+    output_conversions: Vec<(&'aff str, &'aff str)>,
     break_patterns: Vec<&'aff str>,
     compound_syllable_vowels: &'aff str,
     ignore_chars: &'aff str,
@@ -56,7 +58,7 @@ struct AffLineParser<'aff> {
 type Parser = for<'aff> fn(&mut AffLineParser<'aff>, &mut Lines<'aff>) -> ParseResult;
 
 // These parsers are only used for the `.aff` file's contents. The `.dic` file is handled ad-hoc.
-const AFF_PARSERS: [(&str, Parser); 46] = [
+const AFF_PARSERS: [(&str, Parser); 48] = [
     ("FLAG", parse_flag_type),
     // Flags
     ("FORBIDDENWORD", parse_forbidden_word_flag),
@@ -101,8 +103,10 @@ const AFF_PARSERS: [(&str, Parser); 46] = [
     ("KEY", parse_keyboard_closeness),
     ("TRY", parse_try_chars),
     // String pairs
-    // TODO: phonetic replacements, input & output conversion
+    // TODO: phonetic replacements
     ("REP", parse_replacements),
+    ("ICONV", parse_input_conversions),
+    ("OCONV", parse_output_conversions),
     // Remaining complicated structures
     ("BREAK", parse_break_patterns),
     ("COMPOUNDSYLLABLE", parse_compound_syllable),
@@ -183,6 +187,8 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         prefixes: cx.prefixes.into(),
         suffixes: cx.suffixes.into(),
         break_table,
+        input_conversions: cx.input_conversions.into(),
+        output_conversions: cx.output_conversions.into(),
         compound_rules: cx.compound_rules.into(),
         compound_syllable_vowels: cx.compound_syllable_vowels.to_string(),
         // compound_patterns: todo!(),
@@ -420,6 +426,26 @@ fn parse_try_chars<'a>(cx: &mut AffLineParser<'a>, lines: &mut Lines<'a>) -> Par
 fn parse_replacements<'aff>(cx: &mut AffLineParser<'aff>, lines: &mut Lines<'aff>) -> ParseResult {
     lines.parse_table2("REP", |str1, str2| {
         cx.replacements.push((str1, str2));
+        Ok(())
+    })
+}
+
+fn parse_input_conversions<'aff>(
+    cx: &mut AffLineParser<'aff>,
+    lines: &mut Lines<'aff>,
+) -> ParseResult {
+    lines.parse_table2("ICONV", |str1, str2| {
+        cx.input_conversions.push((str1, str2));
+        Ok(())
+    })
+}
+
+fn parse_output_conversions<'aff>(
+    cx: &mut AffLineParser<'aff>,
+    lines: &mut Lines<'aff>,
+) -> ParseResult {
+    lines.parse_table2("OCONV", |str1, str2| {
+        cx.input_conversions.push((str1, str2));
         Ok(())
     })
 }

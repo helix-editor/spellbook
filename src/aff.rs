@@ -835,6 +835,46 @@ pub(crate) struct CompoundPattern {
     match_first_only_unaffixed_or_zero_affixed: bool,
 }
 
+/// The conversion table used by ICONV and OCONV rules.
+///
+/// This is nothing more than a sequence of `(from, to)` replacement pairs. Not many dictionaries
+/// use this rule. en_US and a few others use it to replace magic apostrophes "’" with regular
+/// ones. Others like french have quite a few rules to normalize similar looking and meaning
+/// unicode representations of letters, like "à" becoming "à".
+#[derive(Debug)]
+pub(crate) struct ConversionTable {
+    inner: Box<[(Box<str>, Box<str>)]>,
+}
+
+impl From<Vec<(&str, &str)>> for ConversionTable {
+    fn from(table: Vec<(&str, &str)>) -> Self {
+        Self {
+            inner: table
+                .into_iter()
+                .map(|(from, to)| (from.into(), to.into()))
+                .collect(),
+        }
+    }
+}
+
+impl ConversionTable {
+    pub fn convert<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        // TODO: consider optimizing this structure. I believe Nuspell does some kind of sorting
+        // but given the pattern might appear anywhere in the word this seems tricky. Also
+        // conversion tables are typically _very_ short (< 10 entries, usually 1 entry but up to
+        // 49 in fr_FR). Consider searching all patterns together?
+        let mut converted = Cow::Borrowed(word);
+
+        for (from, to) in self.inner.iter() {
+            if word.contains(&**from) {
+                converted = Cow::Owned(word.replace(&**from, to));
+            }
+        }
+
+        converted
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct AffData<S: BuildHasher> {
     // checking options
@@ -845,9 +885,9 @@ pub(crate) struct AffData<S: BuildHasher> {
     pub compound_rules: CompoundRuleTable,
     pub compound_syllable_vowels: String,
     // compound_patterns: Vec<CompoundPattern>, TODO: parsing
-    // input_substr_replacer: ? TODO
+    pub input_conversions: ConversionTable,
+    pub output_conversions: ConversionTable,
     // locale TODO
-    // output_substr_replacer: ? TODO
     // suggestion options
     // replacements: ReplacementTable, TODO
     // similarities: Vec<SimilarityGroup>,

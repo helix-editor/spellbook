@@ -27,7 +27,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return false;
         }
 
-        // TODO: iconv
+        let word = self.aff.input_conversions.convert(word);
 
         if word.is_empty() {
             return true;
@@ -49,7 +49,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         if abbreviated {
             // TODO: erase chars in `word` - or figure out abbreviation after ignore-chars.
             // TODO: only keep one `.`?
-            return self.spell_break(word);
+            return self.spell_break(&word);
         }
 
         false
@@ -1850,6 +1850,28 @@ mod test {
         assert!(dict.check("D'INTELVI"));
         assert!(dict.check("ANCH'EGLI"));
         assert!(dict.check("ANCH'ELLA"));
+    }
+
+    #[test]
+    fn iconv_test() {
+        // Magic quotes are converted by en_US.
+        assert!(en_us().check("can’t"));
+
+        // Both from en_ZA
+        let aff = r#"
+        ICONV 2
+        ICONV ﬃ ffi
+        ICONV ﬄ ffl
+        "#;
+        let dic = r#"2
+        affine
+        affluent/Y
+        "#;
+        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+        assert!(dict.check("affine"));
+        assert!(dict.check("aﬃne"));
+        assert!(dict.check("affluent"));
+        assert!(dict.check("aﬄuent"));
     }
 
     #[test]
