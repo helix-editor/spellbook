@@ -62,13 +62,13 @@ impl<S: BuildHasher> Dictionary<S> {
 /// Dictionaries declare a `FlagType` they will use to express flags. This `Flag` can represent
 /// each of the four types.
 ///
-/// * `FlagType::Short`: ASCII 8-bit characters are casted into 16 bits.
+/// * `FlagType::Short`: ASCII 8-bit characters are cast into 16 bits.
 /// * `FlagType::Long`: the first ASCII character occupies the higher 8 bits and the second ASCII
 ///   character occupies the lower 8 bits.
 /// * `FlagType::Numeric`: the flag is represented as a 16 bit integer.
 /// * `FlagType::Utf8`: the flag is fit into two bytes if possible. Hunspell and Nuspell restrict
 ///   UTF8 flags to UTF8 code-points representable in one or two bytes. Flags are just attributes,
-///   so using symbols, emoji or non-latin alphabets is unnecessary. Languages like `ar` (Arabic)
+///   so using symbols, emoji or non-Latin alphabets is unnecessary. Languages like `ar` (Arabic)
 ///   use the `FlagType::Numeric` encoding for example.
 ///
 /// Finally, a flag with a value of zero is not valid for any `FlagType`, so we can safely
@@ -228,7 +228,7 @@ impl FlagSet {
     /// Checks whether the given flag is contained in the flagset.
     #[inline]
     pub fn contains(&self, flag: &Flag) -> bool {
-        // See the docs for `slice::binary_search`: it's preferrable to `slice::contains` since
+        // See the docs for `slice::binary_search`: it's preferable to `slice::contains` since
         // it runs in logarithmic time rather than linear w.r.t. slice length. It requires that
         // the slice is sorted (true for flagsets, see `new`).
         self.inner.binary_search(flag).is_ok()
