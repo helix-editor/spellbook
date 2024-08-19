@@ -58,7 +58,7 @@ struct AffLineParser<'aff> {
 type Parser = for<'aff> fn(&mut AffLineParser<'aff>, &mut Lines<'aff>) -> ParseResult;
 
 // These parsers are only used for the `.aff` file's contents. The `.dic` file is handled ad-hoc.
-const AFF_PARSERS: [(&str, Parser); 48] = [
+const AFF_PARSERS: &[(&str, Parser)] = &[
     ("FLAG", parse_flag_type),
     // Flags
     ("FORBIDDENWORD", parse_forbidden_word_flag),
