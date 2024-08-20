@@ -1274,7 +1274,7 @@ pub(crate) fn parse_compound_rule(
         }
     }
 
-    Ok(rule)
+    Ok(rule.into())
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1523,7 +1523,7 @@ impl FromStr for Condition {
 
 #[cfg(test)]
 mod test {
-    use crate::{alloc::vec, flag, flagset};
+    use crate::{flag, flagset};
 
     use super::*;
 
@@ -1633,7 +1633,7 @@ mod test {
         use crate::aff::{CompoundRuleElement as Elem, CompoundRuleModifier::*};
 
         assert_eq!(
-            Ok(vec![
+            &[
                 Elem {
                     flag: flag!('a'),
                     modifier: None
@@ -1650,13 +1650,15 @@ mod test {
                     flag: flag!('d'),
                     modifier: None
                 },
-            ]),
+            ],
             parse_compound_rule("ab?c*d", FlagType::Short)
+                .unwrap()
+                .as_ref()
         );
 
         // Hello, en_GB.aff
         assert_eq!(
-            Ok(vec![
+            &[
                 Elem {
                     flag: flag!('#'),
                     modifier: Some(ZeroOrMore)
@@ -1669,12 +1671,14 @@ mod test {
                     flag: flag!('{'),
                     modifier: None
                 },
-            ]),
+            ],
             parse_compound_rule("#*0{", FlagType::Utf8)
+                .unwrap()
+                .as_ref()
         );
 
         assert_eq!(
-            Ok(vec![
+            &[
                 Elem {
                     flag: flag!(5),
                     modifier: None
@@ -1691,12 +1695,14 @@ mod test {
                     flag: flag!(99),
                     modifier: None,
                 },
-            ]),
+            ],
             parse_compound_rule("(5)(6)*(11)?(99)", FlagType::Numeric)
+                .unwrap()
+                .as_ref()
         );
 
         assert_eq!(
-            Ok(vec![
+            &[
                 Elem {
                     flag: flag!(10060),
                     modifier: None
@@ -1713,8 +1719,10 @@ mod test {
                     flag: flag!(17218),
                     modifier: None,
                 },
-            ]),
+            ],
             parse_compound_rule("(L')(D')*(H')?(BC)", FlagType::Long)
+                .unwrap()
+                .as_ref()
         );
 
         // Can't start with a wildcard

@@ -708,7 +708,7 @@ pub(crate) enum CompoundRuleModifier {
     ZeroOrMore,
 }
 
-pub(crate) type CompoundRule = Vec<CompoundRuleElement>;
+pub(crate) type CompoundRule = Box<[CompoundRuleElement]>;
 
 pub(crate) fn compound_rule_matches(pattern: &[CompoundRuleElement], data: &[Flag]) -> bool {
     use crate::alloc::vec;
@@ -757,16 +757,19 @@ pub(crate) fn compound_rule_matches(pattern: &[CompoundRuleElement], data: &[Fla
 /// TODO: talk about wildcards, show a compounding example.
 #[derive(Debug)]
 pub(crate) struct CompoundRuleTable {
-    rules: Vec<CompoundRule>,
+    rules: Box<[CompoundRule]>,
     all_flags: FlagSet,
 }
 
 impl From<Vec<CompoundRule>> for CompoundRuleTable {
     fn from(rules: Vec<CompoundRule>) -> Self {
-        let all_flags: Vec<_> = rules.iter().flatten().map(|el| el.flag).collect();
+        let all_flags: Vec<_> = rules
+            .iter()
+            .flat_map(|rule| rule.iter().map(|el| el.flag))
+            .collect();
 
         Self {
-            rules,
+            rules: rules.into_boxed_slice(),
             all_flags: all_flags.into(),
         }
     }
