@@ -1302,6 +1302,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         word: &str,
         start_pos: usize,
         num_parts: usize,
+        // TODO: can we remove the `&mut String` here the same way we did
+        // with `check_compound_with_rules_impl`?
         part: &mut String,
         allow_bad_forceucase: Forceucase,
     ) -> Option<CompoundingResult<'a>> {
@@ -1312,25 +1314,23 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             .map(|len| len.get())
             .unwrap_or(3) as usize;
 
-        let i = word
+        let start_byte = word
             .char_indices()
             .nth(min_num_chars)
             .map(|(byte_no, _ch)| byte_no)?;
-        let last_i = word
+        let end_byte = word
             .char_indices()
             .rev()
             .nth(min_num_chars)
             .map(|(byte_no, _ch)| byte_no)
-            .expect("nth above would return none if str was less than min_num_chars long");
-        if last_i < i {
-            return None;
-        }
+            .filter(|byte| *byte >= start_byte)?;
 
-        for (byte, _ch) in word[i..last_i].char_indices() {
+        for (i, _) in word[start_byte..=end_byte].char_indices() {
+            let i = i + start_byte;
             if let Some(result) = self.check_compound_classic::<MODE>(
                 word,
                 start_pos,
-                byte,
+                i,
                 num_parts,
                 part,
                 allow_bad_forceucase,
@@ -1338,7 +1338,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 return Some(result);
             }
 
-            // if let Some(result) = self.check_compound_with_pattern_replacements::<MODE>(word, start_pos, i, num_part, part, allow_bad_forceucase) {
+            // if let Some(result) = self.check_compound_with_pattern_replacements::<MODE>(
+            //     word,
+            //     start_pos,
+            //     i,
+            //     num_part,
+            //     part,
+            //     allow_bad_forceucase,
+            // ) {
             //     return Some(result);
             // }
         }
