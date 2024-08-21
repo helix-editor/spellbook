@@ -1814,9 +1814,7 @@ impl<'aff> CompoundingResult<'aff> {
 #[cfg(test)]
 mod test {
     use ahash::RandomState;
-    // Note: we need the once_cell crate rather than `core::cell::OnceCell` for the cell to be
-    // Sync + Send.
-    use once_cell::sync::OnceCell;
+    use once_cell::sync::Lazy;
 
     use super::*;
     use crate::*;
@@ -1824,14 +1822,11 @@ mod test {
     const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
     const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
 
-    fn en_us() -> &'static Dictionary<RandomState> {
-        // It's a little overkill to use a real dictionary for unit tests but it compiles so
-        // quickly that if we only compile it once it doesn't really slow down the test suite.
-        static EN_US: OnceCell<Dictionary<RandomState>> = OnceCell::new();
-        EN_US.get_or_init(|| {
-            Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, RandomState::new()).unwrap()
-        })
-    }
+    // It's a little overkill to use a real dictionary for unit tests but it compiles so
+    // quickly that if we only compile it once it doesn't really slow down the test suite.
+    static EN_US: Lazy<Dictionary<RandomState>> = Lazy::new(|| {
+        Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, RandomState::new()).unwrap()
+    });
 
     #[test]
     fn are_three_chars_equal_test() {
@@ -1874,32 +1869,32 @@ mod test {
 
     #[test]
     fn huge_word_is_rejected() {
-        assert!(!en_us().check(&"hello".repeat(MAX_WORD_LEN)));
+        assert!(!EN_US.check(&"hello".repeat(MAX_WORD_LEN)));
     }
 
     #[test]
     fn empty_word_is_accepted() {
-        assert!(en_us().check(""));
+        assert!(EN_US.check(""));
     }
 
     #[test]
     fn check_number_test() {
-        assert!(en_us().check("123456789"));
+        assert!(EN_US.check("123456789"));
     }
 
     #[test]
     fn check_exact_word_in_the_wordlist_test() {
         // adventure/DRSMZG (en_US.dic line 11021)
-        assert!(en_us().check("adventure"));
+        assert!(EN_US.check("adventure"));
     }
 
     #[test]
     fn check_exact_words_in_the_wordlist_with_break_patterns_test() {
         // en_US uses the default break patterns: `^-`, `-`, `-$`.
         // All of these words are stems in the dictionary.
-        assert!(en_us().check("-any"));
-        assert!(en_us().check("anyway-anywhere"));
-        assert!(en_us().check("ace-"));
+        assert!(EN_US.check("-any"));
+        assert!(EN_US.check("anyway-anywhere"));
+        assert!(EN_US.check("ace-"));
     }
 
     #[test]
@@ -1910,9 +1905,9 @@ mod test {
         // SFX V   0     ive        [^e]
 
         // concuss/V (en_US.dic line 17451)
-        assert!(en_us().check("concussive"));
+        assert!(EN_US.check("concussive"));
         // regenerate/V (en_US.dic line 38722)
-        assert!(en_us().check("regenerative"));
+        assert!(EN_US.check("regenerative"));
     }
 
     #[test]
@@ -1922,24 +1917,24 @@ mod test {
         // PFX A   0     re         .
 
         // route/ADSG (en_US.dic line 39619)
-        assert!(en_us().check("reroute"));
+        assert!(EN_US.check("reroute"));
     }
 
     #[test]
     fn check_other_casings() {
         // "drink" is a stem and should be recognized in any case.
-        assert!(en_us().check("drink"));
-        assert!(en_us().check("Drink"));
-        assert!(en_us().check("DRINK"));
+        assert!(EN_US.check("drink"));
+        assert!(EN_US.check("Drink"));
+        assert!(EN_US.check("DRINK"));
         // Achilles/M from en_US.dic line 116, should be recognized in titlecase and uppercase but
         // not lowercase.
-        assert!(!en_us().check("achilles"));
-        assert!(en_us().check("Achilles"));
-        assert!(en_us().check("ACHILLES"));
+        assert!(!EN_US.check("achilles"));
+        assert!(EN_US.check("Achilles"));
+        assert!(EN_US.check("ACHILLES"));
         // BBQ from en_US.dic line 810, should only be recognized in uppercase.
-        assert!(!en_us().check("bbq"));
-        assert!(!en_us().check("Bbq"));
-        assert!(en_us().check("BBQ"));
+        assert!(!EN_US.check("bbq"));
+        assert!(!EN_US.check("Bbq"));
+        assert!(EN_US.check("BBQ"));
     }
 
     #[test]
@@ -2006,7 +2001,7 @@ mod test {
     #[test]
     fn iconv_test() {
         // Magic quotes are converted by en_US.
-        assert!(en_us().check("can’t"));
+        assert!(EN_US.check("can’t"));
 
         // Both from en_ZA
         let aff = r#"
@@ -2029,7 +2024,7 @@ mod test {
     fn false_prefix_test() {
         // "un" is a prefix in en_US and "drink" is a stem. "drink"'s flags don't allow you to use
         // the "un" prefix though, so this word isn't correct.
-        assert!(!en_us().check("undrink"));
+        assert!(!EN_US.check("undrink"));
     }
 
     #[test]
@@ -2046,7 +2041,7 @@ mod test {
         // SFX D   0     ed         [aeiou]y
 
         // earth/UDYG (en_US.dic line 20997)
-        assert!(en_us().check("unearthed"));
+        assert!(EN_US.check("unearthed"));
     }
 
     #[test]
@@ -2183,14 +2178,14 @@ mod test {
     fn en_us_compounding() {
         // Examples given alongside the definitions of the compound rules in en_US.aff.
         // `n*1t`
-        assert!(en_us().check("10th"));
-        assert!(en_us().check("11th"));
-        assert!(en_us().check("12th"));
-        assert!(en_us().check("57614th"));
+        assert!(EN_US.check("10th"));
+        assert!(EN_US.check("11th"));
+        assert!(EN_US.check("12th"));
+        assert!(EN_US.check("57614th"));
         // `n*mp`
-        assert!(en_us().check("21st"));
-        assert!(en_us().check("22nd"));
-        assert!(en_us().check("123rd"));
-        assert!(en_us().check("1234th"));
+        assert!(EN_US.check("21st"));
+        assert!(EN_US.check("22nd"));
+        assert!(EN_US.check("123rd"));
+        assert!(EN_US.check("1234th"));
     }
 }
