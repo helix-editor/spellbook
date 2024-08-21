@@ -9,22 +9,29 @@ use hashbrown::raw::{RawIter, RawIterHash, RawTable};
 
 /// A collection of key-value pairs - similar to a HashMap - which allows for duplicate keys.
 ///
+/// The name is inspired by Erlang's ETS bag table type which also allows duplicate records.
 /// Entire key-value pairs may be duplicated. Conceptually this is a lot like
-/// `HashMap<K, Vec<V>>`. Multimaps are usually preferred in cases where there are few duplicates.
+/// `HashMap<K, Vec<V>>`. In other languages like C++ this is called a [multimap].
+/// Multimaps are usually preferred over `HashMap<K, Vec<V>>` in cases where there are few
+/// duplicates since the overhead of the Vec is unnecessary in most lookups.
 ///
-/// In Spellbook this type is used to represent the "WordList." Hunspell-like dictionaries are
+/// In Spellbook this type is used to represent the "WordList". Hunspell-like dictionaries are
 /// defined as sets of "stems" and a collection of "flags" that apply to that stem. Some
 /// dictionaries provide multiple definitions of a stem with different sets of flags. Naively
 /// merging these stems is not correct: the flags in one set might prevent an affix from
 /// compounding while another set of flags provides a different affix which supports compounding.
 ///
-/// Internally this is built on Hashbrown's "raw" API - a set of tools for building Swiss tables.
-pub struct HashMultiMap<K, V, S> {
+/// Internally this is built on Hashbrown's "raw" API - a set of tools for building [Swiss
+/// Tables].
+///
+/// [multimap]: https://en.cppreference.com/w/cpp/container/multimap
+/// [Swiss Tables]: https://abseil.io/blog/20180927-swisstables
+pub struct HashBag<K, V, S> {
     table: RawTable<(K, V)>,
     build_hasher: S,
 }
 
-impl<K, V, S> HashMultiMap<K, V, S>
+impl<K, V, S> HashBag<K, V, S>
 where
     K: Hash + Eq,
     S: BuildHasher,
@@ -92,7 +99,7 @@ where
     }
 }
 
-impl<K, V, S> Debug for HashMultiMap<K, V, S>
+impl<K, V, S> Debug for HashBag<K, V, S>
 where
     K: Debug + Hash + Eq,
     V: Debug,
@@ -131,7 +138,7 @@ where
 }
 */
 
-// make_hash`, `make_hasher`, and `Iter` are pulled from Hashbrown's `map` module
+// `make_hash`, `make_hasher`, and `Iter` are pulled from Hashbrown's `map` module
 // at `274c7bbd79398881e0225c0133e423ce60d7a8f1`.
 
 fn make_hash<Q, S>(hash_builder: &S, val: &Q) -> u64
@@ -227,7 +234,7 @@ mod test {
 
     #[test]
     fn insert_and_get_duplicate_keys() {
-        let mut map = HashMultiMap::with_hasher(ahash::RandomState::new());
+        let mut map = HashBag::with_hasher(ahash::RandomState::new());
         map.insert(1, 1);
         map.insert(5, 5);
         assert!(map.len() == 2);
@@ -242,7 +249,7 @@ mod test {
 
     #[test]
     fn string_keys() {
-        let mut map = HashMultiMap::with_hasher(ahash::RandomState::new());
+        let mut map = HashBag::with_hasher(ahash::RandomState::new());
         map.insert("hello".to_string(), "bob");
         map.insert("hello".to_string(), "world");
         map.insert("bye".to_string(), "bob");
@@ -258,8 +265,7 @@ mod test {
     fn iter() {
         // The iterator is currently unused but very small and could be useful for debugging.
         let pairs = &[(1, 1), (1, 2), (1, 3), (3, 1)];
-        let mut map =
-            HashMultiMap::with_capacity_and_hasher(pairs.len(), ahash::RandomState::new());
+        let mut map = HashBag::with_capacity_and_hasher(pairs.len(), ahash::RandomState::new());
         for (k, v) in pairs {
             map.insert(k, v);
         }

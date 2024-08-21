@@ -8,7 +8,7 @@ extern crate alloc;
 
 pub(crate) mod aff;
 pub(crate) mod checker;
-mod hash_multi_map;
+mod hash_bag;
 pub(crate) mod macros;
 
 pub use aff::parser::{ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource};
@@ -17,6 +17,7 @@ use crate::alloc::{boxed::Box, slice, vec::Vec};
 use aff::AffData;
 use checker::Checker;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
+use hash_bag::HashBag;
 
 /// TODO
 pub struct Dictionary<S: BuildHasher> {
@@ -240,7 +241,7 @@ impl fmt::Debug for FlagSet {
 }
 
 // We represent the stem as a boxed str to save on space.
-pub(crate) type WordList<S> = hash_multi_map::HashMultiMap<Box<str>, FlagSet, S>;
+pub(crate) type WordList<S> = HashBag<Box<str>, FlagSet, S>;
 
 // Ideally these would be an enum but const generics do not yet support custom enums.
 pub(crate) type AffixingMode = u8;
