@@ -49,4 +49,7 @@ brunch::benches!(
     Bench::new("Breaks (\"light-weight-like\")")
         .with_samples(SAMPLES)
         .run_seeded_with(en_us, |dict| dict.check(black_box("light-weight-like"))),
+    Bench::new("Compound word (\"20000th\")")
+        .with_samples(SAMPLES)
+        .run_seeded_with(en_us, |dict| dict.check(black_box("20000th"))),
 );

@@ -693,7 +693,7 @@ impl BreakTable {
 /// be a problem. Nuspell looks ahead in the rule string to find wildcards when matching which is
 /// not much more work but is more complicated to understand.
 ///
-/// We use a `Vec<CompoundRuleElement>` in Spellbook only for clarity. Few dictionaries use
+/// We use a `[CompoundRuleElement]` in Spellbook only for clarity. Few dictionaries use
 /// compound rules and those that do use them tend to use 12 or fewer entries in the table, with
 /// each rule being only a few elements long.
 #[derive(Debug, PartialEq, Eq)]
@@ -708,40 +708,50 @@ pub(crate) enum CompoundRuleModifier {
     ZeroOrMore,
 }
 
-pub(crate) type CompoundRule = Box<[CompoundRuleElement]>;
+type CompoundRule = Box<[CompoundRuleElement]>;
 
-pub(crate) fn compound_rule_matches(pattern: &[CompoundRuleElement], data: &[Flag]) -> bool {
+fn compound_rule_matches(pattern: &[CompoundRuleElement], data: &[&FlagSet]) -> bool {
     use crate::alloc::vec;
     use CompoundRuleModifier::*;
 
+    // TODO: try reimplementing with recursion instead of a Vec-based stack?
     let mut stack = vec![(0, 0)];
 
     while let Some((pattern_idx, data_idx)) = stack.pop() {
         if pattern_idx == pattern.len() {
-            if data_idx == data.len() {
-                return true;
-            }
-            return false;
+            return data_idx == data.len();
         }
 
+        // Nuspell does this a little differently. As mentioned in the `CompoundRuleElement` docs
+        // they don't preprocess the rules so the wildcards remain in the strings as `*`/`?`
+        // characters. It looks ahead (`pattern_idx + 1`) to find the modifier and when it skips
+        // over the modifier it jumps ahead by 2. We jump ahead by one below and use the modifier
+        // we parsed instead.
+
         let flag_matches = match data.get(data_idx) {
-            Some(flag) => *flag == pattern[pattern_idx].flag,
+            Some(flagset) => flagset.contains(&pattern[pattern_idx].flag),
             None => false,
         };
         match pattern[pattern_idx].modifier {
             Some(ZeroOrOne) => {
+                // Try as if the flag didn't match (allowed since the pattern may match 0 times).
                 stack.push((pattern_idx + 1, data_idx));
                 if flag_matches {
+                    // Try as if it did match: consume the pattern token and move on.
                     stack.push((pattern_idx + 1, data_idx + 1));
                 }
             }
             Some(ZeroOrMore) => {
+                // Try as if the flag didn't match (allowed since the pattern may match 0 times).
                 stack.push((pattern_idx + 1, data_idx));
                 if flag_matches {
+                    // Try as if it did match. Don't consume the pattern token because it can
+                    // match infinitely.
                     stack.push((pattern_idx, data_idx + 1));
                 }
             }
             None => {
+                // Without a modifier, only continue searching if the flag matched.
                 if flag_matches {
                     stack.push((pattern_idx + 1, data_idx + 1));
                 }
@@ -781,15 +791,28 @@ impl CompoundRuleTable {
         self.rules.is_empty()
     }
 
+    /// Checks whether the given flagset has any flags in common with flags used in any compound
+    /// rule.
     #[inline]
     pub fn has_any_flags(&self, flagset: &FlagSet) -> bool {
         self.all_flags.has_intersection(flagset)
     }
 
-    pub fn any_rule_matches(&self, flags: &[Flag]) -> bool {
+    /// Checks whether any rule in the compound table matches the sequence of flagsets.
+    ///
+    /// Also see Checker's `check_compound_with_rules_impl`. This function is passed a possible
+    /// interpretation of a compound. Consider "10th" and the en_US dictionary. The checker might
+    /// split up the word to be "1/n1" (L4) and "0th/pt" (L3). So this function would be passed
+    /// `&[flagset!['n', '1'], flagset!['p', 't']]`. The matching logic in compound_rule_matches
+    /// uses `FlagSet::contains` on these flagsets to look up whether the flagset matches the
+    /// pattern. en_US defines the compounding for this as `n*1t` - `n` being a flag on any single
+    /// digit, `*` meaning as many of those as you want (including none) and then a required `1`
+    /// flag and `t` flag - which match the input. compound_rule_matches tries different
+    /// interpretations of the modifiers to check if the pattern matches.
+    pub fn any_rule_matches(&self, flagsets: &[&FlagSet]) -> bool {
         self.rules
             .iter()
-            .any(|rule| compound_rule_matches(rule, flags))
+            .any(|rule| compound_rule_matches(rule, flagsets))
     }
 }
 
@@ -1230,46 +1253,48 @@ mod test {
         assert!(!suffix4.condition_matches(&stem4));
     }
 
-    fn flag_seq(input: &str) -> Vec<Flag> {
-        input.chars().map(|ch| flag!(ch)).collect()
+    fn compound_rule_matches(pattern: &[CompoundRuleElement], data: &str) -> bool {
+        let flagsets: Vec<_> = data.chars().map(|ch| flagset!(ch)).collect();
+        let borrowed: Vec<_> = flagsets.iter().collect();
+        super::compound_rule_matches(pattern, &borrowed)
     }
 
     #[test]
     fn compound_rule_matches_literal() {
         let rule = parser::parse_compound_rule("abc", FlagType::default()).unwrap();
 
-        assert!(compound_rule_matches(&rule, &flag_seq("abc")));
+        assert!(compound_rule_matches(&rule, "abc"));
 
-        assert!(!compound_rule_matches(&rule, &flag_seq("ac")));
-        assert!(!compound_rule_matches(&rule, &flag_seq("abcd")));
+        assert!(!compound_rule_matches(&rule, "ac"));
+        assert!(!compound_rule_matches(&rule, "abcd"));
     }
 
     #[test]
     fn compound_rule_matches_zero_or_one() {
         let rule = parser::parse_compound_rule("ab?c", FlagType::default()).unwrap();
 
-        assert!(compound_rule_matches(&rule, &flag_seq("ac")));
-        assert!(compound_rule_matches(&rule, &flag_seq("abc")));
+        assert!(compound_rule_matches(&rule, "ac"));
+        assert!(compound_rule_matches(&rule, "abc"));
 
-        assert!(!compound_rule_matches(&rule, &flag_seq("ab")));
-        assert!(!compound_rule_matches(&rule, &flag_seq("bc")));
-        assert!(!compound_rule_matches(&rule, &flag_seq("abb")));
-        assert!(!compound_rule_matches(&rule, &flag_seq("abbc")));
+        assert!(!compound_rule_matches(&rule, "ab"));
+        assert!(!compound_rule_matches(&rule, "bc"));
+        assert!(!compound_rule_matches(&rule, "abb"));
+        assert!(!compound_rule_matches(&rule, "abbc"));
     }
 
     #[test]
     fn compound_rule_matches_zero_or_more() {
         let rule = parser::parse_compound_rule("ab*c", FlagType::default()).unwrap();
 
-        assert!(compound_rule_matches(&rule, &flag_seq("ac")));
-        assert!(compound_rule_matches(&rule, &flag_seq("abc")));
-        assert!(compound_rule_matches(&rule, &flag_seq("abbc")));
-        assert!(compound_rule_matches(&rule, &flag_seq("abbbc")));
+        assert!(compound_rule_matches(&rule, "ac"));
+        assert!(compound_rule_matches(&rule, "abc"));
+        assert!(compound_rule_matches(&rule, "abbc"));
+        assert!(compound_rule_matches(&rule, "abbbc"));
         // etc.
 
-        assert!(!compound_rule_matches(&rule, &flag_seq("ab")));
-        assert!(!compound_rule_matches(&rule, &flag_seq("abb")));
-        assert!(!compound_rule_matches(&rule, &flag_seq("abbcc")));
+        assert!(!compound_rule_matches(&rule, "ab"));
+        assert!(!compound_rule_matches(&rule, "abb"));
+        assert!(!compound_rule_matches(&rule, "abbcc"));
     }
 
     #[test]
@@ -1277,12 +1302,12 @@ mod test {
         // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L384-L393>
         let rule = parser::parse_compound_rule("abc?de*ff", FlagType::default()).unwrap();
 
-        assert!(compound_rule_matches(&rule, &flag_seq("abdff")));
-        assert!(compound_rule_matches(&rule, &flag_seq("abcdff")));
-        assert!(compound_rule_matches(&rule, &flag_seq("abdeeff")));
-        assert!(compound_rule_matches(&rule, &flag_seq("abcdeff")));
+        assert!(compound_rule_matches(&rule, "abdff"));
+        assert!(compound_rule_matches(&rule, "abcdff"));
+        assert!(compound_rule_matches(&rule, "abdeeff"));
+        assert!(compound_rule_matches(&rule, "abcdeff"));
 
-        assert!(!compound_rule_matches(&rule, &flag_seq("abcdeeeefff")));
-        assert!(!compound_rule_matches(&rule, &flag_seq("qwerty")));
+        assert!(!compound_rule_matches(&rule, "abcdeeeefff"));
+        assert!(!compound_rule_matches(&rule, "qwerty"));
     }
 }

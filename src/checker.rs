@@ -2,7 +2,7 @@ use core::hash::BuildHasher;
 
 use crate::{
     aff::{AffData, Affix, AffixKind, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG},
-    alloc::string::String,
+    alloc::{string::String, vec::Vec},
     flag, has_flag, AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END,
     AT_COMPOUND_MIDDLE, FULL_WORD,
 };
@@ -1273,7 +1273,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         &self,
         word: &str,
         allow_bad_forceucase: Forceucase,
-    ) -> Option<CompoundingResult<'a>> {
+    ) -> Option<CompoundingResult<'_>> {
         if self.aff.options.compound_flag.is_some()
             || self.aff.options.compound_begin_flag.is_some()
             || self.aff.options.compound_middle_flag.is_some()
@@ -1290,9 +1290,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             }
         }
 
-        // if !self.aff.compound_rules.is_empty() {
-        //     todo!("check_compound_with_rules");
-        // }
+        if !self.aff.compound_rules.is_empty() {
+            return self.check_compound_with_rules(word, allow_bad_forceucase);
+        }
 
         None
     }
@@ -1511,6 +1511,116 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         count_appearances_of(word, &self.aff.compound_syllable_vowels)
     }
+
+    /// Checks whether the word might be a compound according to the aff's `COMPOUNDRULE` rules.
+    ///
+    /// This function recursively tries to slice up the word into parts which might exist in the
+    /// dictionary. For example for the compound "10th" it splits it up as "1" and "0th" or
+    /// compound "202nd" it splits it up as "2", "0" and "2nd". It tries to split up the word
+    /// in any permutation based on the minimum number of characters required for a compound part
+    /// (the `COMPOUNDMIN`) so many other splits are tried as well.
+    fn check_compound_with_rules(
+        &self,
+        word: &str,
+        forceucase: Forceucase,
+    ) -> Option<CompoundingResult<'_>> {
+        self.check_compound_with_rules_impl(word, &mut Vec::new(), 0, forceucase)
+    }
+
+    fn check_compound_with_rules_impl(
+        &self,
+        word: &str,
+        words_data: &mut Vec<&'a FlagSet>,
+        start_pos: usize,
+        forceucase: Forceucase,
+    ) -> Option<CompoundingResult<'_>> {
+        // Notes on differences from Nuspell's version of this function:
+        //
+        // It passes basically a `&mut String` with this function which is used with C++'s
+        // `basic_string::assign` to hold a substring and that is used to look up in the word
+        // list. We can avoid that by subslicing the `word: &str` with the same indices. See
+        // where we call `WordList::get_all` below.
+        //
+        // There's a `try_recursive` label that Nuspell jumps to in order to recurse or continue
+        // to the next iteration of the loop. We just do the recursion/continuing instead of
+        // jumping (since that doesn't exist in Rust). It also uses `AT_SCOPE_EXIT` to pop the
+        // part flags off of the `words_data` stack. We do that manually.
+        let min_chars = self
+            .aff
+            .options
+            .compound_min_length
+            .map(|n| n.get() as usize)
+            .unwrap_or(3);
+        // Note that this cannot be zero but we cast it to a usize for easier use.
+        debug_assert_ne!(min_chars, 0);
+
+        let start_byte = word[start_pos..]
+            .char_indices()
+            .nth(min_chars)
+            .map(|(byte, _)| byte + start_pos)?;
+        let end_byte = word
+            .char_indices()
+            .rev()
+            .nth(min_chars)
+            .map(|(byte, _)| byte)
+            .filter(|byte| *byte >= start_byte)?;
+
+        for (i, _) in word[start_byte..=end_byte].char_indices() {
+            // Adjust `i` to be the absolute index in the str.
+            let i = i + start_byte;
+            let Some((part1_stem, part1_flags)) =
+                self.aff
+                    .words
+                    .get_all(&word[start_pos..i])
+                    .find(|(_stem, flags)| {
+                        !has_flag!(flags, self.aff.options.need_affix_flag)
+                            && self.aff.compound_rules.has_any_flags(flags)
+                    })
+            else {
+                continue;
+            };
+            words_data.push(part1_flags);
+
+            let Some((_part2_stem, part2_flags)) =
+                self.aff.words.get_all(&word[i..]).find(|(_stem, flags)| {
+                    !has_flag!(flags, self.aff.options.need_affix_flag)
+                        && self.aff.compound_rules.has_any_flags(flags)
+                })
+            else {
+                // Pop part1_flags before recursing/continuing.
+                words_data.pop();
+                if let Some(result) =
+                    self.check_compound_with_rules_impl(word, words_data, i, forceucase)
+                {
+                    return Some(result);
+                } else {
+                    continue;
+                }
+            };
+
+            words_data.push(part2_flags);
+
+            if !self.aff.compound_rules.any_rule_matches(words_data)
+                || (forceucase.forbid()
+                    && has_flag!(part2_flags, self.aff.options.compound_force_uppercase_flag))
+            {
+                // Pop part2_flags and part1_flags before recursing/continuing.
+                words_data.pop();
+                words_data.pop();
+                if let Some(result) =
+                    self.check_compound_with_rules_impl(word, words_data, i, forceucase)
+                {
+                    return Some(result);
+                } else {
+                    continue;
+                }
+            }
+
+            return Some(CompoundingResult::new(part1_stem, part1_flags));
+        }
+
+        None
+    }
 }
 
 /// Checks if the input word is a number.
@@ -1687,6 +1797,18 @@ pub(crate) struct CompoundingResult<'aff> {
     num_words_modifier: u16,
     num_syllable_modifier: i16,
     affixed_and_modified: bool,
+}
+
+impl<'aff> CompoundingResult<'aff> {
+    pub fn new(stem: &'aff str, flags: &'aff FlagSet) -> Self {
+        Self {
+            stem,
+            flags,
+            num_words_modifier: Default::default(),
+            num_syllable_modifier: Default::default(),
+            affixed_and_modified: Default::default(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2026,5 +2148,20 @@ mod test {
         assert!(dict.check("pfx1stem2suf2"));
         assert!(dict.check("pfx1pfx2stem2suf2"));
         assert!(!dict.check("pfx2pfx1stem2suf2"));
+    }
+
+    #[test]
+    fn en_us_compounding() {
+        // Examples given alongside the definitions of the compound rules in en_US.aff.
+        // `n*1t`
+        assert!(en_us().check("10th"));
+        assert!(en_us().check("11th"));
+        assert!(en_us().check("12th"));
+        assert!(en_us().check("57614th"));
+        // `n*mp`
+        assert!(en_us().check("21st"));
+        assert!(en_us().check("22nd"));
+        assert!(en_us().check("123rd"));
+        assert!(en_us().check("1234th"));
     }
 }
