@@ -1949,8 +1949,12 @@ mod test {
         "#;
 
         // aussaß/Z from de_DE_frami.dic line 118186. It has both a "ss" and a "ß".
-        let dic = r#"1
-        aussaß/Z
+        // Äußern/SJm from line 195. It's title-cased.
+        // bass/Tpozm from line 120101. Doesn't use ß.
+        let dic = r#"3
+        aussaß
+        Äußern
+        bass
         "#;
 
         let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
@@ -1958,6 +1962,21 @@ mod test {
         assert!(dict.check("aussaß"));
         assert!(dict.check("Aussaß"));
         assert!(dict.check("AUSSASS"));
+
+        // Lowercase is not allowed but uppercase and title-case are.
+        assert!(!dict.check("äußern"));
+        assert!(dict.check("Äußern"));
+        assert!(dict.check("ÄUSSERN"));
+
+        assert!(dict.check("bass"));
+        assert!(dict.check("Bass"));
+        assert!(dict.check("BASS"));
+        assert!(!dict.check("baß"));
+
+        // Not in the dictionary:
+        assert!(!dict.check("bassa"));
+        assert!(!dict.check("Bassa"));
+        assert!(!dict.check("BASSA"));
     }
 
     #[test]
