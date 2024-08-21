@@ -178,7 +178,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
     let break_table = if cx.break_patterns.is_empty() {
         BreakTable::default()
     } else {
-        cx.break_patterns.into()
+        BreakTable::new(&cx.break_patterns)
     };
 
     // Collect everything into AffData.

@@ -611,22 +611,19 @@ pub(crate) struct BreakTable {
 
 impl Default for BreakTable {
     fn default() -> Self {
-        use crate::alloc::vec;
-
-        vec!["^-", "-", "-$"].into()
+        Self::new(&["^-", "-", "-$"])
     }
 }
 
-impl From<Vec<&str>> for BreakTable {
-    fn from(breaks: Vec<&str>) -> Self {
+impl BreakTable {
+    fn new(breaks: &[&str]) -> Self {
         let mut start = Vec::new();
         let mut middle = Vec::new();
         let mut end = Vec::new();
 
-        for b in breaks.into_iter() {
-            if b.is_empty() {
-                unreachable!("break patterns must not be empty");
-            }
+        for &b in breaks.iter() {
+            // Break patterns are parsed in a way that ensures they are non-empty.
+            assert!(!b.is_empty());
 
             if let Some(b) = b.strip_prefix('^') {
                 start.push(b.into());
@@ -649,9 +646,7 @@ impl From<Vec<&str>> for BreakTable {
             middle_word_breaks_last_idx,
         }
     }
-}
 
-impl BreakTable {
     #[inline]
     pub fn start_word_breaks(&self) -> impl Iterator<Item = &str> {
         self.table[..self.start_word_breaks_last_idx]
@@ -1124,7 +1119,7 @@ mod test {
     #[test]
     fn break_table_nuspell_unit_test() {
         // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L100-L127>
-        let table = BreakTable::from(vec![
+        let table = BreakTable::new(&[
             "bsd", "zxc", "asd", "^bar", "^zoo", "^abc", "car$", "yoyo$", "air$",
         ]);
 
