@@ -895,6 +895,55 @@ impl ConversionTable {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) enum Casing {
+    /// Turkish, Azerbaijani and Crimean Tartar. These locales require some extra replacement
+    /// logic for i-like characters.
+    Turkic,
+    /// Anything else. These locales can use the standard library's case mapping functions.
+    #[default]
+    Other,
+}
+
+impl Casing {
+    // Casing primitives.
+    // The standard library covers us most of the way but there's a locale-specific casing rule
+    // that applies to Turkic locales: Turkish, Azerbaijani and Crimean Tartar. In Turkic
+    // locales, "i" is uppercased as "İ" and "I" is lowercased as "ı".
+    // TODO: optimize. See the standard library's optimizations.
+
+    pub fn lowercase(&self, word: &str) -> String {
+        match self {
+            Self::Turkic => word.replace('I', "ı").to_lowercase(),
+            Self::Other => word.to_lowercase(),
+        }
+    }
+
+    pub fn uppercase(&self, word: &str) -> String {
+        match self {
+            Self::Turkic => word.replace('i', "İ").to_uppercase(),
+            Self::Other => word.to_uppercase(),
+        }
+    }
+
+    pub fn titlecase(&self, word: &str) -> String {
+        let mut output = String::with_capacity(word.len());
+        let mut chars = word.chars();
+        let first = chars.next().expect("non-empty input");
+        match self {
+            Self::Turkic if first == 'i' => output.push('İ'),
+            _ => output.extend(first.to_uppercase()),
+        }
+        for ch in chars {
+            match self {
+                Self::Turkic if ch == 'I' => output.push('ı'),
+                _ => output.extend(ch.to_lowercase()),
+            }
+        }
+        output
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct AffData<S: BuildHasher> {
     // checking options
@@ -959,6 +1008,7 @@ pub(crate) struct AffOptions {
     pub only_max_diff: bool,
     pub no_split_suggestions: bool,
     pub suggest_with_dots: bool,
+    pub casing: Casing,
 }
 
 impl Default for AffOptions {
@@ -1000,6 +1050,7 @@ impl Default for AffOptions {
             only_max_diff: Default::default(),
             no_split_suggestions: Default::default(),
             suggest_with_dots: Default::default(),
+            casing: Default::default(),
         }
     }
 }
@@ -1302,5 +1353,17 @@ mod test {
 
         assert!(!compound_rule_matches(&rule, "abcdeeeefff"));
         assert!(!compound_rule_matches(&rule, "qwerty"));
+    }
+
+    #[test]
+    fn casing_conversions_nuspell_unit_test() {
+        // Upstream: <https://github.com/nuspell/nuspell/blob/6e46eb31708003fa02796ee8dc0c9e57248ba141/tests/unit_test.cxx#L440-L448>
+        let word = "isTAnbulI";
+        assert_eq!(&Casing::default().lowercase(word), "istanbuli");
+        assert_eq!(&Casing::default().uppercase(word), "ISTANBULI");
+        assert_eq!(&Casing::default().titlecase(word), "Istanbuli");
+        assert_eq!(&Casing::Turkic.lowercase(word), "istanbulı");
+        assert_eq!(&Casing::Turkic.uppercase(word), "İSTANBULI");
+        assert_eq!(&Casing::Turkic.titlecase(word), "İstanbulı");
     }
 }

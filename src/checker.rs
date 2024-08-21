@@ -166,9 +166,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
             // Try two permutations: part1 as lowercase and part1 as titlecase with part2 always
             // being titlecase.
-            let part2 = to_titlecase(part2);
+            let part2 = self.aff.options.casing.titlecase(part2);
 
-            let mut lower = part1.to_lowercase();
+            let mut lower = self.aff.options.casing.lowercase(part1);
             lower.push_str(&part2);
             if let Some(flags) = self.check_word(
                 &lower,
@@ -178,7 +178,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 return Some(flags);
             }
 
-            let mut title = to_titlecase(part1);
+            let mut title = self.aff.options.casing.titlecase(part1);
             title.push_str(&part2);
             if let Some(flags) = self.check_word(
                 &title,
@@ -191,11 +191,11 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         // Special-case for sharps (ß).
         if self.aff.options.checksharps && word.contains("SS") {
-            if let Some(flags) = self.spell_sharps(&word.to_lowercase()) {
+            if let Some(flags) = self.spell_sharps(&self.aff.options.casing.lowercase(word)) {
                 return Some(flags);
             }
 
-            if let Some(flags) = self.spell_sharps(&to_titlecase(word)) {
+            if let Some(flags) = self.spell_sharps(&self.aff.options.casing.titlecase(word)) {
                 return Some(flags);
             }
         }
@@ -203,7 +203,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         // Try as title-case.
         if let Some(flags) = self
             .check_word(
-                &to_titlecase(word),
+                &self.aff.options.casing.titlecase(word),
                 Forceucase::AllowBadForceucase,
                 HiddenHomonym::default(),
             )
@@ -214,7 +214,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         // Try as lowercase.
         self.check_word(
-            &word.to_lowercase(),
+            &self.aff.options.casing.lowercase(word),
             Forceucase::AllowBadForceucase,
             HiddenHomonym::default(),
         )
@@ -286,9 +286,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         }
 
         // Then try lowercase.
-        // TODO: the stdlib only gets us so far. Casing is based on locale, for example see:
-        // <https://github.com/nuspell/nuspell/blob/6e46eb31708003fa02796ee8dc0c9e57248ba141/tests/unit_test.cxx#L440-L448>
-        let lower_word = word.to_lowercase();
+        let lower_word = self.aff.options.casing.lowercase(word);
         let flags = self.check_word(
             &lower_word,
             Forceucase::AllowBadForceucase,
@@ -1746,15 +1744,6 @@ fn classify_capitalization(word: &str) -> Capitalization {
     } else {
         Capitalization::Camel
     }
-}
-
-fn to_titlecase(s: &str) -> String {
-    // TODO: case conversion is locale specific (e.g. in tr_TR).
-    let mut output = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    output.extend(chars.next().expect("non empty input").to_uppercase());
-    output.extend(chars.flat_map(|ch| ch.to_lowercase()));
-    output
 }
 
 // TODO: rename?

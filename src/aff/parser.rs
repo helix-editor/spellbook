@@ -29,7 +29,9 @@ use crate::{
 
 use crate::{Flag, FlagSet};
 
-use super::{AffData, AffOptions, BreakTable, CompoundRule, Condition, FlagType, Prefix, Suffix};
+use super::{
+    AffData, AffOptions, BreakTable, Casing, CompoundRule, Condition, FlagType, Prefix, Suffix,
+};
 
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
 type ParseResult = Result<()>;
@@ -102,6 +104,7 @@ const AFF_PARSERS: &[(&str, Parser)] = &[
     ("IGNORE", parse_ignore_chars),
     ("KEY", parse_keyboard_closeness),
     ("TRY", parse_try_chars),
+    ("LANG", parse_language),
     // String pairs
     // TODO: phonetic replacements
     ("REP", parse_replacements),
@@ -421,6 +424,16 @@ fn parse_try_chars<'a>(cx: &mut AffLineParser<'a>, lines: &mut Lines<'a>) -> Par
     lines
         .take_exactly_one_word()
         .map(|word| cx.try_chars = word)
+}
+
+fn parse_language<'a>(cx: &mut AffLineParser<'a>, lines: &mut Lines<'a>) -> ParseResult {
+    lines.take_exactly_one_word().map(|word| {
+        cx.options.casing = if matches!(word, "tr" | "tr_TR" | "az" | "crh") {
+            Casing::Turkic
+        } else {
+            Casing::default()
+        }
+    })
 }
 
 fn parse_replacements<'aff>(cx: &mut AffLineParser<'aff>, lines: &mut Lines<'aff>) -> ParseResult {
