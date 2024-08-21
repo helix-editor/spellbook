@@ -1,10 +1,9 @@
 pub(crate) mod parser;
 
-use alloc::boxed::Box;
-
 use crate::{
     alloc::{
         borrow::Cow,
+        boxed::Box,
         string::{String, ToString},
         vec::Vec,
     },
@@ -1008,7 +1007,6 @@ impl Default for AffOptions {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::alloc::vec;
     use crate::*;
 
     #[test]

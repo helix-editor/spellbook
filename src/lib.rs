@@ -5,10 +5,6 @@
 #![no_std]
 
 extern crate alloc;
-use core::{cmp::Ordering, fmt, hash::BuildHasher};
-
-use aff::AffData;
-use alloc::{boxed::Box, slice, vec::Vec};
 
 pub(crate) mod aff;
 pub(crate) mod checker;
@@ -16,7 +12,11 @@ mod hash_multi_map;
 pub(crate) mod macros;
 
 pub use aff::parser::{ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource};
+
+use crate::alloc::{boxed::Box, slice, vec::Vec};
+use aff::AffData;
 use checker::Checker;
+use core::{cmp::Ordering, fmt, hash::BuildHasher};
 
 /// TODO
 pub struct Dictionary<S: BuildHasher> {
