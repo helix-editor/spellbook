@@ -1873,6 +1873,16 @@ mod test {
     }
 
     #[test]
+    fn huge_word_is_rejected() {
+        assert!(!en_us().check(&"hello".repeat(MAX_WORD_LEN)));
+    }
+
+    #[test]
+    fn empty_word_is_accepted() {
+        assert!(en_us().check(""));
+    }
+
+    #[test]
     fn check_number_test() {
         assert!(en_us().check("123456789"));
     }

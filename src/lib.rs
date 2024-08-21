@@ -114,9 +114,7 @@ impl From<Vec<Flag>> for FlagSet {
 
 impl FlagSet {
     pub fn empty() -> Self {
-        Self {
-            inner: Box::new([]),
-        }
+        Self::default()
     }
 
     #[inline]
@@ -254,6 +252,11 @@ pub(crate) const AT_COMPOUND_END: AffixingMode = 3;
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn flagset_display() {
+        assert_eq!("flagset![1]", &alloc::format!("{:?}", flagset![1]));
+    }
 
     #[test]
     fn flagset_from_iter() {

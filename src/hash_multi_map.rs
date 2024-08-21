@@ -24,32 +24,6 @@ pub struct HashMultiMap<K, V, S> {
     build_hasher: S,
 }
 
-impl<K, V, S> Default for HashMultiMap<K, V, S>
-where
-    K: Hash + Eq,
-    S: BuildHasher + Default,
-{
-    fn default() -> Self {
-        Self {
-            table: Default::default(),
-            build_hasher: Default::default(),
-        }
-    }
-}
-
-impl<K, V, S> HashMultiMap<K, V, S>
-where
-    K: Hash + Eq,
-    S: BuildHasher + Default,
-{
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            table: RawTable::with_capacity(capacity),
-            build_hasher: Default::default(),
-        }
-    }
-}
-
 impl<K, V, S> HashMultiMap<K, V, S>
 where
     K: Hash + Eq,
@@ -128,6 +102,34 @@ where
         f.debug_map().entries(self.iter()).finish()
     }
 }
+
+// Unused but maybe useful in the future:
+/*
+impl<K, V, S> Default for HashMultiMap<K, V, S>
+where
+    K: Hash + Eq,
+    S: BuildHasher + Default,
+{
+    fn default() -> Self {
+        Self {
+            table: Default::default(),
+            build_hasher: Default::default(),
+        }
+    }
+}
+impl<K, V, S> HashMultiMap<K, V, S>
+where
+    K: Hash + Eq,
+    S: BuildHasher + Default,
+{
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            table: RawTable::with_capacity(capacity),
+            build_hasher: Default::default(),
+        }
+    }
+}
+*/
 
 // make_hash`, `make_hasher`, and `Iter` are pulled from Hashbrown's `map` module
 // at `274c7bbd79398881e0225c0133e423ce60d7a8f1`.
@@ -250,5 +252,22 @@ mod test {
         assert_eq!(&["bob", "world"], hellos.as_slice());
 
         assert_eq!(Some(&"bob"), map.get("bye"));
+    }
+
+    #[test]
+    fn iter() {
+        // The iterator is currently unused but very small and could be useful for debugging.
+        let pairs = &[(1, 1), (1, 2), (1, 3), (3, 1)];
+        let mut map =
+            HashMultiMap::with_capacity_and_hasher(pairs.len(), ahash::RandomState::new());
+        for (k, v) in pairs {
+            map.insert(k, v);
+        }
+
+        assert_eq!(map.iter().len(), pairs.len());
+
+        let mut values: Vec<_> = map.iter().map(|(k, v)| (**k, **v)).collect();
+        values.sort_unstable();
+        assert_eq!(&values, pairs);
     }
 }
