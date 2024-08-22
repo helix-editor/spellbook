@@ -668,6 +668,102 @@ impl BreakTable {
     }
 }
 
+/// An ordered sequence of replacement pairs.
+///
+/// This is very similar to break patterns both in terms of the language used to describe them
+/// in aff files and in representation. It's an ordered sequence with the replacements that only
+/// apply:
+///
+/// 1. To entire words.
+/// 2. At the beginning of words.
+/// 3. At the end of words.
+/// 4. Anywhere in the word.
+///
+/// Otherwise though it's basically a `Vec<(String, String)>`.
+#[derive(Debug)]
+pub(crate) struct ReplacementTable {
+    table: Box<[(Box<str>, Box<str>)]>,
+    whole_word_replacements_last_idx: usize,
+    start_word_replacements_last_idx: usize,
+    end_word_replacements_last_idx: usize,
+}
+
+impl From<Vec<(&str, &str)>> for ReplacementTable {
+    fn from(replacements: Vec<(&str, &str)>) -> Self {
+        let mut whole = Vec::new();
+        let mut start = Vec::new();
+        let mut end = Vec::new();
+        let mut anywhere = Vec::new();
+
+        for (from, to) in replacements.into_iter() {
+            // Replacements are parsed in a way that ensures they are non-empty.
+            assert!(!from.is_empty() && !to.is_empty());
+
+            if let Some(from) = from.strip_prefix('^') {
+                if let Some(from) = from.strip_suffix('$') {
+                    // Starts with '^' and ends with '$' matches the whole word.
+                    // Seems to be rarely if ever used in practice.
+                    whole.push((from.into(), to.into()));
+                } else {
+                    // Only starts with '^' - applies to the start of a word.
+                    start.push((from.into(), to.into()));
+                }
+            } else if let Some(from) = from.strip_suffix('$') {
+                // Only ends with '$' - applies to the end of a word.
+                end.push((from.into(), to.into()));
+            } else {
+                // Doesn't have an anchor - applies anywhere in the word.
+                anywhere.push((from.into(), to.into()));
+            }
+        }
+
+        let mut table = whole;
+        let whole_word_replacements_last_idx = table.len();
+        table.append(&mut start);
+        let start_word_replacements_last_idx = table.len();
+        table.append(&mut end);
+        let end_word_replacements_last_idx = table.len();
+        table.append(&mut anywhere);
+
+        Self {
+            table: table.into_boxed_slice(),
+            whole_word_replacements_last_idx,
+            start_word_replacements_last_idx,
+            end_word_replacements_last_idx,
+        }
+    }
+}
+
+impl ReplacementTable {
+    #[inline]
+    pub fn whole_word_replacements(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.table[..self.whole_word_replacements_last_idx]
+            .iter()
+            .map(|(from, to)| (from.as_ref(), to.as_ref()))
+    }
+
+    #[inline]
+    pub fn start_word_replacements(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.table[self.whole_word_replacements_last_idx..self.start_word_replacements_last_idx]
+            .iter()
+            .map(|(from, to)| (from.as_ref(), to.as_ref()))
+    }
+
+    #[inline]
+    pub fn end_word_replacements(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.table[self.start_word_replacements_last_idx..self.end_word_replacements_last_idx]
+            .iter()
+            .map(|(from, to)| (from.as_ref(), to.as_ref()))
+    }
+
+    #[inline]
+    pub fn any_place_replacements(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.table[self.end_word_replacements_last_idx..]
+            .iter()
+            .map(|(from, to)| (from.as_ref(), to.as_ref()))
+    }
+}
+
 /// Individual rules of COMPOUNDRULE patterns.
 ///
 /// Compound rules are a very small regex-like language for describing how stems might be joined
@@ -966,7 +1062,7 @@ pub(crate) struct AffData<S: BuildHasher> {
     pub output_conversions: ConversionTable,
     // locale TODO
     // suggestion options
-    // replacements: ReplacementTable, TODO
+    pub replacements: ReplacementTable,
     // similarities: Vec<SimilarityGroup>,
     // phonetic_table: PhoneticTable,
     pub ignore_chars: String,

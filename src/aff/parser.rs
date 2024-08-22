@@ -191,6 +191,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         prefixes: cx.prefixes.into(),
         suffixes: cx.suffixes.into(),
         break_table,
+        replacements: cx.replacements.into(),
         input_conversions: cx.input_conversions.into(),
         output_conversions: cx.output_conversions.into(),
         compound_rules: cx.compound_rules.into(),
