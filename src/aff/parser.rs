@@ -195,7 +195,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         output_conversions: cx.output_conversions.into(),
         compound_rules: cx.compound_rules.into(),
         compound_syllable_vowels: cx.compound_syllable_vowels.to_string(),
-        // compound_patterns: todo!(),
+        compound_patterns: cx.compound_patterns.into(),
         ignore_chars: cx.ignore_chars.to_string(),
         keyboard_closeness: cx.keyboard_closeness.to_string(),
         try_chars: cx.try_chars.to_string(),

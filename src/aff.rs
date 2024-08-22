@@ -951,7 +951,7 @@ pub(crate) struct AffData<S: BuildHasher> {
     pub break_table: BreakTable,
     pub compound_rules: CompoundRuleTable,
     pub compound_syllable_vowels: String,
-    // compound_patterns: Vec<CompoundPattern>, TODO: parsing
+    pub compound_patterns: Box<[CompoundPattern]>,
     pub input_conversions: ConversionTable,
     pub output_conversions: ConversionTable,
     // locale TODO
