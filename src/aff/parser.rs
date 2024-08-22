@@ -30,7 +30,8 @@ use crate::{
 use crate::{Flag, FlagSet};
 
 use super::{
-    AffData, AffOptions, BreakTable, Casing, CompoundRule, Condition, FlagType, Prefix, Suffix,
+    AffData, AffOptions, BreakTable, Casing, CompoundPattern, CompoundRule, Condition, FlagType,
+    Prefix, Suffix,
 };
 
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
@@ -55,6 +56,7 @@ struct AffLineParser<'aff> {
     prefixes: Vec<Prefix>,
     suffixes: Vec<Suffix>,
     compound_rules: Vec<CompoundRule>,
+    compound_patterns: Vec<CompoundPattern>,
 }
 
 type Parser = for<'aff> fn(&mut AffLineParser<'aff>, &mut Lines<'aff>) -> ParseResult;
@@ -117,8 +119,7 @@ const AFF_PARSERS: &[(&str, Parser)] = &[
     ("PFX", parse_prefix_table),
     ("SFX", parse_suffix_table),
     ("COMPOUNDRULE", parse_compound_rule_table),
-    // TODO:
-    // ("CHECKCOMPOUNDPATTERN", parse_compound_pattern),
+    ("CHECKCOMPOUNDPATTERN", parse_compound_pattern_table),
 ];
 
 // TODO: encoding? Or just require all dictionaries to be UTF-8?
@@ -561,6 +562,14 @@ fn parse_compound_rule_table(cx: &mut AffLineParser, lines: &mut Lines) -> Parse
     lines.parse_table1("COMPOUNDRULE", |word| {
         let rule = parse_compound_rule(word, cx.flag_type)?;
         cx.compound_rules.push(rule);
+        Ok(())
+    })
+}
+
+fn parse_compound_pattern_table(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
+    lines.parse_table2("CHECKCOMPOUNDPATTERN", |str1, str2| {
+        let pattern = parse_compound_pattern(str1, str2, cx.flag_type)?;
+        cx.compound_patterns.push(pattern);
         Ok(())
     })
 }
@@ -1288,6 +1297,35 @@ pub(crate) fn parse_compound_rule(
     }
 
     Ok(rule.into())
+}
+
+fn parse_compound_pattern(
+    first_word_end: &str,
+    second_word_begin: &str,
+    flag_type: FlagType,
+) -> core::result::Result<CompoundPattern, ParseFlagError> {
+    let (first_word_end, first_word_flag) = split_word_and_flagset_naive(first_word_end);
+    let (second_word_begin, second_word_flag) = split_word_and_flagset_naive(second_word_begin);
+    let first_word_flag = (!first_word_flag.is_empty())
+        .then(|| parse_flag_from_str(flag_type, first_word_flag))
+        .transpose()?;
+    let second_word_flag = (!second_word_flag.is_empty())
+        .then(|| parse_flag_from_str(flag_type, second_word_flag))
+        .transpose()?;
+    let (first_word_end, match_first_only_unaffixed_or_zero_affixed) = if first_word_end == "0" {
+        ("", true)
+    } else {
+        (first_word_end, false)
+    };
+    let begin_end_chars = super::StrPair::new(first_word_end, second_word_begin);
+
+    Ok(CompoundPattern {
+        begin_end_chars,
+        _replacement: None,
+        first_word_flag,
+        second_word_flag,
+        match_first_only_unaffixed_or_zero_affixed,
+    })
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
