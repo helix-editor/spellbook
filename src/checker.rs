@@ -1505,13 +1505,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn count_syllables(&self, word: &str) -> usize {
         fn count_appearances_of(haystack: &str, needles: &str) -> usize {
-            let mut occurences = 0;
+            let mut occurrences = 0;
 
             for ch in haystack.chars() {
-                occurences += needles.matches(ch).count();
+                occurrences += needles.matches(ch).count();
             }
 
-            occurences
+            occurrences
         }
 
         count_appearances_of(word, &self.aff.compound_syllable_vowels)
