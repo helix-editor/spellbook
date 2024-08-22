@@ -3,15 +3,40 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { nixpkgs, rust-overlay, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs { inherit system; overlays = [ rust-overlay.overlays.default ]; };
-      in {
-        devShell = pkgs.callPackage ./shell.nix {};
-      });
+  outputs =
+    { nixpkgs, rust-overlay, ... }:
+    let
+      inherit (nixpkgs) lib;
+      forEachSystem = lib.genAttrs lib.systems.flakeExposed;
+    in
+    {
+      devShell = forEachSystem (
+        system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
+          toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        in
+        pkgs.mkShell {
+          nativeBuildInputs = with pkgs; [
+            (toolchain.override {
+              extensions = [
+                "rust-src"
+                "clippy"
+                "llvm-tools-preview"
+              ];
+            })
+            rust-analyzer
+            cargo-flamegraph
+            cargo-llvm-cov
+          ];
+          RUST_BACKTRACE = "1";
+        }
+      );
+    };
 }
