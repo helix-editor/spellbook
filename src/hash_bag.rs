@@ -70,19 +70,6 @@ where
         self.table.len()
     }
 
-    pub fn get<Q>(&self, k: &Q) -> Option<&V>
-    where
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        let hash = make_hash(&self.build_hasher, &k);
-        self.table.find(hash, |(p, _v)| p.borrow() == k).map(|b| {
-            // Here we tie the lifetime of self to the value.
-            let r = unsafe { b.as_ref() };
-            &r.1
-        })
-    }
-
     pub fn get_all<'map, 'key, Q>(&'map self, k: &'key Q) -> GetAllIter<'map, 'key, Q, K, V>
     where
         K: Borrow<Q>,
@@ -240,11 +227,12 @@ mod test {
         assert!(map.len() == 2);
         map.insert(1, 2);
         assert!(map.len() == 3);
-        assert!(map.get(&5) == Some(&5));
 
         let mut vals: Vec<_> = map.get_all(&1).map(|kv| kv.1).copied().collect();
         vals.sort_unstable();
         assert_eq!(&[1, 2], vals.as_slice());
+        let vals = map.get_all(&5).map(|kv| kv.1).copied().collect::<Vec<_>>();
+        assert_eq!(&[5], vals.as_slice());
     }
 
     #[test]
@@ -258,7 +246,8 @@ mod test {
         hellos.sort_unstable();
         assert_eq!(&["bob", "world"], hellos.as_slice());
 
-        assert_eq!(Some(&"bob"), map.get("bye"));
+        let vals: Vec<_> = map.get_all("bye").map(|kv| kv.1).copied().collect();
+        assert_eq!(&["bob"], vals.as_slice());
     }
 
     #[test]
