@@ -28,6 +28,9 @@ brunch::benches!(
     Bench::new("In-dictionary word (\"earth\")")
         .with_samples(SAMPLES)
         .run_seeded_with(en_us, |dict| dict.check(black_box("earth"))),
+    Bench::new("Number (\"8675,309.0\")")
+        .with_samples(SAMPLES)
+        .run_seeded_with(en_us, |dict| dict.check(black_box("8675,309.0"))),
     Bench::new("Word with suffix (\"earthly\")")
         .with_samples(SAMPLES)
         .run_seeded_with(en_us, |dict| dict.check(black_box("earthly"))),
