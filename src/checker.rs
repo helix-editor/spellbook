@@ -1277,13 +1277,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             || self.aff.options.compound_middle_flag.is_some()
             || self.aff.options.compound_last_flag.is_some()
         {
-            if let Some(result) = self.check_compound_impl::<MODE>(
-                word,
-                0,
-                0,
-                &mut String::new(),
-                allow_bad_forceucase,
-            ) {
+            // Note that Nuspell passes along basically a `&mut String`. We can avoid that by
+            // subslicing the word `&str`. Also see `check_compound_with_rules`.
+            if let Some(result) = self.check_compound_impl::<MODE>(word, 0, 0, allow_bad_forceucase)
+            {
                 return Some(result);
             }
         }
@@ -1300,9 +1297,6 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         word: &str,
         start_pos: usize,
         num_parts: usize,
-        // TODO: can we remove the `&mut String` here the same way we did
-        // with `check_compound_with_rules_impl`?
-        part: &mut String,
         allow_bad_forceucase: Forceucase,
     ) -> Option<CompoundingResult> {
         let min_num_chars = self
@@ -1330,37 +1324,48 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 start_pos,
                 i,
                 num_parts,
-                part,
                 allow_bad_forceucase,
             ) {
                 return Some(result);
             }
 
-            // if let Some(result) = self.check_compound_with_pattern_replacements::<MODE>(
-            //     word,
-            //     start_pos,
-            //     i,
-            //     num_part,
-            //     part,
-            //     allow_bad_forceucase,
-            // ) {
-            //     return Some(result);
-            // }
+            if let Some(result) = self.check_compound_with_pattern_replacements::<MODE>(
+                word,
+                start_pos,
+                i,
+                num_parts,
+                allow_bad_forceucase,
+            ) {
+                return Some(result);
+            }
         }
 
         None
     }
 
-    #[allow(clippy::ptr_arg)]
     fn check_compound_classic<const MODE: AffixingMode>(
         &self,
         _word: &str,
         _start_pos: usize,
         _i: usize,
         _num_parts: usize,
-        _part: &mut String,
         _allow_bad_forceucase: Forceucase,
     ) -> Option<CompoundingResult> {
+        // TODO.
+        None
+    }
+
+    fn check_compound_with_pattern_replacements<const MODE: AffixingMode>(
+        &self,
+        _word: &str,
+        _start_pos: usize,
+        _i: usize,
+        _num_parts: usize,
+        _allow_bad_forceucase: Forceucase,
+    ) -> Option<CompoundingResult> {
+        // TODO: find a dictionary that uses CHECKCOMPOUNDPATTERN with replacements.
+        // This function does nothing unless we have a compound pattern with a replacement (as
+        // you might guess from the function name).
         None
     }
 
