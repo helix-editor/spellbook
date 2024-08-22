@@ -1829,4 +1829,47 @@ mod test {
         // nn_NO
         assert_eq!(("Håkon".into(), flagset!['J', '\\']), parse("Håkon/J\\"));
     }
+
+    #[test]
+    fn basic_flag_parsing() {
+        let dic = "0";
+        let aff = r#"
+        FORBIDDENWORD a
+        CIRCUMFIX b
+        KEEPCASE c
+        NEEDAFFIX d
+        NOSUGGEST e
+        SUBSTANDARD f
+        WARN g
+        COMPOUNDFLAG h
+        COMPOUNDBEGIN i
+        COMPOUNDMIDDLE j
+        COMPOUNDLAST k
+        ONLYINCOMPOUND l
+        COMPOUNDPERMITFLAG m
+        COMPOUNDFORBIDFLAG n
+        COMPOUNDROOT o
+        FORCEUCASE p
+        "#;
+        let aff_data = parse(dic, aff, ahash::RandomState::new()).unwrap();
+        assert_eq!(aff_data.options.forbidden_word_flag, Some(flag!('a')));
+        assert_eq!(aff_data.options.circumfix_flag, Some(flag!('b')));
+        assert_eq!(aff_data.options.keep_case_flag, Some(flag!('c')));
+        assert_eq!(aff_data.options.need_affix_flag, Some(flag!('d')));
+        assert_eq!(aff_data.options.no_suggest_flag, Some(flag!('e')));
+        assert_eq!(aff_data.options.substandard_flag, Some(flag!('f')));
+        assert_eq!(aff_data.options.warn_flag, Some(flag!('g')));
+        assert_eq!(aff_data.options.compound_flag, Some(flag!('h')));
+        assert_eq!(aff_data.options.compound_begin_flag, Some(flag!('i')));
+        assert_eq!(aff_data.options.compound_middle_flag, Some(flag!('j')));
+        assert_eq!(aff_data.options.compound_last_flag, Some(flag!('k')));
+        assert_eq!(aff_data.options.only_in_compound_flag, Some(flag!('l')));
+        assert_eq!(aff_data.options.compound_permit_flag, Some(flag!('m')));
+        assert_eq!(aff_data.options.compound_forbid_flag, Some(flag!('n')));
+        assert_eq!(aff_data.options.compound_root_flag, Some(flag!('o')));
+        assert_eq!(
+            aff_data.options.compound_force_uppercase_flag,
+            Some(flag!('p'))
+        );
+    }
 }
