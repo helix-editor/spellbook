@@ -225,12 +225,13 @@ mod test {
         map.insert(1, 1);
         map.insert(5, 5);
         assert!(map.len() == 2);
+        map.insert(1, 1);
         map.insert(1, 2);
-        assert!(map.len() == 3);
+        assert!(map.len() == 4);
 
         let mut vals: Vec<_> = map.get(&1).map(|kv| kv.1).copied().collect();
         vals.sort_unstable();
-        assert_eq!(&[1, 2], vals.as_slice());
+        assert_eq!(&[1, 1, 2], vals.as_slice());
         let vals = map.get(&5).map(|kv| kv.1).copied().collect::<Vec<_>>();
         assert_eq!(&[5], vals.as_slice());
     }
