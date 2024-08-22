@@ -844,13 +844,13 @@ impl StrPair {
 
 #[derive(Debug)]
 pub(crate) struct CompoundPattern {
-    begin_end_chars: StrPair,
+    pub begin_end_chars: StrPair,
     // TODO: does any dictionary use this? It might be hard to parse since nl_NL and hu_HU add
     // comments at the end of the line with '#'s.
-    _replacement: Option<Box<str>>,
-    first_word_flag: Option<Flag>,
-    second_word_flag: Option<Flag>,
-    match_first_only_unaffixed_or_zero_affixed: bool,
+    pub _replacement: Option<Box<str>>,
+    pub first_word_flag: Option<Flag>,
+    pub second_word_flag: Option<Flag>,
+    pub match_first_only_unaffixed_or_zero_affixed: bool,
 }
 
 /// The conversion table used by ICONV and OCONV rules.
