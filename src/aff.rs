@@ -840,6 +840,16 @@ impl StrPair {
     pub fn right(&self) -> &str {
         &self.inner[self.partition..]
     }
+
+    #[inline]
+    pub fn full_str(&self) -> &str {
+        &self.inner
+    }
+
+    #[inline]
+    pub fn partition(&self) -> usize {
+        self.partition
+    }
 }
 
 #[derive(Debug)]
