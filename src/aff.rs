@@ -810,22 +810,25 @@ impl CompoundRuleTable {
     }
 }
 
-/// Storage for two `String`s within the allocation of one `String`.
+/// Storage for two strings within the allocation of one `Box<str>`.
 #[derive(Debug)]
-pub(crate) struct StringPair {
-    inner: String,
+pub(crate) struct StrPair {
+    inner: Box<str>,
     /// The `.len()` of the first string: the index of the partition between the first and
     /// second string.
     partition: usize,
 }
 
-impl StringPair {
+impl StrPair {
     pub fn new(left: &str, right: &str) -> Self {
-        let mut inner = left.to_string();
-        let partition = inner.len();
-        inner.push_str(right);
+        let mut string = left.to_string();
+        let partition = string.len();
+        string.push_str(right);
 
-        Self { inner, partition }
+        Self {
+            inner: string.into(),
+            partition,
+        }
     }
 
     #[inline]
@@ -837,19 +840,12 @@ impl StringPair {
     pub fn right(&self) -> &str {
         &self.inner[self.partition..]
     }
-
-    /// Get the partition point of the two strings. This is the same as the `.len()` of the
-    /// [`Self::left`] string.
-    #[inline]
-    pub fn left_len(&self) -> usize {
-        self.partition
-    }
 }
 
 #[derive(Debug)]
 pub(crate) struct CompoundPattern {
-    begin_end_chars: StringPair,
-    replacement: Option<String>,
+    begin_end_chars: StrPair,
+    replacement: Option<Box<str>>,
     first_word_flag: Option<Flag>,
     second_word_flag: Option<Flag>,
     match_first_only_unaffixed_or_zero_affixed: bool,
@@ -1154,15 +1150,13 @@ mod test {
 
     #[test]
     fn string_pair() {
-        let pair = StringPair::new("foo", "bar");
+        let pair = StrPair::new("foo", "bar");
         assert_eq!(pair.left(), "foo");
         assert_eq!(pair.right(), "bar");
-        assert_eq!(pair.left_len(), 3);
 
-        let pair = StringPair::new("", "");
+        let pair = StrPair::new("", "");
         assert_eq!(pair.left(), "");
         assert_eq!(pair.right(), "");
-        assert_eq!(pair.left_len(), 0);
     }
 
     #[test]
