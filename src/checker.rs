@@ -304,7 +304,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     }
 
     fn check_simple_word(&self, word: &str, hidden_homonym: HiddenHomonym) -> Option<&FlagSet> {
-        for (_stem, flags) in self.aff.words.get_all(word) {
+        for (_stem, flags) in self.aff.words.get(word) {
             if has_flag!(flags, self.aff.options.need_affix_flag) {
                 continue;
             }
@@ -391,7 +391,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            for (stem, flags) in self.aff.words.get_all(stem.as_ref()) {
+            for (stem, flags) in self.aff.words.get(stem.as_ref()) {
                 // Nuspell:
                 // if (!cross_valid_inner_outer(word_flags, e))
                 // 	continue;
@@ -454,7 +454,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            for (stem, flags) in self.aff.words.get_all(stem.as_ref()) {
+            for (stem, flags) in self.aff.words.get(stem.as_ref()) {
                 // Nuspell:
                 // if (!cross_valid_inner_outer(word_flags, e))
                 // 	continue;
@@ -583,7 +583,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                for (stem, flags) in self.aff.words.get_all(stem_without_suffix.as_ref()) {
+                for (stem, flags) in self.aff.words.get(stem_without_suffix.as_ref()) {
                     let valid_cross_prefix_outer = !has_needaffix_prefix
                         && flags.contains(&suffix.flag)
                         && (suffix.flags.contains(&prefix.flag) || flags.contains(&prefix.flag));
@@ -677,7 +677,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                for (stem, flags) in self.aff.words.get_all(stem2.as_ref()) {
+                for (stem, flags) in self.aff.words.get(stem2.as_ref()) {
                     if !flags.contains(&inner_suffix.flag) {
                         continue;
                     }
@@ -752,7 +752,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                for (stem, flags) in self.aff.words.get_all(stem2.as_ref()) {
+                for (stem, flags) in self.aff.words.get(stem2.as_ref()) {
                     if !flags.contains(&inner_prefix.flag) {
                         continue;
                     }
@@ -851,7 +851,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     // Check that the fully stripped word is a stem in the dictionary.
-                    for (stem, flags) in self.aff.words.get_all(stem3.as_ref()) {
+                    for (stem, flags) in self.aff.words.get(stem3.as_ref()) {
                         if !outer_suffix.flags.contains(&prefix.flag)
                             && !flags.contains(&prefix.flag)
                         {
@@ -988,7 +988,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    for (stem, flags) in self.aff.words.get_all(stem3.as_ref()) {
+                    for (stem, flags) in self.aff.words.get(stem3.as_ref()) {
                         if !inner_suffix.flags.contains(&prefix.flag)
                             && !flags.contains(&prefix.flag)
                         {
@@ -1094,7 +1094,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     // Check that the fully stripped word is a stem in the dictionary.
-                    for (stem, flags) in self.aff.words.get_all(stem3.as_ref()) {
+                    for (stem, flags) in self.aff.words.get(stem3.as_ref()) {
                         if !outer_prefix.flags.contains(&suffix.flag)
                             && !flags.contains(&suffix.flag)
                         {
@@ -1231,7 +1231,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    for (stem, flags) in self.aff.words.get_all(stem3.as_ref()) {
+                    for (stem, flags) in self.aff.words.get(stem3.as_ref()) {
                         if !inner_prefix.flags.contains(&suffix.flag)
                             && !flags.contains(&suffix.flag)
                         {
@@ -1380,7 +1380,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             _ => None,
         };
 
-        for (stem, flags) in self.aff.words.get_all(word) {
+        for (stem, flags) in self.aff.words.get(word) {
             if has_flag!(flags, self.aff.options.need_affix_flag) {
                 continue;
             }
@@ -1549,7 +1549,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         // It passes basically a `&mut String` with this function which is used with C++'s
         // `basic_string::assign` to hold a substring and that is used to look up in the word
         // list. We can avoid that by subslicing the `word: &str` with the same indices. See
-        // where we call `WordList::get_all` below.
+        // where we call `WordList::get` below.
         //
         // There's a `try_recursive` label that Nuspell jumps to in order to recurse or continue
         // to the next iteration of the loop. We just do the recursion/continuing instead of
@@ -1581,7 +1581,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             let Some((part1_stem, part1_flags)) =
                 self.aff
                     .words
-                    .get_all(&word[start_pos..i])
+                    .get(&word[start_pos..i])
                     .find(|(_stem, flags)| {
                         !has_flag!(flags, self.aff.options.need_affix_flag)
                             && self.aff.compound_rules.has_any_flags(flags)
@@ -1592,7 +1592,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             words_data.push(part1_flags);
 
             let Some((_part2_stem, part2_flags)) =
-                self.aff.words.get_all(&word[i..]).find(|(_stem, flags)| {
+                self.aff.words.get(&word[i..]).find(|(_stem, flags)| {
                     !has_flag!(flags, self.aff.options.need_affix_flag)
                         && self.aff.compound_rules.has_any_flags(flags)
                 })

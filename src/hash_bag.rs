@@ -70,7 +70,7 @@ where
         self.table.len()
     }
 
-    pub fn get_all<'map, 'key, Q>(&'map self, k: &'key Q) -> GetAllIter<'map, 'key, Q, K, V>
+    pub fn get<'map, 'key, Q>(&'map self, k: &'key Q) -> GetAllIter<'map, 'key, Q, K, V>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -198,7 +198,7 @@ where
         loop {
             match self.inner.next() {
                 Some(bucket) => {
-                    // SAFETY: the creator of the iterator (`get_all`) ensures that the reference
+                    // SAFETY: the creator of the iterator (`get`) ensures that the reference
                     // to the value outlives the RawTable. It also prevents concurrent
                     // modifications to the table.
                     let element = unsafe { bucket.as_ref() };
@@ -228,10 +228,10 @@ mod test {
         map.insert(1, 2);
         assert!(map.len() == 3);
 
-        let mut vals: Vec<_> = map.get_all(&1).map(|kv| kv.1).copied().collect();
+        let mut vals: Vec<_> = map.get(&1).map(|kv| kv.1).copied().collect();
         vals.sort_unstable();
         assert_eq!(&[1, 2], vals.as_slice());
-        let vals = map.get_all(&5).map(|kv| kv.1).copied().collect::<Vec<_>>();
+        let vals = map.get(&5).map(|kv| kv.1).copied().collect::<Vec<_>>();
         assert_eq!(&[5], vals.as_slice());
     }
 
@@ -242,11 +242,11 @@ mod test {
         map.insert("hello".to_string(), "world");
         map.insert("bye".to_string(), "bob");
 
-        let mut hellos: Vec<_> = map.get_all("hello").map(|kv| kv.1).copied().collect();
+        let mut hellos: Vec<_> = map.get("hello").map(|kv| kv.1).copied().collect();
         hellos.sort_unstable();
         assert_eq!(&["bob", "world"], hellos.as_slice());
 
-        let vals: Vec<_> = map.get_all("bye").map(|kv| kv.1).copied().collect();
+        let vals: Vec<_> = map.get("bye").map(|kv| kv.1).copied().collect();
         assert_eq!(&["bob"], vals.as_slice());
     }
 
