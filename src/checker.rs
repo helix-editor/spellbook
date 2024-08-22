@@ -1304,7 +1304,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         // with `check_compound_with_rules_impl`?
         part: &mut String,
         allow_bad_forceucase: Forceucase,
-    ) -> Option<CompoundingResult<'a>> {
+    ) -> Option<CompoundingResult> {
         let min_num_chars = self
             .aff
             .options
@@ -1360,14 +1360,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         _num_parts: usize,
         _part: &mut String,
         _allow_bad_forceucase: Forceucase,
-    ) -> Option<CompoundingResult<'a>> {
+    ) -> Option<CompoundingResult> {
         None
     }
 
     fn check_word_in_compound<const MODE: AffixingMode>(
         &self,
         word: &str,
-    ) -> Option<CompoundingResult<'a>> {
+    ) -> Option<CompoundingResult> {
         let compound_flag = match MODE {
             AT_COMPOUND_BEGIN => self.aff.options.compound_begin_flag,
             AT_COMPOUND_MIDDLE => self.aff.options.compound_middle_flag,
