@@ -37,7 +37,7 @@ use super::{
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
 type ParseResult = Result<()>;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct AffLineParser<'aff> {
     options: AffOptions,
     // options only used for parsing:
@@ -57,6 +57,30 @@ struct AffLineParser<'aff> {
     suffixes: Vec<Suffix>,
     compound_rules: Vec<CompoundRule>,
     compound_patterns: Vec<CompoundPattern>,
+}
+
+impl<'aff> Default for AffLineParser<'aff> {
+    fn default() -> Self {
+        use crate::alloc::vec;
+
+        Self {
+            options: Default::default(),
+            flag_type: Default::default(),
+            flag_aliases: Default::default(),
+            replacements: Default::default(),
+            input_conversions: Default::default(),
+            output_conversions: Default::default(),
+            break_patterns: vec!["^-", "-", "-$"],
+            compound_syllable_vowels: Default::default(),
+            ignore_chars: Default::default(),
+            try_chars: Default::default(),
+            keyboard_closeness: Default::default(),
+            prefixes: Default::default(),
+            suffixes: Default::default(),
+            compound_rules: Default::default(),
+            compound_patterns: Default::default(),
+        }
+    }
 }
 
 type Parser = for<'aff> fn(&mut AffLineParser<'aff>, &mut Lines<'aff>) -> ParseResult;
@@ -179,11 +203,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         words.insert(word, flagset);
     }
 
-    let break_table = if cx.break_patterns.is_empty() {
-        BreakTable::default()
-    } else {
-        BreakTable::new(&cx.break_patterns)
-    };
+    let break_table = BreakTable::new(&cx.break_patterns);
 
     // Collect everything into AffData.
     Ok(AffData {
@@ -469,6 +489,9 @@ fn parse_break_patterns<'aff>(
     cx: &mut AffLineParser<'aff>,
     lines: &mut Lines<'aff>,
 ) -> ParseResult {
+    // This field has a non-empty default. You can turn off the default break patterns by
+    // setting `BREAK 0` in the aff file.
+    cx.break_patterns.clear();
     lines.parse_table1("BREAK", |str| {
         cx.break_patterns.push(str);
         Ok(())
@@ -1873,5 +1896,20 @@ mod test {
             aff_data.options.compound_force_uppercase_flag,
             Some(flag!('p'))
         );
+    }
+
+    #[test]
+    fn break_pattern_parsing() {
+        let dic = "0";
+        let aff = "";
+        let aff_data = parse(dic, aff, ahash::RandomState::new()).unwrap();
+        // By default it's `^-`, `-` and `-$`.
+        assert_eq!(aff_data.break_table.table.len(), 3);
+        // Default break patterns can be removed by setting `BREAK 0`.
+
+        let dic = "0";
+        let aff = "BREAK 0";
+        let aff_data = parse(dic, aff, ahash::RandomState::new()).unwrap();
+        assert_eq!(aff_data.break_table.table.len(), 0);
     }
 }

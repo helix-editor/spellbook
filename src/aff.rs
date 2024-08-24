@@ -608,12 +608,6 @@ pub(crate) struct BreakTable {
     middle_word_breaks_last_idx: usize,
 }
 
-impl Default for BreakTable {
-    fn default() -> Self {
-        Self::new(&["^-", "-", "-$"])
-    }
-}
-
 impl BreakTable {
     fn new(breaks: &[&str]) -> Self {
         let mut start = Vec::new();
