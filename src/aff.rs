@@ -1460,6 +1460,11 @@ mod test {
     #[test]
     fn casing_conversions_nuspell_unit_test() {
         // Upstream: <https://github.com/nuspell/nuspell/blob/6e46eb31708003fa02796ee8dc0c9e57248ba141/tests/unit_test.cxx#L440-L448>
+        let word = "grüßEN";
+        assert_eq!(&Casing::default().lowercase(word), "grüßen");
+        assert_eq!(&Casing::default().uppercase(word), "GRÜSSEN");
+        assert_eq!(&Casing::default().titlecase(word), "Grüßen");
+
         let word = "isTAnbulI";
         assert_eq!(&Casing::default().lowercase(word), "istanbuli");
         assert_eq!(&Casing::default().uppercase(word), "ISTANBULI");
