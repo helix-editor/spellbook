@@ -1818,6 +1818,7 @@ mod test {
 
         assert_eq!(("stem".into(), flagset![]), parse("stem"));
         assert_eq!(("stem".into(), flagset![]), parse("stem/"));
+        assert_eq!(("fox-bax".into(), flagset!['!']), parse("fox-bax/!"));
         assert_eq!(
             ("stem".into(), flagset!['F', 'L', 'A', 'G', 'S']),
             parse("stem/FLAGS")
