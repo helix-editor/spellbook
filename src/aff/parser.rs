@@ -203,14 +203,12 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         words.insert(word, flagset);
     }
 
-    let break_table = BreakTable::new(&cx.break_patterns);
-
     // Collect everything into AffData.
     Ok(AffData {
         words,
         prefixes: cx.prefixes.into(),
         suffixes: cx.suffixes.into(),
-        break_table,
+        break_table: BreakTable::new(&cx.break_patterns),
         replacements: cx.replacements.into(),
         input_conversions: cx.input_conversions.into(),
         output_conversions: cx.output_conversions.into(),
