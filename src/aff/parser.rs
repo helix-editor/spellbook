@@ -175,14 +175,8 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedNumber(err)))?;
     let mut words = WordList::with_capacity_and_hasher(row_count, build_hasher);
 
-    for row in 1..=row_count {
+    while !lines.is_finished() {
         lines.advance_line();
-        if lines.is_finished() {
-            return Err(lines.error(ParseDictionaryErrorKind::MismatchedRowCount {
-                expected: row_count,
-                actual: row,
-            }));
-        }
 
         // NOTE: currently we ignore morphological fields.
         let word = match lines.next_word() {
