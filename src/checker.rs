@@ -1,7 +1,9 @@
 use core::hash::BuildHasher;
 
 use crate::{
-    aff::{AffData, Affix, AffixKind, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG},
+    aff::{
+        AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG,
+    },
     alloc::{string::String, vec::Vec},
     flag, has_flag, AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END,
     AT_COMPOUND_MIDDLE, FULL_WORD,
@@ -138,7 +140,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return Some(flags);
         }
 
-        self.check_compound::<FULL_WORD>(word, allow_bad_forceucase)
+        self.check_compound::<AT_COMPOUND_BEGIN>(word, allow_bad_forceucase)
             .map(|result| result.flags)
     }
 
@@ -1306,16 +1308,16 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             .map(|len| len.get())
             .unwrap_or(3) as usize;
 
-        let start_byte = word
+        let start_byte = word[start_pos..]
             .char_indices()
             .nth(min_num_chars)
-            .map(|(byte_no, _ch)| byte_no)?;
+            .map(|(byte, _)| byte + start_pos)?;
         let end_byte = word
             .char_indices()
             .rev()
+            .take_while(|(byte, _)| *byte >= start_byte)
             .nth(min_num_chars)
-            .map(|(byte_no, _ch)| byte_no)
-            .filter(|byte| *byte >= start_byte)?;
+            .map(|(byte, _)| byte)?;
 
         for (i, _) in word[start_byte..=end_byte].char_indices() {
             let i = i + start_byte;
@@ -1345,14 +1347,445 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     fn check_compound_classic<const MODE: AffixingMode>(
         &self,
-        _word: &str,
-        _start_pos: usize,
-        _i: usize,
-        _num_parts: usize,
-        _allow_bad_forceucase: Forceucase,
+        word: &str,
+        start_pos: usize,
+        i: usize,
+        mut num_part: usize,
+        forceucase: Forceucase,
     ) -> Option<CompoundingResult> {
-        // TODO.
-        None
+        // There's an odd bit of code in Nuspell here that declares `old_num_part` and sets it
+        // to `num_part` instead of declaring it below. The variable isn't used between here and
+        // the declaration below but Nuspell sets it here anyways. Nuspell must declare
+        // `old_num_part` here because it uses goto labels and it would cause a compilation error
+        // to declare it later, even though the variable is unused in the `goto` labels.
+
+        // Nuspell uses `goto` with similar names as these functions. Admittedly it's kinda nice -
+        // calling all of these other functions is a little verbose. We could use a macro to cut
+        // down on the text but I'd rather have the code be unfancy.
+        // TODO: investigate just using a big chain of `||`s.
+
+        let part1_entry = self.check_word_in_compound::<MODE>(&word[start_pos..i])?;
+        if has_flag!(part1_entry.flags, self.aff.options.forbidden_word_flag) {
+            return None;
+        }
+        if self.aff.options.compound_check_triple && are_three_chars_equal(word, i) {
+            return None;
+        }
+        if self.aff.options.compound_check_case && has_uppercase_at_compound_word_boundary(word, i)
+        {
+            return None;
+        }
+        num_part += part1_entry.num_words_modifier as usize;
+        if has_flag!(part1_entry.flags, self.aff.options.compound_root_flag) {
+            num_part += 1;
+        }
+
+        let Some(part2_entry) = self.check_word_in_compound::<AT_COMPOUND_END>(&word[i..]) else {
+            return self.check_compound_classic_try_recursive(
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        };
+        if has_flag!(part2_entry.flags, self.aff.options.forbidden_word_flag) {
+            return self.check_compound_classic_try_recursive(
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+        if self.is_compound_forbidden_by_patterns(word, i, &part1_entry, &part2_entry) {
+            return self.check_compound_classic_try_recursive(
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+        if self.aff.options.compound_check_duplicate && part1_entry == part2_entry {
+            return self.check_compound_classic_try_recursive(
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+        if self.aff.options.compound_check_rep && self.is_rep_similar(&word[start_pos..]) {
+            return self.check_compound_classic_try_recursive(
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+        if forceucase.forbid()
+            && has_flag!(
+                part2_entry.flags,
+                self.aff.options.compound_force_uppercase_flag
+            )
+        {
+            return self.check_compound_classic_try_recursive(
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+
+        let old_num_part = num_part;
+        num_part += part2_entry.num_words_modifier as usize;
+        if has_flag!(part2_entry.flags, self.aff.options.compound_root_flag) {
+            num_part += 1;
+        }
+        if self
+            .aff
+            .options
+            .compound_max_word_count
+            .is_some_and(|max| num_part > max.get().into())
+        {
+            // Nuspell: "is not Hungarian"
+            if self.aff.compound_syllable_vowels.is_empty() {
+                return None;
+            }
+
+            let mut num_syllable = self.count_syllables(word);
+            num_syllable += part2_entry.num_syllable_modifier as usize;
+            if num_syllable
+                > self
+                    .aff
+                    .options
+                    .compound_syllable_max
+                    .map(|n| n.get().into())
+                    .unwrap_or(0)
+            {
+                num_part = old_num_part;
+                return self.check_compound_classic_try_recursive(
+                    word,
+                    start_pos,
+                    i,
+                    num_part,
+                    forceucase,
+                    part1_entry,
+                );
+            }
+        }
+
+        Some(part1_entry)
+    }
+
+    fn check_compound_classic_try_recursive(
+        &self,
+        word: &str,
+        start_pos: usize,
+        i: usize,
+        num_part: usize,
+        forceucase: Forceucase,
+        part1_entry: CompoundingResult<'a>,
+    ) -> Option<CompoundingResult> {
+        let Some(part2_entry) =
+            self.check_compound_impl::<AT_COMPOUND_MIDDLE>(word, i, num_part + 1, forceucase)
+        else {
+            return self.check_compound_classic_try_simplified_triple(
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        };
+        if self.is_compound_forbidden_by_patterns(word, i, &part1_entry, &part2_entry) {
+            return self.check_compound_classic_try_simplified_triple(
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+        // Commented out in Nuspell:
+        // if self.aff.options.compound_check_duplicate && part1_entry == part2_entry {
+        //     return self.check_compound_classic_try_simplified_triple(
+        //         word,
+        //         start_pos,
+        //         i,
+        //         num_part,
+        //         forceucase,
+        //         part1_entry,
+        //     );
+        // }
+        if self.aff.options.compound_check_rep {
+            if self.is_rep_similar(&word[start_pos..]) {
+                return self.check_compound_classic_try_simplified_triple(
+                    word,
+                    start_pos,
+                    i,
+                    num_part,
+                    forceucase,
+                    part1_entry,
+                );
+            }
+            let part2_word = part2_entry.stem;
+            // TODO: do we need a bounds check? Use starts_with on the subslice of `&word[i..]`
+            // instead?
+            if &word[i..i + part2_word.len()] == part2_word
+                && self.is_rep_similar(&word[start_pos..i - start_pos + part2_word.len()])
+            {
+                return self.check_compound_classic_try_simplified_triple(
+                    word,
+                    start_pos,
+                    i,
+                    num_part,
+                    forceucase,
+                    part1_entry,
+                );
+            }
+        }
+
+        Some(part1_entry)
+    }
+
+    fn check_compound_classic_try_simplified_triple(
+        &self,
+        word: &str,
+        start_pos: usize,
+        i: usize,
+        num_part: usize,
+        forceucase: Forceucase,
+        part1_entry: CompoundingResult<'a>,
+    ) -> Option<CompoundingResult> {
+        if !self.aff.options.compound_simplified_triple {
+            return None;
+        }
+
+        let (prev_cp_idx, prev_cp) = prev_codepoint(word, i)?;
+        if prev_cp_idx == 0 {
+            return None;
+        }
+        let (_, prev_cp2) = prev_codepoint(word, i)?;
+        if prev_cp != prev_cp2 {
+            return None;
+        }
+        // TODO: pass a `&mut String` instead of allocating a new one?
+        let mut word_with_triple = String::from(word);
+        word_with_triple.insert(prev_cp_idx, prev_cp);
+        let part = &word_with_triple[i..];
+        let Some(part2_entry) = self.check_word_in_compound::<AT_COMPOUND_END>(part) else {
+            return self.check_compound_classic_try_simplified_triple_recursive(
+                word_with_triple,
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        };
+        if has_flag!(part2_entry.flags, self.aff.options.forbidden_word_flag) {
+            return self.check_compound_classic_try_simplified_triple_recursive(
+                word_with_triple,
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+        if self.is_compound_forbidden_by_patterns(&word_with_triple, i, &part1_entry, &part2_entry)
+        {
+            return self.check_compound_classic_try_simplified_triple_recursive(
+                word_with_triple,
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+        if self.aff.options.compound_check_duplicate && part1_entry == part2_entry {
+            return self.check_compound_classic_try_simplified_triple_recursive(
+                word_with_triple,
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+        // NOTE: `word` instead of `word_with_triple` is intentional here. Nuspell: "The added
+        // char above should not be checked for rep similarity, instead check the original word."
+        if self.aff.options.compound_check_rep && self.is_rep_similar(&word[start_pos..]) {
+            return self.check_compound_classic_try_simplified_triple_recursive(
+                word_with_triple,
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+        if forceucase.forbid()
+            && has_flag!(
+                part2_entry.flags,
+                self.aff.options.compound_force_uppercase_flag
+            )
+        {
+            return self.check_compound_classic_try_simplified_triple_recursive(
+                word_with_triple,
+                word,
+                start_pos,
+                i,
+                num_part,
+                forceucase,
+                part1_entry,
+            );
+        }
+
+        if self
+            .aff
+            .options
+            .compound_max_word_count
+            .is_some_and(|max| num_part > max.get().into())
+        {
+            return None;
+        }
+        Some(part1_entry)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_compound_classic_try_simplified_triple_recursive(
+        &self,
+        word_with_triple: String,
+        word: &str,
+        start_pos: usize,
+        i: usize,
+        num_part: usize,
+        forceucase: Forceucase,
+        part1_entry: CompoundingResult<'a>,
+    ) -> Option<CompoundingResult> {
+        let part2_entry = self.check_compound_impl::<AT_COMPOUND_MIDDLE>(
+            &word_with_triple,
+            i,
+            num_part + 1,
+            forceucase,
+        )?;
+        if self.is_compound_forbidden_by_patterns(&word_with_triple, i, &part1_entry, &part2_entry)
+        {
+            return None;
+        }
+        // Commented out in Nuspell:
+        // if self.aff.options.compound_check_duplicate && part1_entry == part2_entry {
+        //     return None;
+        // }
+        if self.aff.options.compound_check_rep {
+            if self.is_rep_similar(&word[start_pos..]) {
+                return None;
+            }
+
+            let part2_word = part2_entry.stem;
+            // TODO: do we need a bounds check? Use starts_with on the subslice of `&word[i..]`
+            // instead?
+            if &word[i..i + part2_word.len()] == part2_word
+                && self.is_rep_similar(&word[start_pos..i - start_pos + part2_word.len()])
+            {
+                return None;
+            }
+        }
+
+        Some(part1_entry)
+    }
+
+    // about the pub(crate) - supposedly the suggester will need this.
+    pub(crate) fn is_rep_similar(&self, word: &str) -> bool {
+        // Whole word replacements can be checked without allocating - we can just borrow the
+        // `to` from the replacement pair.
+        for (from, to) in self.aff.replacements.whole_word_replacements() {
+            if word == from
+                && self
+                    .check_simple_word(to, HiddenHomonym::SkipHiddenHomonym)
+                    .is_some()
+            {
+                return true;
+            }
+        }
+
+        // Otherwise we'll need to manipulate `word` and replace some characters. Create a
+        // `String` we'll use as a scratchpad and reuse that throughout. To avoid a needless
+        // allocation, first check whether there are any other replacements in the table:
+        if self.aff.replacements.has_only_whole_word_replacements() {
+            return false;
+        }
+
+        let mut scratch = String::from(word);
+
+        for (from, to) in self.aff.replacements.start_word_replacements() {
+            if word.starts_with(from) {
+                scratch.replace_range(..from.len(), to);
+                if self
+                    .check_simple_word(&scratch, HiddenHomonym::SkipHiddenHomonym)
+                    .is_some()
+                {
+                    return true;
+                }
+                scratch.replace_range(..to.len(), from);
+            }
+        }
+
+        debug_assert_eq!(&scratch, word);
+
+        for (from, to) in self.aff.replacements.end_word_replacements() {
+            let Some(idx) = word.len().checked_sub(from.len()) else {
+                continue;
+            };
+            if &word[idx..] == from {
+                scratch.replace_range(idx.., to);
+                if self
+                    .check_simple_word(&scratch, HiddenHomonym::SkipHiddenHomonym)
+                    .is_some()
+                {
+                    return true;
+                }
+                scratch.replace_range(idx.., from);
+            }
+        }
+
+        debug_assert_eq!(&scratch, word);
+
+        for (from, to) in self.aff.replacements.any_place_replacements() {
+            for (idx, _) in word.match_indices(from) {
+                scratch.replace_range(idx..idx + from.len(), to);
+                if self
+                    .check_simple_word(&scratch, HiddenHomonym::SkipHiddenHomonym)
+                    .is_some()
+                {
+                    return true;
+                }
+                scratch.replace_range(idx..idx + to.len(), from);
+            }
+        }
+
+        debug_assert_eq!(&scratch, word);
+
+        false
     }
 
     fn check_compound_with_pattern_replacements<const MODE: AffixingMode>(
@@ -1520,6 +1953,52 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         }
 
         count_appearances_of(word, &self.aff.compound_syllable_vowels)
+    }
+
+    fn is_compound_forbidden_by_patterns(
+        &self,
+        word: &str,
+        i: usize,
+        first: &CompoundingResult,
+        second: &CompoundingResult,
+    ) -> bool {
+        fn match_compound_pattern(
+            pattern: &CompoundPattern,
+            word: &str,
+            i: usize,
+            first: &CompoundingResult,
+            second: &CompoundingResult,
+        ) -> bool {
+            let partition = pattern.begin_end_chars.partition();
+            if i < partition {
+                return false;
+            }
+            if !word[i - partition..].starts_with(pattern.begin_end_chars.full_str()) {
+                return false;
+            }
+            if pattern
+                .first_word_flag
+                .is_some_and(|flag| !first.flags.contains(&flag))
+            {
+                return false;
+            }
+            if pattern
+                .second_word_flag
+                .is_some_and(|flag| !second.flags.contains(&flag))
+            {
+                return false;
+            }
+            if pattern.match_first_only_unaffixed_or_zero_affixed && first.affixed_and_modified {
+                return false;
+            }
+
+            true
+        }
+
+        self.aff
+            .compound_patterns
+            .iter()
+            .any(|pattern| match_compound_pattern(pattern, word, i, first, second))
     }
 
     /// Checks whether the word might be a compound according to the aff's `COMPOUNDRULE` rules.
@@ -1691,6 +2170,28 @@ fn are_three_chars_equal(word: &str, idx: usize) -> bool {
     false
 }
 
+/// Checks if the character at the byte index is uppercase and the prior character is alphabetic,
+/// or vice versa.
+///
+/// # Panics
+/// `idx` is assumed to be at a valid UTF-8 boundary within the word.
+fn has_uppercase_at_compound_word_boundary(word: &str, idx: usize) -> bool {
+    let ch = match word[idx..].chars().next() {
+        Some(c) => c,
+        None => return false,
+    };
+    let prev_ch = match word[..idx].chars().next_back() {
+        Some(c) => c,
+        None => return false,
+    };
+
+    (ch.is_uppercase() && prev_ch.is_alphabetic()) || (prev_ch.is_uppercase() && ch.is_alphabetic())
+}
+
+fn prev_codepoint(word: &str, byte: usize) -> Option<(usize, char)> {
+    word[..byte].char_indices().next_back()
+}
+
 /// The capitalization of a word.
 // Hunspell: <https://github.com/hunspell/hunspell/blob/8f9bb2957bfd74ca153fad96083a54488b518ca5/src/hunspell/csutil.hxx#L91-L96>
 // Nuspell: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/utils.hxx#L91-L104>
@@ -1791,7 +2292,7 @@ pub(crate) struct AffixForm<'aff> {
 }
 
 // TODO: docs.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct CompoundingResult<'aff> {
     stem: &'aff str,
     flags: &'aff FlagSet,

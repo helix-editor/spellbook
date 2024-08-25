@@ -756,6 +756,12 @@ impl ReplacementTable {
             .iter()
             .map(|(from, to)| (from.as_ref(), to.as_ref()))
     }
+
+    /// Whether the table only has whole word replacements.
+    #[inline]
+    pub fn has_only_whole_word_replacements(&self) -> bool {
+        self.whole_word_replacements_last_idx == self.table.len()
+    }
 }
 
 /// Individual rules of COMPOUNDRULE patterns.
