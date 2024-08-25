@@ -266,4 +266,23 @@ mod test {
         values.sort_unstable();
         assert_eq!(&values, pairs);
     }
+
+    #[test]
+    fn display() {
+        // Shameless coverage test, it brings the file to 100% :P
+        let pairs = &[(1, 1), (1, 1), (1, 2), (1, 3), (3, 1)];
+        let mut map = HashBag::with_capacity_and_hasher(
+            pairs.len(),
+            // We use a hard-coded seed to so that the display is deterministic.
+            ahash::RandomState::with_seeds(123, 456, 789, 1000),
+        );
+        for (k, v) in pairs {
+            map.insert(k, v);
+        }
+
+        assert_eq!(
+            "{1: 1, 1: 1, 1: 2, 1: 3, 3: 1}",
+            crate::alloc::format!("{map:?}").as_str()
+        );
+    }
 }
