@@ -30,8 +30,8 @@ use crate::{
 use crate::{Flag, FlagSet};
 
 use super::{
-    AffData, AffOptions, BreakTable, Casing, CompoundPattern, CompoundRule, Condition, FlagType,
-    Prefix, Suffix,
+    AffData, AffOptions, BreakTable, CaseHandling, CompoundPattern, CompoundRule, Condition,
+    FlagType, Prefix, Suffix,
 };
 
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
@@ -442,10 +442,10 @@ fn parse_try_chars<'a>(cx: &mut AffLineParser<'a>, lines: &mut Lines<'a>) -> Par
 
 fn parse_language<'a>(cx: &mut AffLineParser<'a>, lines: &mut Lines<'a>) -> ParseResult {
     lines.take_exactly_one_word().map(|word| {
-        cx.options.casing = if matches!(word, "tr" | "tr_TR" | "az" | "crh") {
-            Casing::Turkic
+        cx.options.case_handling = if matches!(word, "tr" | "tr_TR" | "az" | "crh") {
+            CaseHandling::Turkic
         } else {
-            Casing::default()
+            CaseHandling::default()
         }
     })
 }

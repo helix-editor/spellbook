@@ -168,9 +168,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
             // Try two permutations: part1 as lowercase and part1 as titlecase with part2 always
             // being titlecase.
-            let part2 = self.aff.options.casing.titlecase(part2);
+            let part2 = self.aff.options.case_handling.titlecase(part2);
 
-            let mut lower = self.aff.options.casing.lowercase(part1);
+            let mut lower = self.aff.options.case_handling.lowercase(part1);
             lower.push_str(&part2);
             if let Some(flags) = self.check_word(
                 &lower,
@@ -180,7 +180,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 return Some(flags);
             }
 
-            let mut title = self.aff.options.casing.titlecase(part1);
+            let mut title = self.aff.options.case_handling.titlecase(part1);
             title.push_str(&part2);
             if let Some(flags) = self.check_word(
                 &title,
@@ -193,11 +193,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         // Special-case for sharps (ß).
         if self.aff.options.checksharps && word.contains("SS") {
-            if let Some(flags) = self.spell_sharps(&self.aff.options.casing.lowercase(word)) {
+            if let Some(flags) = self.spell_sharps(&self.aff.options.case_handling.lowercase(word))
+            {
                 return Some(flags);
             }
 
-            if let Some(flags) = self.spell_sharps(&self.aff.options.casing.titlecase(word)) {
+            if let Some(flags) = self.spell_sharps(&self.aff.options.case_handling.titlecase(word))
+            {
                 return Some(flags);
             }
         }
@@ -205,7 +207,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         // Try as title-case.
         if let Some(flags) = self
             .check_word(
-                &self.aff.options.casing.titlecase(word),
+                &self.aff.options.case_handling.titlecase(word),
                 Forceucase::AllowBadForceucase,
                 HiddenHomonym::default(),
             )
@@ -216,7 +218,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         // Try as lowercase.
         self.check_word(
-            &self.aff.options.casing.lowercase(word),
+            &self.aff.options.case_handling.lowercase(word),
             Forceucase::AllowBadForceucase,
             HiddenHomonym::default(),
         )
@@ -288,7 +290,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         }
 
         // Then try lowercase.
-        let lower_word = self.aff.options.casing.lowercase(word);
+        let lower_word = self.aff.options.case_handling.lowercase(word);
         let flags = self.check_word(
             &lower_word,
             Forceucase::AllowBadForceucase,
