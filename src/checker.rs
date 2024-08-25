@@ -5,8 +5,8 @@ use crate::{
         AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG,
     },
     alloc::{string::String, vec::Vec},
-    flag, has_flag, AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END,
-    AT_COMPOUND_MIDDLE, FULL_WORD,
+    classify_casing, flag, has_flag, AffixingMode, Casing, Flag, FlagSet, AT_COMPOUND_BEGIN,
+    AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD,
 };
 
 // Nuspell limits the length of the input word:
@@ -2192,66 +2192,6 @@ fn has_uppercase_at_compound_word_boundary(word: &str, idx: usize) -> bool {
 
 fn prev_codepoint(word: &str, byte: usize) -> Option<(usize, char)> {
     word[..byte].char_indices().next_back()
-}
-
-/// The capitalization of a word.
-// Hunspell: <https://github.com/hunspell/hunspell/blob/8f9bb2957bfd74ca153fad96083a54488b518ca5/src/hunspell/csutil.hxx#L91-L96>
-// Nuspell: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/utils.hxx#L91-L104>
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) enum Casing {
-    /// All letters are lowercase. For example "foobar".
-    ///
-    /// Hunspell: `NOCAP`, Nuspell: `Casing::SMALL`
-    None,
-    /// First letter is capitalized only. For example "Foobar".
-    ///
-    /// Hunspell: `INITCAP`, Nuspell: `Casing::INIT_CAPITAL`
-    Init,
-    /// All letters are capitalized. For example "FOOBAR".
-    ///
-    /// Hunspell: `ALLCAP`, Nuspell: `Casing::ALL_CAPITAL`
-    All,
-    /// Some but not all letters are capitalized. The first letter is not capitalizated.
-    /// For example "fooBar".
-    ///
-    /// Hunspell: `HUHCAP`, Nuspell: `Casing::CAMEL`
-    Camel,
-    /// Some but not all letters are capitalized. The first letter is capitalized.
-    /// For example "FooBar".
-    ///
-    /// Hunspell: `HUHINITCAP`, Nuspell: `Casing::PASCAL`
-    Pascal,
-}
-
-fn classify_casing(word: &str) -> Casing {
-    let mut upper = 0;
-    let mut lower = 0;
-
-    for ch in word.chars() {
-        if ch.is_uppercase() {
-            upper += 1;
-        }
-        if ch.is_lowercase() {
-            lower += 1;
-        }
-    }
-
-    if upper == 0 {
-        return Casing::None;
-    }
-
-    // SAFETY: `word.chars()` has at least one element or we would have returned above.
-    let first_capital = word.chars().next().unwrap().is_uppercase();
-
-    if first_capital && upper == 1 {
-        Casing::Init
-    } else if lower == 0 {
-        Casing::All
-    } else if first_capital {
-        Casing::Pascal
-    } else {
-        Casing::Camel
-    }
 }
 
 // TODO: rename?
