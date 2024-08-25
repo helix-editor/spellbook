@@ -99,7 +99,7 @@ const AFF_PARSERS: &[(&str, Parser)] = &[
     ("COMPOUNDFLAG", parse_compound_flag),
     ("COMPOUNDBEGIN", parse_compound_begin_flag),
     ("COMPOUNDMIDDLE", parse_compound_middle_flag),
-    ("COMPOUNDLAST", parse_compound_last_flag),
+    ("COMPOUNDEND", parse_compound_last_flag),
     ("ONLYINCOMPOUND", parse_only_in_compound_flag),
     ("COMPOUNDPERMITFLAG", parse_compound_permit_flag),
     ("COMPOUNDFORBIDFLAG", parse_compound_forbid_flag),
@@ -1861,7 +1861,7 @@ mod test {
         COMPOUNDFLAG h
         COMPOUNDBEGIN i
         COMPOUNDMIDDLE j
-        COMPOUNDLAST k
+        COMPOUNDEND k
         ONLYINCOMPOUND l
         COMPOUNDPERMITFLAG m
         COMPOUNDFORBIDFLAG n
