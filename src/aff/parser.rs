@@ -24,14 +24,14 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    WordList,
+    has_flag, Casing, WordList,
 };
 
 use crate::{Flag, FlagSet};
 
 use super::{
     AffData, AffOptions, BreakTable, CaseHandling, CompoundPattern, CompoundRule, Condition,
-    FlagType, Prefix, Suffix,
+    FlagType, Prefix, Suffix, HIDDEN_HOMONYM_FLAG,
 };
 
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
@@ -194,6 +194,16 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
 
         let (word, flagset) = parse_dic_line(word, cx.flag_type, &cx.flag_aliases, cx.ignore_chars)
             .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
+        // Normalize out Pascal and Camel cases (and uppercase when there are no flags) by
+        // converting them to titlecase and setting the hidden homonym flag.
+        let casing = crate::classify_casing(&word);
+        if (matches!(casing, Casing::Pascal | Casing::Camel)
+            && !has_flag!(flagset, cx.options.forbidden_word_flag))
+            || (matches!(casing, Casing::All) && !flagset.is_empty())
+        {
+            let word = cx.options.case_handling.titlecase(&word).into();
+            words.insert(word, flagset.with_flag(HIDDEN_HOMONYM_FLAG));
+        }
         words.insert(word, flagset);
     }
 

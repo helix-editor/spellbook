@@ -232,6 +232,12 @@ impl FlagSet {
         // the slice is sorted (true for flagsets, see `new`).
         self.inner.binary_search(flag).is_ok()
     }
+
+    pub fn with_flag(&self, flag: Flag) -> Self {
+        let mut flagset = Vec::from(self.inner.clone());
+        flagset.push(flag);
+        flagset.into()
+    }
 }
 
 impl fmt::Debug for FlagSet {
