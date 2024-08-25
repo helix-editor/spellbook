@@ -1316,7 +1316,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             .char_indices()
             .rev()
             .take_while(|(byte, _)| *byte >= start_byte)
-            .nth(min_num_chars)
+            .nth(min_num_chars - 1)
             .map(|(byte, _)| byte)?;
 
         for (i, _) in word[start_byte..=end_byte].char_indices() {
@@ -2050,7 +2050,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         let end_byte = word
             .char_indices()
             .rev()
-            .nth(min_chars)
+            .nth(min_chars - 1)
             .map(|(byte, _)| byte)
             .filter(|byte| *byte >= start_byte)?;
 
