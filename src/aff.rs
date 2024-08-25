@@ -1087,7 +1087,7 @@ pub(crate) struct AffOptions {
     pub compound_flag: Option<Flag>,
     pub compound_begin_flag: Option<Flag>,
     pub compound_middle_flag: Option<Flag>,
-    pub compound_last_flag: Option<Flag>,
+    pub compound_end_flag: Option<Flag>,
     // These `Option<NonZeroU16>`s represent counts or sizes and a zero value isn't accepted.
     // Being the same as a flag's representation is coincidence.
     pub compound_min_length: Option<NonZeroU16>,
@@ -1131,7 +1131,7 @@ impl Default for AffOptions {
             compound_flag: Default::default(),
             compound_begin_flag: Default::default(),
             compound_middle_flag: Default::default(),
-            compound_last_flag: Default::default(),
+            compound_end_flag: Default::default(),
             compound_min_length: Default::default(),
             compound_max_word_count: Default::default(),
             compound_permit_flag: Default::default(),

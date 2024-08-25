@@ -527,7 +527,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 false
             }
             AT_COMPOUND_END
-                if !is_compound && !has_flag!(flags, self.aff.options.compound_last_flag) =>
+                if !is_compound && !has_flag!(flags, self.aff.options.compound_end_flag) =>
             {
                 false
             }
@@ -1277,7 +1277,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         if self.aff.options.compound_flag.is_some()
             || self.aff.options.compound_begin_flag.is_some()
             || self.aff.options.compound_middle_flag.is_some()
-            || self.aff.options.compound_last_flag.is_some()
+            || self.aff.options.compound_end_flag.is_some()
         {
             // Note that Nuspell passes along basically a `&mut String`. We can avoid that by
             // subslicing the word `&str`. Also see `check_compound_with_rules`.
@@ -1809,7 +1809,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         let compound_flag = match MODE {
             AT_COMPOUND_BEGIN => self.aff.options.compound_begin_flag,
             AT_COMPOUND_MIDDLE => self.aff.options.compound_middle_flag,
-            AT_COMPOUND_END => self.aff.options.compound_last_flag,
+            AT_COMPOUND_END => self.aff.options.compound_end_flag,
             _ => None,
         };
 

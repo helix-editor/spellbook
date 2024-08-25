@@ -99,7 +99,7 @@ const AFF_PARSERS: &[(&str, Parser)] = &[
     ("COMPOUNDFLAG", parse_compound_flag),
     ("COMPOUNDBEGIN", parse_compound_begin_flag),
     ("COMPOUNDMIDDLE", parse_compound_middle_flag),
-    ("COMPOUNDEND", parse_compound_last_flag),
+    ("COMPOUNDEND", parse_compound_end_flag),
     ("ONLYINCOMPOUND", parse_only_in_compound_flag),
     ("COMPOUNDPERMITFLAG", parse_compound_permit_flag),
     ("COMPOUNDFORBIDFLAG", parse_compound_forbid_flag),
@@ -284,10 +284,10 @@ fn parse_compound_middle_flag(cx: &mut AffLineParser, lines: &mut Lines) -> Pars
         .map(|flag| cx.options.compound_middle_flag = Some(flag))
 }
 
-fn parse_compound_last_flag(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
+fn parse_compound_end_flag(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
     lines
         .parse_flag(cx)
-        .map(|flag| cx.options.compound_last_flag = Some(flag))
+        .map(|flag| cx.options.compound_end_flag = Some(flag))
 }
 
 fn parse_only_in_compound_flag(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
@@ -1879,7 +1879,7 @@ mod test {
         assert_eq!(aff_data.options.compound_flag, Some(flag!('h')));
         assert_eq!(aff_data.options.compound_begin_flag, Some(flag!('i')));
         assert_eq!(aff_data.options.compound_middle_flag, Some(flag!('j')));
-        assert_eq!(aff_data.options.compound_last_flag, Some(flag!('k')));
+        assert_eq!(aff_data.options.compound_end_flag, Some(flag!('k')));
         assert_eq!(aff_data.options.only_in_compound_flag, Some(flag!('l')));
         assert_eq!(aff_data.options.compound_permit_flag, Some(flag!('m')));
         assert_eq!(aff_data.options.compound_forbid_flag, Some(flag!('n')));
