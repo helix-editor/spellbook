@@ -121,12 +121,12 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     }
 
     fn spell_casing(&self, word: &str) -> Option<&FlagSet> {
-        match classify_capitalization(word) {
-            Capitalization::None | Capitalization::Camel | Capitalization::Pascal => {
+        match classify_casing(word) {
+            Casing::None | Casing::Camel | Casing::Pascal => {
                 self.check_word(word, Forceucase::default(), HiddenHomonym::default())
             }
-            Capitalization::All => self.spell_casing_upper(word),
-            Capitalization::Init => self.spell_casing_title(word),
+            Casing::All => self.spell_casing_upper(word),
+            Casing::Init => self.spell_casing_title(word),
         }
     }
 
@@ -2198,7 +2198,7 @@ fn prev_codepoint(word: &str, byte: usize) -> Option<(usize, char)> {
 // Hunspell: <https://github.com/hunspell/hunspell/blob/8f9bb2957bfd74ca153fad96083a54488b518ca5/src/hunspell/csutil.hxx#L91-L96>
 // Nuspell: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/utils.hxx#L91-L104>
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) enum Capitalization {
+pub(crate) enum Casing {
     /// All letters are lowercase. For example "foobar".
     ///
     /// Hunspell: `NOCAP`, Nuspell: `Casing::SMALL`
@@ -2223,7 +2223,7 @@ pub(crate) enum Capitalization {
     Pascal,
 }
 
-fn classify_capitalization(word: &str) -> Capitalization {
+fn classify_casing(word: &str) -> Casing {
     let mut upper = 0;
     let mut lower = 0;
 
@@ -2237,20 +2237,20 @@ fn classify_capitalization(word: &str) -> Capitalization {
     }
 
     if upper == 0 {
-        return Capitalization::None;
+        return Casing::None;
     }
 
     // SAFETY: `word.chars()` has at least one element or we would have returned above.
     let first_capital = word.chars().next().unwrap().is_uppercase();
 
     if first_capital && upper == 1 {
-        Capitalization::Init
+        Casing::Init
     } else if lower == 0 {
-        Capitalization::All
+        Casing::All
     } else if first_capital {
-        Capitalization::Pascal
+        Casing::Pascal
     } else {
-        Capitalization::Camel
+        Casing::Camel
     }
 }
 
@@ -2363,12 +2363,12 @@ mod test {
     fn classify_casing_nuspell_unit_test() {
         // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L451-L459>
 
-        assert_eq!(Capitalization::None, classify_capitalization(""));
-        assert_eq!(Capitalization::None, classify_capitalization("здраво"));
-        assert_eq!(Capitalization::Init, classify_capitalization("Здраво"));
-        assert_eq!(Capitalization::All, classify_capitalization("ЗДРАВО"));
-        assert_eq!(Capitalization::Camel, classify_capitalization("здРаВо"));
-        assert_eq!(Capitalization::Pascal, classify_capitalization("ЗдрАво"));
+        assert_eq!(Casing::None, classify_casing(""));
+        assert_eq!(Casing::None, classify_casing("здраво"));
+        assert_eq!(Casing::Init, classify_casing("Здраво"));
+        assert_eq!(Casing::All, classify_casing("ЗДРАВО"));
+        assert_eq!(Casing::Camel, classify_casing("здРаВо"));
+        assert_eq!(Casing::Pascal, classify_casing("ЗдрАво"));
     }
 
     #[test]
