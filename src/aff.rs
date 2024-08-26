@@ -7,7 +7,7 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    has_flag, AffixingMode, Flag, FlagSet, WordList, AT_COMPOUND_END, FULL_WORD,
+    has_flag, AffixingMode, Flag, FlagSet, WordList, AT_COMPOUND_BEGIN, AT_COMPOUND_END, FULL_WORD,
 };
 
 use core::{hash::BuildHasher, marker::PhantomData, num::NonZeroU16, str::Chars};
@@ -210,7 +210,7 @@ impl AffixKind for Pfx {
             return false;
         }
 
-        if MODE == FULL_WORD && has_flag!(prefix.flags, options.compound_forbid_flag) {
+        if MODE != FULL_WORD && has_flag!(prefix.flags, options.compound_forbid_flag) {
             return false;
         }
 
@@ -230,11 +230,11 @@ impl AffixKind for Sfx {
             return false;
         }
 
-        if MODE == AT_COMPOUND_END && !has_flag!(suffix.flags, options.compound_permit_flag) {
+        if MODE == AT_COMPOUND_BEGIN && !has_flag!(suffix.flags, options.compound_permit_flag) {
             return false;
         }
 
-        if MODE == FULL_WORD && has_flag!(suffix.flags, options.compound_forbid_flag) {
+        if MODE != FULL_WORD && has_flag!(suffix.flags, options.compound_forbid_flag) {
             return false;
         }
 
