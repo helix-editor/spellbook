@@ -938,8 +938,8 @@ impl<'text> Lines<'text> {
             line_number: self
                 .lines
                 .peek()
-                .map(|(line_number, _line)| line_number)
-                .copied(),
+                // 1-indexed.
+                .map(|(line_number, _line)| line_number + 1),
         }
     }
 }
