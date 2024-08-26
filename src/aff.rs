@@ -1018,14 +1018,14 @@ impl CaseHandling {
 
     pub fn lowercase(&self, word: &str) -> String {
         match self {
-            Self::Turkic => word.replace('I', "ı").to_lowercase(),
+            Self::Turkic => word.replace('I', "ı").replace('İ', "i").to_lowercase(),
             Self::Standard => word.to_lowercase(),
         }
     }
 
     pub fn uppercase(&self, word: &str) -> String {
         match self {
-            Self::Turkic => word.replace('i', "İ").to_uppercase(),
+            Self::Turkic => word.replace('i', "İ").replace('ı', "I").to_uppercase(),
             Self::Standard => word.to_uppercase(),
         }
     }
@@ -1036,11 +1036,13 @@ impl CaseHandling {
         let first = chars.next().expect("non-empty input");
         match self {
             Self::Turkic if first == 'i' => output.push('İ'),
+            Self::Turkic if first == 'ı' => output.push('I'),
             _ => output.extend(first.to_uppercase()),
         }
         for ch in chars {
             match self {
                 Self::Turkic if ch == 'I' => output.push('ı'),
+                Self::Turkic if ch == 'İ' => output.push('i'),
                 _ => output.extend(ch.to_lowercase()),
             }
         }
