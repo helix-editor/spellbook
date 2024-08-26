@@ -405,7 +405,7 @@ fn parse_suggest_with_dots(cx: &mut AffLineParser, lines: &mut Lines) -> ParseRe
 fn parse_compound_min_length(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
     lines
         .parse_short()
-        .map(|s| cx.options.compound_min_length = NonZeroU16::new(s.min(1)))
+        .map(|s| cx.options.compound_min_length = NonZeroU16::new(s.max(1)))
 }
 
 fn parse_compound_max_word_count(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
