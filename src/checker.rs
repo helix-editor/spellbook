@@ -2053,8 +2053,6 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         && self.aff.compound_rules.has_any_flags(flags)
                 })
             else {
-                // Pop part1_flags before recursing/continuing.
-                words_data.pop();
                 if let Some(result) =
                     self.check_compound_with_rules_impl(word, words_data, i, forceucase)
                 {
