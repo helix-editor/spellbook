@@ -1049,12 +1049,12 @@ fn parse_flags_from_chars(
                         return Err(DuplicateComma);
                     }
                     if ch == ',' {
-                        separated = true;
                         let n = number.parse::<u16>().map_err(ParseIntError)?;
                         flags.push(try_flag_from_u16(n)?);
                         number.clear();
                     }
                 }
+                separated = ch == ',';
             }
             if !number.is_empty() {
                 let n = number.parse::<u16>().map_err(ParseIntError)?;
@@ -1627,10 +1627,13 @@ mod test {
             Ok(flagset![1]),
             parse_flags_from_chars(FlagType::Numeric, "1".chars())
         );
-
         assert_eq!(
             Ok(flagset![1001, 2002]),
             parse_flags_from_chars(FlagType::Numeric, "1001,2002".chars())
+        );
+        assert_eq!(
+            Ok(flagset![214, 216, 54321]),
+            parse_flags_from_chars(FlagType::Numeric, "214,216,54321".chars())
         );
     }
 
