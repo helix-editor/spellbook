@@ -1303,26 +1303,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         num_parts: usize,
         allow_bad_forceucase: Forceucase,
     ) -> Option<CompoundingResult> {
-        let min_num_chars = self
+        let min_chars = self
             .aff
             .options
             .compound_min_length
             .map(|len| len.get())
             .unwrap_or(3) as usize;
 
-        let start_byte = word[start_pos..]
-            .char_indices()
-            .nth(min_num_chars)
-            .map(|(byte, _)| byte + start_pos)?;
-        let end_byte = word
-            .char_indices()
-            .rev()
-            .take_while(|(byte, _)| *byte >= start_byte)
-            .nth(min_num_chars - 1)
-            .map(|(byte, _)| byte)?;
-
-        for (i, _) in word[start_byte..=end_byte].char_indices() {
-            let i = i + start_byte;
+        for i in bytes_within(word, start_pos, min_chars) {
             if let Some(result) = self.check_compound_classic::<MODE>(
                 word,
                 start_pos,
@@ -2045,20 +2033,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         // Note that this cannot be zero but we cast it to a usize for easier use.
         debug_assert_ne!(min_chars, 0);
 
-        let start_byte = word[start_pos..]
-            .char_indices()
-            .nth(min_chars)
-            .map(|(byte, _)| byte + start_pos)?;
-        let end_byte = word
-            .char_indices()
-            .rev()
-            .nth(min_chars - 1)
-            .map(|(byte, _)| byte)
-            .filter(|byte| *byte >= start_byte)?;
-
-        for (i, _) in word[start_byte..=end_byte].char_indices() {
-            // Adjust `i` to be the absolute index in the str.
-            let i = i + start_byte;
+        for i in bytes_within(word, start_pos, min_chars) {
             let Some((part1_stem, part1_flags)) =
                 self.aff
                     .words
@@ -2192,6 +2167,50 @@ fn has_uppercase_at_compound_word_boundary(word: &str, idx: usize) -> bool {
 
 fn prev_codepoint(word: &str, byte: usize) -> Option<(usize, char)> {
     word[..byte].char_indices().next_back()
+}
+
+/// An iterator over each byte index in the given `word` within the given margin.
+///
+/// For example in "abcd" with a margin of 1, this will yield `[1, 2]` (0-indexed).
+///
+/// `start` must be a valid byte index within `word` and `margin` must be non-zero.
+fn bytes_within(word: &str, start: usize, margin: usize) -> impl Iterator<Item = usize> + '_ {
+    // TODO: this seems unnecessarily complex. Can we just use prev/next_codepoint
+    // helpers instead?.
+    fn byte_range(word: &str, start: usize, margin: usize) -> Option<core::ops::Range<usize>> {
+        let start_byte = word[start..]
+            .char_indices()
+            .nth(margin)
+            .map(|(byte, _)| byte + start)?;
+        // We want the byte _after_ the `nth - 1` character from the back because the  range is
+        // exclusive on the right-hand side. We need an exclusive range  because `&word[n..=n]`
+        // has surprising behavior: it's equivalent to `&word[n..n + 1]` which is not correct when
+        // `n + 1` is not a valid byte index.
+        //
+        // When looking at the surrounding one character this must be the total word  length then
+        // (again - it's an exclusive range on the right). Using a saturating subtraction here
+        // to avoid a panic from `- 2` would not be equivalent.
+        let end_byte = if margin == 1 {
+            word.len()
+        } else {
+            word.char_indices()
+                .rev()
+                .take_while(|(byte, _)| *byte >= start_byte)
+                .nth(margin - 2)
+                .map(|(byte, _)| byte)?
+        };
+        Some(start_byte..end_byte)
+    }
+
+    debug_assert_ne!(margin, 0);
+
+    byte_range(word, start, margin)
+        .into_iter()
+        .flat_map(move |range| {
+            word[range.clone()]
+                .char_indices()
+                .map(move |(byte, _)| byte + range.start)
+        })
 }
 
 // TODO: rename?
