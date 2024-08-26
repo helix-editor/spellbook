@@ -1052,6 +1052,7 @@ fn parse_flags_from_chars(
                         separated = true;
                         let n = number.parse::<u16>().map_err(ParseIntError)?;
                         flags.push(try_flag_from_u16(n)?);
+                        number.clear();
                     }
                 }
             }
@@ -1625,6 +1626,11 @@ mod test {
         assert_eq!(
             Ok(flagset![1]),
             parse_flags_from_chars(FlagType::Numeric, "1".chars())
+        );
+
+        assert_eq!(
+            Ok(flagset![1001, 2002]),
+            parse_flags_from_chars(FlagType::Numeric, "1001,2002".chars())
         );
     }
 
