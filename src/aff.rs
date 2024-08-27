@@ -430,9 +430,9 @@ pub(crate) type SuffixIndex = AffixIndex<Sfx>;
 // structure from the commit history and benchmark it against this Vec based approach.
 #[derive(Debug)]
 pub(crate) struct AffixIndex<C> {
-    table: Vec<Affix<C>>,
-    first_char: Vec<char>,
-    prefix_idx_with_first_char: Vec<usize>,
+    table: Box<[Affix<C>]>,
+    first_char: Box<[char]>,
+    prefix_idx_with_first_char: Box<[usize]>,
     pub all_flags: FlagSet,
 }
 
@@ -488,9 +488,9 @@ impl<C: AffixKind> From<Vec<Affix<C>>> for AffixIndex<C> {
             .into();
 
         Self {
-            table,
-            first_char,
-            prefix_idx_with_first_char,
+            table: table.into(),
+            first_char: first_char.into(),
+            prefix_idx_with_first_char: prefix_idx_with_first_char.into(),
             all_flags: flags,
         }
     }
