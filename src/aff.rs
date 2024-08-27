@@ -524,6 +524,10 @@ impl<'index, 'word, C: AffixKind> Iterator for AffixesIter<'index, 'word, C> {
     type Item = &'index Affix<C>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // TODO: revisit this type. I suspect it's faster to just use `str::starts_with` and
+        // `str::ends_with` rather than char iterators. Also using char iterators shouldn't
+        // be necessary I think - we could switch to bytes instead.
+
         // Return all affixes that append nothing first.
         if self.chars_matched == 0 {
             if self.table.is_empty() {
