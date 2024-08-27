@@ -74,9 +74,7 @@ There are a few key data structures that power spellbook and make lookup fast.
 
 ##### Boxed slices
 
-By default Spellbook prefers boxed slices (`Box<[T]>`) and boxed strs (`Box<str>`) rather than their mutable counterparts `Vec<T>` and `String`. Boxed slices are basically the same but are immutable once created. They also discard any excess capacity and don't need to track capacity, saving a very small amount of memory per instance. That memory adds up though across all of the words in the dictionary.
-
-<!-- TODO: take some measurements with str vs String on the word list. -->
+By default Spellbook prefers boxed slices (`Box<[T]>`) and boxed strs (`Box<str>`) rather than their mutable counterparts `Vec<T>` and `String`. Boxed slices are basically the same but are immutable once created. They also discard any excess capacity and don't need to track capacity, saving a very small amount of memory per instance. That memory adds up though across all of the words in the dictionary. For some quick napkin math, this saves at least 392,464 bytes for the word list in `en_US` on a 64 bit target: 4 bytes for the stem's capacity field and another 4 bytes for the flag set's capacity field for each of the 49,058 words in `en_US.dic`.
 
 ##### Flag sets
 
