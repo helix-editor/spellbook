@@ -4,8 +4,8 @@ use brunch::Bench;
 use once_cell::sync::OnceCell;
 use spellbook::Dictionary;
 
-const EN_US_DIC: &str = include_str!("../../vendor/en_US/en_US.dic");
-const EN_US_AFF: &str = include_str!("../../vendor/en_US/en_US.aff");
+const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
+const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
 
 const SAMPLES: u32 = 500_000;
 

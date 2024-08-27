@@ -15,6 +15,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "brunch"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3932d710d985d35c7b08e7e439a6ac8607aa8f619d373eb1f808578cd3cd56e5"
+dependencies = [
+ "dactyl",
+ "unicode-width",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -30,6 +40,12 @@ dependencies = [
  "encoding_rs",
  "memchr",
 ]
+
+[[package]]
+name = "dactyl"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f3464c10bbdaf3c0b4c9bdecb477d4cad8a6916454066dfe4f28c491dbb335b"
 
 [[package]]
 name = "encoding_rs"
@@ -87,6 +103,7 @@ name = "spellbook"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "brunch",
  "chardetng",
  "encoding_rs",
  "glob",
@@ -110,6 +127,12 @@ name = "unicode-ident"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
+
+[[package]]
+name = "unicode-width"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0336d538f7abc86d282a4189614dfaa90810dfc2c6f6427eaf88e16311dd225d"
 
 [[package]]
 name = "version_check"
