@@ -1,5 +1,6 @@
 use std::hint::black_box;
 
+use ahash::RandomState;
 use brunch::Bench;
 use once_cell::sync::OnceCell;
 use spellbook::Dictionary;
@@ -9,11 +10,18 @@ const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
 
 const SAMPLES: u32 = 500_000;
 
-fn en_us() -> &'static Dictionary<ahash::RandomState> {
-    static EN_US: OnceCell<Dictionary<ahash::RandomState>> = OnceCell::new();
-    EN_US.get_or_init(|| {
-        Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, ahash::RandomState::new()).unwrap()
-    })
+/// A random seed from a sample run. The values aren't important here: just that they're constant.
+/// We don't want the benchmark outputs to reflect random changes to the seed.
+const HASHER: RandomState = RandomState::with_seeds(
+    16553733157538299820,
+    16824988918979132550,
+    1196480943954226392,
+    17486544621636611338,
+);
+
+fn en_us() -> &'static Dictionary<RandomState> {
+    static EN_US: OnceCell<Dictionary<RandomState>> = OnceCell::new();
+    EN_US.get_or_init(|| Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, HASHER).unwrap())
 }
 
 brunch::benches!(
@@ -21,7 +29,7 @@ brunch::benches!(
     Bench::new("Compile en_US").run(|| Dictionary::new_with_hasher(
         black_box(EN_US_DIC),
         black_box(EN_US_AFF),
-        ahash::RandomState::new()
+        HASHER,
     )),
     Bench::spacer(),
     // Checking
