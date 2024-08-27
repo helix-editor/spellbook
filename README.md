@@ -55,7 +55,7 @@ Since "adventure" has these flags, these suffixes can be applied. The rules them
 
 Hunspell dictionaries use these prefixing and suffixing rules to compress the dictionary. Without prefixes and suffixes we'd need a big set of every possible conjugation of every word in the dictionary. That might be possible with the gigabytes of RAM we have today but it certainly isn't efficient.
 
-Another way Hunspell dictionaries "compress" words like this is compounding. For example with the COMPOUNDRULES directive:
+Another way Hunspell dictionaries "compress" words like this is compounding. For example with the COMPOUNDRULE directive:
 
 ```
 # compound rules:
@@ -66,7 +66,7 @@ COMPOUNDRULE n*1t
 COMPOUNDRULE n*mp
 ```
 
-`en_US.dic` has words for digits like `0/nm`, `0th/pt`, `1/n1`, `1st/p`, etc. The COMPOUNDRULEs directive describes a regex-like pattern using flags and `*` (zero-or-more) and `?` (zero-or-one) modifiers. For example the first compound rule in the table `n*1t` allows a word like "10th": it matches the `n` flag zero times and then "1" (the stem `1` in the `.dic` file) and "0th". The `n*` modifier at the front allows adding any number of any other digit, so this rule also allows words like "110th" or "100000000th".
+`en_US.dic` has words for digits like `0/nm`, `0th/pt`, `1/n1`, `1st/p`, etc. The COMPOUNDRULEs directive describes a regex-like pattern using flags and `*` (zero-or-more) and `?` (zero-or-one) modifiers. For example the first compound rule in the table `n*1t` allows a word like "10th": it matches the `n` flag zero times and then "1" (the stem of the `1` flag in the `.dic` file) and "0th". The `n*` modifier at the front allows adding any number of any other digit, so this rule also allows words like "110th" or "100000000th".
 
 ### Internals
 
@@ -81,6 +81,12 @@ By default Spellbook prefers boxed slices (`Box<[T]>`) and boxed strs (`Box<str>
 ##### Flag sets
 
 Words in the dictionary are associated with any number of flags, like `adventure/DRSMZG` mentioned above. The order of the flags as written in the dictionary isn't important. We need a way to look up whether a flag exists in that set quickly. The right tool for the job might seem like a `HashSet<Flag>` or a `BTreeSet<Flag>`. Those are mutable though so they carry some extra overhead. A dictionary contains many many flag sets and the overhead adds up. So what we use instead is a sorted `Box<[Flag]>`. To look up a flag we use `slice::binary_search` which works as well as a `BTreeSet`.
+
+##### Flags
+
+While we're talking about flags, the internal representation in Spellbook is a `NonZeroU16`. Flags are always non-`0` so `NonZeroU16` is appropriate. `NonZeroU16` also has a layout optimization in Rust such that an `Option<NonZeroU16>` is represented by 16 bits: you don't pay for the `Option`. This optimization isn't useful when flags are in flag sets but flags are also used in `.aff` files to mark stems as having special properties. For example `en_US` uses `ONLYINCOMPOUND c` to declare that stems in the dictionary with the `c` flag are only valid when used in a compound, for example `1th/tc`, `2th/tc` or `3th/tc`. These stems are only meant to be combined in a compound like "11th", "12th" or "13th" and aren't valid words themselves.
+
+By default, flags are encoded in a dictionary with the `UTF-8` flag type. For `en_US` that means that each character after the `/` in a word in the dictionary and any flags declared in `en_US.aff` are converted to a `u16` (and then `NonZeroU16`). A 16 bit integer can't actually fit all UTF-8 codepoints (UTF-8 codepoints may be up to 32 bits) but the lower 16 bits of UTF-8 are more than sufficient for declaring flags: flags are only used to specify properties with the `.aff` file rather than stems. There are other encoding for flags used by some dictionaries. See the `FlagType` enum for more details.
 
 ##### Word list
 
@@ -108,7 +114,9 @@ A [prefix tree](https://en.wikipedia.org/wiki/Trie) would allow very quick looku
 
 ### Credits
 
-[`@zverok`]'s [blog series on rebuilding Hunspell][zverok-blog] was an invaluable resource during early prototypes. The old [`spylls`](https://github.com/zverok/spylls)-like prototype can be found on the `spylls` branch. Ultimately [Nuspell](https://github.com/nuspell/nuspell)'s codebase became the reference for Spellbook though as C++ idioms mesh better with Rust than Python's. Nuspell's code is in great shape and is much more readable than Hunspell so for now Spellbook is essentially a Rust rewrite of Nuspell (though we may diverge in the future).
+* [`@zverok`]'s [blog series on rebuilding Hunspell][zverok-blog] was an invaluable resource during early prototypes. The old [`spylls`](https://github.com/zverok/spylls)-like prototype can be found on the `spylls` branch.
+* Ultimately [Nuspell](https://github.com/nuspell/nuspell)'s codebase became the reference for Spellbook though as C++ idioms mesh better with Rust than Python's. Nuspell's code is in great shape and is much more readable than Hunspell so for now Spellbook is essentially a Rust rewrite of Nuspell (though we may diverge in the future).
+* The parser for `.dic` and `.aff` files is loosely based on [ZSpell](https://github.com/pluots/zspell).
 
 [`hashbrown`]: https://github.com/rust-lang/hashbrown
 [`@zverok`]: https://github.com/zverok
