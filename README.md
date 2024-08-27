@@ -1,121 +1,86 @@
-# Spellbook
-
-Spellbook is a Rust spellchecker library compatible with the Hunspell dictionary format.
-
-```rust
-fn main() {
-    let aff = std::fs::read_to_string("en_US.aff").unwrap();
-    let dic = std::fs::read_to_string("en_US.dic").unwrap();
-    let dict = spellbook::Dictionary::new_with_hasher(&dic, &aff, ahash::RandomState::new());
-
-    let word = std::env::args().nth(1).expect("expected a word to check");
-
-    if dict.check(&word) {
-        println!("{word:?} is in the dictionary.");
-    } else {
-        eprintln!("{word:?} is NOT in the dictionary.");
-        std::process::exit(1);
-    }
-}
+```
+cargo r --release --example flagset-len-hist ../hunspell-dictionaries/**.dic
 ```
 
-Spellbook is `no_std` and carries only [`hashbrown`] as a dependency. This may change in the future for performance tweaks like small-string optimizations and maybe `memchr` but the hope is to keep this library as lightweight as possible.
-
-### Maturity
-
-Spellbook is a work in progress and might see breaking changes to any part of the API as well as updates to the MSRV and dependencies.
-
-Currently the `check` API works well for `en_US` - a relatively simple dictionary - though it should work reasonably well for most other dictionaries. Some dictionaries which use complex compounding directives may work less well. The `suggest` API is not yet implemented but is planned.
-
-Spellbook should be considered to be in _alpha_. Part of the Hunspell test corpus has been ported and there are a healthy number of unit tests, but there are certainly bugs to be found.
-
-### How does it work?
-
-For a more in depth overview, check out [`@zverok`]'s blog series [Rebuilding the spellchecker][zverok-blog].
-
-Hunspell dictionaries are split into two files: `<lang>.dic` and `<lang>.aff`.
-The `.dic` file has a listing of stems and flags associated with that stem. For example `en_US.dic` contains the word `adventure/DRSMZG` meaning that "adventure" is a stem in the dictionary with flags `D`, `R`, `S`, `M`, `Z` and `G`.
-The `.aff` file contains a bunch of rules to use when determining if a word is correct or figuring out which words to suggest. The most intuitive of these are prefixes and suffixes. `en_US` contains suffixes like `D` and `R`:
+Against https://github.com/LibreOffice/dictionaries at 2ae8fab6fe32bbd3d9817d41a823dc3a9dc6a07f
 
 ```
-SFX D Y 4
-SFX D   0     d          e
-SFX D   y     ied        [^aeiou]y
-SFX D   0     ed         [^ey]
-SFX D   0     ed         [aeiou]y
-
-SFX R Y 4
-SFX R   0     r          e
-SFX R   y     ier        [^aeiou]y
-SFX R   0     er         [aeiou]y
-SFX R   0     er         [^ey]
+# of samples: 10352117
+31.812710385711444'th percentile of data is 0 with 3293289 samples
+68.81390540698101'th percentile of data is 1 with 3830407 samples
+79.5990230790475'th percentile of data is 2 with 1116488 samples
+86.29727619964109'th percentile of data is 3 with 693411 samples
+90.34976130969153'th percentile of data is 4 with 419518 samples
+93.03862195529669'th percentile of data is 5 with 278354 samples
+95.01828466583213'th percentile of data is 6 with 204937 samples
+95.84846268642443'th percentile of data is 7 with 85941 samples
+96.32064629872325'th percentile of data is 8 with 48881 samples
+96.89803544531036'th percentile of data is 9 with 59772 samples
+97.34328736817794'th percentile of data is 10 with 46093 samples
+97.78151657289035'th percentile of data is 11 with 45366 samples
+98.05298761596299'th percentile of data is 12 with 28103 samples
+98.37843795621707'th percentile of data is 13 with 33691 samples
+98.85777952470977'th percentile of data is 14 with 49622 samples
+99.00363374950264'th percentile of data is 15 with 15099 samples
+99.37310407137014'th percentile of data is 16 with 38248 samples
+99.53481012627658'th percentile of data is 17 with 16740 samples
+99.67957278689953'th percentile of data is 18 with 14986 samples
+99.71078379427126'th percentile of data is 19 with 3231 samples
+99.73314636996471'th percentile of data is 20 with 2315 samples
+99.79239995065744'th percentile of data is 21 with 6134 samples
+99.81532279822571'th percentile of data is 22 with 2373 samples
+99.833589593317'th percentile of data is 23 with 1891 samples
+99.85790346071242'th percentile of data is 24 with 2517 samples
+99.86442386615221'th percentile of data is 25 with 675 samples
+99.9408623376262'th percentile of data is 26 with 7913 samples
+99.94625253945642'th percentile of data is 27 with 558 samples
+99.949546551686'th percentile of data is 28 with 341 samples
+99.9525024688187'th percentile of data is 29 with 306 samples
+99.95853022140302'th percentile of data is 30 with 624 samples
+99.96063607086357'th percentile of data is 31 with 218 samples
+99.96498300782342'th percentile of data is 33 with 450 samples
+99.9685474961305'th percentile of data is 35 with 369 samples
+99.97166763088168'th percentile of data is 37 with 323 samples
+99.97396667754045'th percentile of data is 39 with 238 samples
+99.97595660868207'th percentile of data is 41 with 206 samples
+99.97818803632146'th percentile of data is 43 with 231 samples
+99.97989783152566'th percentile of data is 45 with 177 samples
+99.98148204855104'th percentile of data is 47 with 164 samples
+99.98326912263454'th percentile of data is 49 with 185 samples
+99.98466014246168'th percentile of data is 51 with 144 samples
+99.98588694467036'th percentile of data is 53 with 127 samples
+99.98694952926054'th percentile of data is 55 with 110 samples
+99.98779959693267'th percentile of data is 57 with 88 samples
+99.98877524278367'th percentile of data is 59 with 101 samples
+99.9897895280743'th percentile of data is 61 with 105 samples
+99.99072653448565'th percentile of data is 63 with 97 samples
+99.99233007123084'th percentile of data is 67 with 166 samples
+99.99370177133817'th percentile of data is 71 with 142 samples
+99.994802995368'th percentile of data is 75 with 114 samples
+99.9955178250014'th percentile of data is 79 with 74 samples
+99.99609741659604'th percentile of data is 83 with 60 samples
+99.9966866680506'th percentile of data is 87 with 61 samples
+99.99709238216685'th percentile of data is 91 with 42 samples
+99.99747877656328'th percentile of data is 95 with 40 samples
+99.99779755194034'th percentile of data is 99 with 33 samples
+99.9981163273174'th percentile of data is 103 with 33 samples
+99.99845442241427'th percentile of data is 107 with 35 samples
+99.99872489849177'th percentile of data is 111 with 28 samples
+99.99893741540981'th percentile of data is 115 with 22 samples
+99.99911129288822'th percentile of data is 119 with 18 samples
+99.99918857176749'th percentile of data is 123 with 8 samples
+99.99926585064678'th percentile of data is 127 with 8 samples
+99.99943006826526'th percentile of data is 135 with 17 samples
+99.99956530630402'th percentile of data is 143 with 14 samples
+99.99966190490312'th percentile of data is 151 with 10 samples
+99.99974884364232'th percentile of data is 159 with 9 samples
+99.99983578238152'th percentile of data is 167 with 9 samples
+99.99985510210135'th percentile of data is 175 with 2 samples
+99.99988408168107'th percentile of data is 183 with 3 samples
+99.99994204084054'th percentile of data is 191 with 6 samples
+99.99996136056035'th percentile of data is 199 with 2 samples
+99.99997102042026'th percentile of data is 207 with 1 samples
+99.99998068028017'th percentile of data is 215 with 1 samples
+99.99999034014009'th percentile of data is 231 with 1 samples
+100'th percentile of data is 271 with 1 samples
 ```
-
-Since "adventure" has these flags, these suffixes can be applied. The rules themselves are tables that define the flag (like `D`), what to strip from the end of the word (`0` for nothing), what to add to the end (`ied` for example) and under what condition the suffix applies (matches `[^aeiou]y` at the end for example). When checking a word like "adventured" you find any suffixes where the "add" portion of the suffix matches the ending of the word and check if the condition applies. The first clause of `D` applies since the "adventure" ends in 'e', and we add a 'd' to the end. When checking this happens in reverse. Starting with a word like "adventured" we strip the "d" and check the condition. Similarly with `R`, the first clause matches because "adventure" ends with 'e' and we add an 'r', matching "adventurer".
-
-Hunspell dictionaries use these prefixing and suffixing rules to compress the dictionary. Without prefixes and suffixes we'd need a big set of every possible conjugation of every word in the dictionary. That might be possible with the gigabytes of RAM we have today but it certainly isn't efficient.
-
-Another way Hunspell dictionaries "compress" words like this is compounding. For example with the COMPOUNDRULE directive:
-
-```
-# compound rules:
-# 1. [0-9]*1[0-9]th (10th, 11th, 12th, 56714th, etc.)
-# 2. [0-9]*[02-9](1st|2nd|3rd|[4-9]th) (21st, 22nd, 123rd, 1234th, etc.)
-COMPOUNDRULE 2
-COMPOUNDRULE n*1t
-COMPOUNDRULE n*mp
-```
-
-`en_US.dic` has words for digits like `0/nm`, `0th/pt`, `1/n1`, `1st/p`, etc. The COMPOUNDRULEs directive describes a regex-like pattern using flags and `*` (zero-or-more) and `?` (zero-or-one) modifiers. For example the first compound rule in the table `n*1t` allows a word like "10th": it matches the `n` flag zero times and then "1" (the stem of the `1` flag in the `.dic` file) and "0th". The `n*` modifier at the front allows adding any number of any other digit, so this rule also allows words like "110th" or "100000000th".
-
-### Internals
-
-There are a few key data structures that power spellbook and make lookup fast.
-
-##### Boxed slices
-
-By default Spellbook prefers boxed slices (`Box<[T]>`) and boxed strs (`Box<str>`) rather than their mutable counterparts `Vec<T>` and `String`. Boxed slices are basically the same but are immutable once created. They also discard any excess capacity and don't need to track capacity, saving a very small amount of memory per instance. That memory adds up though across all of the words in the dictionary. For some quick napkin math, this saves at least 392,464 bytes for the word list in `en_US` on a 64 bit target: 4 bytes for the stem's capacity field and another 4 bytes for the flag set's capacity field for each of the 49,058 words in `en_US.dic`.
-
-##### Flag sets
-
-Words in the dictionary are associated with any number of flags, like `adventure/DRSMZG` mentioned above. The order of the flags as written in the dictionary isn't important. We need a way to look up whether a flag exists in that set quickly. The right tool for the job might seem like a `HashSet<Flag>` or a `BTreeSet<Flag>`. Those are mutable though so they carry some extra overhead. A dictionary contains many many flag sets and the overhead adds up. So what we use instead is a sorted `Box<[Flag]>`. To look up a flag we use `slice::binary_search` which works as well as a `BTreeSet`.
-
-##### Flags
-
-While we're talking about flags, the internal representation in Spellbook is a `NonZeroU16`. Flags are always non-`0` so `NonZeroU16` is appropriate. `NonZeroU16` also has a layout optimization in Rust such that an `Option<NonZeroU16>` is represented by 16 bits: you don't pay for the `Option`. This optimization isn't useful when flags are in flag sets but flags are also used in `.aff` files to mark stems as having special properties. For example `en_US` uses `ONLYINCOMPOUND c` to declare that stems in the dictionary with the `c` flag are only valid when used in a compound, for example `1th/tc`, `2th/tc` or `3th/tc`. These stems are only meant to be combined in a compound like "11th", "12th" or "13th" and aren't valid words themselves.
-
-By default, flags are encoded in a dictionary with the `UTF-8` flag type. For `en_US` that means that each character after the `/` in a word in the dictionary and any flags declared in `en_US.aff` are converted to a `u16` (and then `NonZeroU16`). A 16 bit integer can't actually fit all UTF-8 codepoints (UTF-8 codepoints may be up to 32 bits) but the lower 16 bits of UTF-8 are more than sufficient for declaring flags: flags are only used to specify properties with the `.aff` file rather than stems. There are other encoding for flags used by some dictionaries. See the `FlagType` enum for more details.
-
-##### Word list
-
-The word list is one of the two central data structures. It stores the set of `(stem, flag_set)`. We need to look up whether a word is in the dictionary (and what flags it has) very quickly. A natural choice might be `HashMap<String, FlagSet>` or `BTreeSet<String, FlagSet>`. Unlike flag sets and boxed slices and strs mentioned above, it's ok for this type to be mutable. There's only one instance of it in a dictionary and it might make sense to add an API to add words to the dictionary, to cover the use-case of adding to a personal dictionary interactively for example. Instead the snag with this type is that there can be duplicate stems in the dictionary with different flag sets. Merging the flag sets together isn't correct: the combination of flags might allow one prefix/suffix to apply but not work in a compounds while another entry provides a different prefix/suffix which can compound.
-
-So what we need is something closer to `HashMap<String, Vec<FlagSet>>`. The extra `Vec` is more overhead though that isn't necessary in most cases since duplicate stems are fairly rare. In other languages like C++ this is where a [multi map](https://en.cppreference.com/w/cpp/container/unordered_multimap) might fit. It's the same idea as a hash map but allows for duplicate keys. Building a type like this in Rust is actually pretty straightforward with the [`hashbrown`] raw API which exposes enough internals to build a new hash table type. The table's `Iterator` implementation is identical. Insertion is slightly simpler: we don't need to check if the key is already in the map, we can just blindly insert. Reading from the table works very similarly to `HashMap::get`. Lookup in a regular hash map can stop searching the table when the first entry matching the key is found. For a multi map though we continue to look up until we find an entry that doesn't match.
-
-See the implementation details for this in [`src/hash_bag.rs`](./src/hash_bag.rs).
-
-##### Affix index
-
-Affixes (i.e. prefixes and suffixes) are stored in an "index" that allows quick lookup. For example `en_US` has prefixes like these:
-
-```
-PFX C Y 1
-PFX C   0     de          .
-
-PFX E Y 1
-PFX E   0     dis         .
-```
-
-Which might apply to a stem in the dictionary like `pose/CAKEGDS` to allow words "depose" and "dispose". When checking "depose" we look up in the set of prefixes to find any where the "add" port are prefixes of the input word (`"depose".starts_with("de")`).
-
-A [prefix tree](https://en.wikipedia.org/wiki/Trie) would allow very quick lookup. Trees and graph-like structures are not the most straightforward things to write in Rust though. Luckily Nuspell has a trick for this type which works well in Rust. Instead of a tree, we collect the set of prefixes into a sorted `Box<[Prefix]>` table. We can then binary search based on whether a prefix matches (`str::starts_with`). There are some additional optimizations like an extra lookup table that maps the first character in a prefix to the starting index in the `Box<[Prefix]>` table so that we can jump to the right region of the table quickly.
-
-### Credits
-
-* [`@zverok`]'s [blog series on rebuilding Hunspell][zverok-blog] was an invaluable resource during early prototypes. The old [`spylls`](https://github.com/zverok/spylls)-like prototype can be found on the `spylls` branch.
-* Ultimately [Nuspell](https://github.com/nuspell/nuspell)'s codebase became the reference for Spellbook though as C++ idioms mesh better with Rust than Python's. Nuspell's code is in great shape and is much more readable than Hunspell so for now Spellbook is essentially a Rust rewrite of Nuspell (though we may diverge in the future).
-* The parser for `.dic` and `.aff` files is loosely based on [ZSpell](https://github.com/pluots/zspell).
-
-[`hashbrown`]: https://github.com/rust-lang/hashbrown
-[`@zverok`]: https://github.com/zverok
-[zverok-blog]: https://zverok.space/spellchecker.html

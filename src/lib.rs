@@ -21,7 +21,7 @@ use hash_bag::HashBag;
 
 /// TODO
 pub struct Dictionary<S: BuildHasher> {
-    aff_data: AffData<S>,
+    pub aff_data: AffData<S>,
 }
 
 impl<S: BuildHasher + Clone> Dictionary<S> {
@@ -99,7 +99,7 @@ pub(crate) type Flag = core::num::NonZeroU16;
 /// unless the value needs to be mutated at some point. Once a dictionary is initialized it's
 /// immutable so we don't need a Vec.
 #[derive(Default, PartialEq, Eq, Clone)]
-pub(crate) struct FlagSet {
+pub struct FlagSet {
     inner: Box<[Flag]>,
 }
 

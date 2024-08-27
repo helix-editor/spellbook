@@ -1055,7 +1055,8 @@ impl CaseHandling {
 }
 
 #[derive(Debug)]
-pub(crate) struct AffData<S: BuildHasher> {
+#[allow(private_interfaces)]
+pub struct AffData<S: BuildHasher> {
     // checking options
     pub words: WordList<S>,
     pub prefixes: PrefixIndex,
