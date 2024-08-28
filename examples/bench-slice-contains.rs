@@ -5,7 +5,8 @@ Originally I thought that binary search in a sorted flagset would clearly be bet
 actually typically 1-2ns worse (24ns total) for common cases. When flagsets are small enough,
 binary search adds more overhead than it's worth.
 
-I took a histogram of the length of flagsets used in LibreOffice/dictionaries:
+I took a histogram of the length of flagsets used in LibreOffice/dictionaries (see the
+`flagset-histogram` branch):
 
 ```text
 # of samples: 10352117

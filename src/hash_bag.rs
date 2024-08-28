@@ -273,7 +273,7 @@ mod test {
         let pairs = &[(1, 1), (1, 1), (1, 2), (1, 3), (3, 1)];
         let mut map = HashBag::with_capacity_and_hasher(
             pairs.len(),
-            // We use a hard-coded seed to so that the display is deterministic.
+            // We use a hard-coded seed so that the display is deterministic.
             ahash::RandomState::with_seeds(123, 456, 789, 1000),
         );
         for (k, v) in pairs {

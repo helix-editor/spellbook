@@ -70,7 +70,7 @@ COMPOUNDRULE n*mp
 
 ### Internals
 
-There are a few key data structures that power spellbook and make lookup fast.
+There are a few key data structures that power Spellbook and make lookup fast.
 
 ##### Boxed slices
 
