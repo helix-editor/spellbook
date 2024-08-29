@@ -5,6 +5,8 @@ use core::{
     marker::PhantomData,
 };
 
+// TODO: `use hashbrown::{hash_table, HashTable}` instead once `HashTable` supports `iter_hash`.
+// See the `hash-table` branch.
 use hashbrown::raw::{RawIter, RawIterHash, RawTable};
 
 /// A collection of key-value pairs - similar to a HashMap - which allows for duplicate keys.
