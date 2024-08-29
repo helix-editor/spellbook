@@ -1,4 +1,3 @@
-use ahash::RandomState;
 use spellbook::Dictionary;
 use std::{
     fs::{self, File},
@@ -20,7 +19,7 @@ fn check() {
         let dic = read_to_string(path).unwrap();
         let aff = read_to_string(path.with_extension("aff")).unwrap();
 
-        let dict = Dictionary::new_with_hasher(&dic, &aff, RandomState::new()).unwrap();
+        let dict = Dictionary::new(&dic, &aff).unwrap();
 
         for good_word in fs::read_to_string(path.with_extension("good"))
             .iter()

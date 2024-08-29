@@ -19,8 +19,18 @@ use checker::Checker;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
 use hash_bag::HashBag;
 
+/// Default hasher for hash tables.
+#[cfg(feature = "default-hasher")]
+pub type DefaultHashBuilder = core::hash::BuildHasherDefault<ahash::AHasher>;
+
+/// Dummy default hasher for hash tables.
+#[cfg(not(feature = "default-hasher"))]
+pub enum DefaultHashBuilder {}
+
+// Allow passing down an Allocator too?
+
 /// TODO
-pub struct Dictionary<S: BuildHasher> {
+pub struct Dictionary<S = DefaultHashBuilder> {
     aff_data: AffData<S>,
 }
 
@@ -35,9 +45,9 @@ impl<S: BuildHasher + Clone> Dictionary<S> {
     }
 }
 
-impl<S: BuildHasher + Clone + Default> Dictionary<S> {
+impl Dictionary<DefaultHashBuilder> {
     pub fn new(dic: &str, aff: &str) -> Result<Self, ParseDictionaryError> {
-        Self::new_with_hasher(dic, aff, S::default())
+        Self::new_with_hasher(dic, aff, DefaultHashBuilder::default())
     }
 }
 

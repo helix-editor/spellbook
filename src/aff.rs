@@ -10,7 +10,7 @@ use crate::{
     has_flag, AffixingMode, Flag, FlagSet, WordList, AT_COMPOUND_BEGIN, AT_COMPOUND_END, FULL_WORD,
 };
 
-use core::{hash::BuildHasher, marker::PhantomData, num::NonZeroU16, str::Chars};
+use core::{marker::PhantomData, num::NonZeroU16, str::Chars};
 
 pub(crate) const HIDDEN_HOMONYM_FLAG: Flag = unsafe { Flag::new_unchecked(u16::MAX) };
 pub(crate) const MAX_SUGGESTIONS: usize = 16;
@@ -1055,7 +1055,7 @@ impl CaseHandling {
 }
 
 #[derive(Debug)]
-pub(crate) struct AffData<S: BuildHasher> {
+pub(crate) struct AffData<S> {
     // checking options
     pub words: WordList<S>,
     pub prefixes: PrefixIndex,

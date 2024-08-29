@@ -8,13 +8,14 @@ license = "MPL-2.0"
 rust-version = "1.70"
 
 [dependencies]
+# Used for HashMap and RawTable for a custom bag structure.
 hashbrown = { version = "0.14", default-features = false, features = ["raw"] }
+# Used as the default BuildHasher when the `default-hasher` feature flag
+# is enabled (which it is by default).
+ahash = { version = "0.8", default-features = false, optional = true }
 
 [dev-dependencies]
-# Used as a BuildHasher for the hashing data types - hashbrown HashMap and a custom
-# `HashMultiMap` - during unit tests.
-ahash = { version = "0.8", default-features = false }
-# Used in unit tests to prevent compiling the same dictionary twice. Used instead of
+# Used in unit tests to lazily compile en_US. Used instead of
 # `core::cell::OnceCell` since it implements `Send + Sync`.
 once_cell = "1.19"
 # Used in the integration tests to find and read Hunspell test case files, potentially
@@ -24,3 +25,8 @@ encoding_rs = "0.8"
 chardetng = "0.1"
 # Minimalist benchmarking crate.
 brunch = "0.5"
+
+[features]
+default = ["default-hasher"]
+# Sets a default hasher (currently ahash).
+default-hasher = ["dep:ahash"]

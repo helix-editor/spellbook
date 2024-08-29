@@ -14,8 +14,7 @@ fn main() {
     let mut misspelled = 0;
 
     let now = Instant::now();
-    let dict =
-        Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, ahash::RandomState::new()).unwrap();
+    let dict = Dictionary::new(EN_US_DIC, EN_US_AFF).unwrap();
     println!("Compiled the dictionary in {}ms", now.elapsed().as_millis());
 
     let now = Instant::now();

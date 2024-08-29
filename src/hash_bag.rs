@@ -33,18 +33,34 @@ pub struct HashBag<K, V, S> {
     build_hasher: S,
 }
 
+impl<K, V, S: BuildHasher + Default> HashBag<K, V, S> {
+    pub fn new() -> Self {
+        Self {
+            table: RawTable::new(),
+            build_hasher: S::default(),
+        }
+    }
+}
+
+impl<K, V, S> HashBag<K, V, S> {
+    pub fn iter(&self) -> Iter<'_, K, V> {
+        // Here we tie the lifetime of self to the iter.
+        Iter {
+            inner: unsafe { self.table.iter() },
+            marker: PhantomData,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.table.len()
+    }
+}
+
 impl<K, V, S> HashBag<K, V, S>
 where
     K: Hash + Eq,
     S: BuildHasher,
 {
-    pub fn with_hasher(build_hasher: S) -> Self {
-        Self {
-            table: RawTable::new(),
-            build_hasher,
-        }
-    }
-
     pub fn with_capacity_and_hasher(capacity: usize, build_hasher: S) -> Self {
         Self {
             table: RawTable::with_capacity(capacity),
@@ -58,18 +74,6 @@ where
         self.table.reserve(1, make_hasher(&self.build_hasher));
         // Insert without attempting to find an existing entry with this key.
         self.table.insert(hash, (k, v), hasher);
-    }
-
-    pub fn iter(&self) -> Iter<'_, K, V> {
-        // Here we tie the lifetime of self to the iter.
-        Iter {
-            inner: unsafe { self.table.iter() },
-            marker: PhantomData,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.table.len()
     }
 
     pub fn get<'map, 'key, Q>(&'map self, k: &'key Q) -> GetAllIter<'map, 'key, Q, K, V>
@@ -92,7 +96,6 @@ impl<K, V, S> Debug for HashBag<K, V, S>
 where
     K: Debug + Hash + Eq,
     V: Debug,
-    S: BuildHasher,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_map().entries(self.iter()).finish()
@@ -218,12 +221,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::alloc::{string::ToString, vec::Vec};
+    use crate::DefaultHashBuilder;
 
-    use super::*;
+    type HashBag<K, V> = super::HashBag<K, V, DefaultHashBuilder>;
 
     #[test]
     fn insert_and_get_duplicate_keys() {
-        let mut map = HashBag::with_hasher(ahash::RandomState::new());
+        let mut map = HashBag::new();
         map.insert(1, 1);
         map.insert(5, 5);
         assert!(map.len() == 2);
@@ -240,7 +244,7 @@ mod test {
 
     #[test]
     fn string_keys() {
-        let mut map = HashBag::with_hasher(ahash::RandomState::new());
+        let mut map = HashBag::new();
         map.insert("hello".to_string(), "bob");
         map.insert("hello".to_string(), "world");
         map.insert("bye".to_string(), "bob");
@@ -257,7 +261,7 @@ mod test {
     fn iter() {
         // The iterator is currently unused but very small and could be useful for debugging.
         let pairs = &[(1, 1), (1, 2), (1, 3), (3, 1)];
-        let mut map = HashBag::with_capacity_and_hasher(pairs.len(), ahash::RandomState::new());
+        let mut map = HashBag::new();
         for (k, v) in pairs {
             map.insert(k, v);
         }
@@ -273,7 +277,7 @@ mod test {
     fn display() {
         // Shameless coverage test, it brings the file to 100% :P
         let pairs = &[(1, 1), (1, 1), (1, 2), (1, 3), (3, 1)];
-        let mut map = HashBag::with_capacity_and_hasher(
+        let mut map = super::HashBag::with_capacity_and_hasher(
             pairs.len(),
             // We use a hard-coded seed so that the display is deterministic.
             ahash::RandomState::with_seeds(123, 456, 789, 1000),

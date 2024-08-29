@@ -2274,7 +2274,6 @@ impl<'aff> CompoundingResult<'aff> {
 
 #[cfg(test)]
 mod test {
-    use ahash::RandomState;
     use once_cell::sync::Lazy;
 
     use super::*;
@@ -2285,9 +2284,7 @@ mod test {
 
     // It's a little overkill to use a real dictionary for unit tests but it compiles so
     // quickly that if we only compile it once it doesn't really slow down the test suite.
-    static EN_US: Lazy<Dictionary<RandomState>> = Lazy::new(|| {
-        Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, RandomState::new()).unwrap()
-    });
+    static EN_US: Lazy<Dictionary> = Lazy::new(|| Dictionary::new(EN_US_DIC, EN_US_AFF).unwrap());
 
     #[test]
     fn are_three_chars_equal_test() {
@@ -2413,7 +2410,7 @@ mod test {
         bass
         "#;
 
-        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+        let dict = Dictionary::new(dic, aff).unwrap();
 
         assert!(dict.check("aussaß"));
         assert!(dict.check("Aussaß"));
@@ -2446,7 +2443,7 @@ mod test {
         anch'Ella
         "#;
 
-        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+        let dict = Dictionary::new(dic, aff).unwrap();
 
         assert!(dict.check("cent'anni"));
         assert!(dict.check("d'Intelvi"));
@@ -2474,7 +2471,7 @@ mod test {
         affine
         affluent/Y
         "#;
-        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+        let dict = Dictionary::new(dic, aff).unwrap();
         assert!(dict.check("affine"));
         assert!(dict.check("aﬃne"));
         assert!(dict.check("affluent"));
@@ -2529,7 +2526,7 @@ mod test {
         trazable/kSJ
         "#;
 
-        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+        let dict = Dictionary::new(dic, aff).unwrap();
 
         // Stem
         assert!(dict.check("perdurable"));
@@ -2579,7 +2576,7 @@ mod test {
         stem/pi
         "#;
 
-        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+        let dict = Dictionary::new(dic, aff).unwrap();
 
         assert!(dict.check("stem"));
         assert!(dict.check("prestem"));
@@ -2617,7 +2614,7 @@ mod test {
         stem2/p2s2
         "#;
 
-        let dict = Dictionary::new_with_hasher(dic, aff, RandomState::new()).unwrap();
+        let dict = Dictionary::new(dic, aff).unwrap();
         assert!(dict.aff_data.options.complex_prefixes);
 
         assert!(dict.check("stem1"));

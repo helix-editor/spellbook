@@ -6,7 +6,7 @@ Spellbook is a Rust spellchecker library compatible with the Hunspell dictionary
 fn main() {
     let aff = std::fs::read_to_string("en_US.aff").unwrap();
     let dic = std::fs::read_to_string("en_US.dic").unwrap();
-    let dict = spellbook::Dictionary::new_with_hasher(&dic, &aff, ahash::RandomState::new());
+    let dict = spellbook::Dictionary::new(&dic, &aff);
 
     let word = std::env::args().nth(1).expect("expected a word to check");
 
@@ -28,6 +28,10 @@ Spellbook is a work in progress and might see breaking changes to any part of th
 Currently the `check` API works well for `en_US` - a relatively simple dictionary - though it should work reasonably well for most other dictionaries. Some dictionaries which use complex compounding directives may work less well. The `suggest` API is not yet implemented but is planned.
 
 Spellbook should be considered to be in _alpha_. Part of the Hunspell test corpus has been ported and there are a healthy number of unit tests, but there are certainly bugs to be found.
+
+### Feature flags
+
+The only feature flag currently is `default-hasher` which pulls in [`ahash`](https://github.com/tkaitchuck/aHash) and is enabled by default like the equivalent flag from [`hashbrown`]. A non-cryptographic hash significantly improves the time it takes to check a word.
 
 ### How does it work?
 
