@@ -6,7 +6,7 @@ Spellbook is a Rust spellchecker library compatible with the Hunspell dictionary
 fn main() {
     let aff = std::fs::read_to_string("en_US.aff").unwrap();
     let dic = std::fs::read_to_string("en_US.dic").unwrap();
-    let dict = spellbook::Dictionary::new(&dic, &aff);
+    let dict = spellbook::Dictionary::new(&dic, &aff).unwrap();
 
     let word = std::env::args().nth(1).expect("expected a word to check");
 
@@ -19,7 +19,7 @@ fn main() {
 }
 ```
 
-Spellbook is `no_std` and carries only [`hashbrown`] as a dependency. This may change in the future for performance tweaks like small-string optimizations and maybe `memchr` but the hope is to keep this library as lightweight as possible.
+Spellbook is `no_std` and only requires [`hashbrown`] as a dependency. (Note that [`ahash`] is included by default, see the feature flags section below.) This may change in the future for performance tweaks like small-string optimizations and maybe `memchr` but the hope is to keep this library as lightweight as possible.
 
 ### Maturity
 
@@ -31,7 +31,7 @@ Spellbook should be considered to be in _alpha_. Part of the Hunspell test corpu
 
 ### Feature flags
 
-The only feature flag currently is `default-hasher` which pulls in [`ahash`](https://github.com/tkaitchuck/aHash) and is enabled by default like the equivalent flag from [`hashbrown`]. A non-cryptographic hash significantly improves the time it takes to check a word.
+The only feature flag currently is `default-hasher` which pulls in [`ahash`] and is enabled by default like the equivalent flag from [`hashbrown`]. A non-cryptographic hash significantly improves the time it takes to initialize a dictionary and check a word.
 
 ### How does it work?
 
@@ -55,7 +55,7 @@ SFX R   0     er         [aeiou]y
 SFX R   0     er         [^ey]
 ```
 
-Since "adventure" has these flags, these suffixes can be applied. The rules themselves are tables that define the flag (like `D`), what to strip from the end of the word (`0` for nothing), what to add to the end (`ied` for example) and under what condition the suffix applies (matches `[^aeiou]y` at the end for example). When checking a word like "adventured" you find any suffixes where the "add" portion of the suffix matches the ending of the word and check if the condition applies. The first clause of `D` applies since the "adventure" ends in 'e', and we add a 'd' to the end. When checking this happens in reverse. Starting with a word like "adventured" we strip the "d" and check the condition. Similarly with `R`, the first clause matches because "adventure" ends with 'e' and we add an 'r', matching "adventurer".
+Since "adventure" has these flags, these suffixes can be applied. The rules themselves are tables that define the flag (like `D`), what to strip from the end of the word (`0` for nothing), what to add to the end (`ied` for example) and under what condition the suffix applies (matches `[^aeiou]y` at the end for example). When checking a word like "adventured" you find any suffixes where the "add" portion of the suffix matches the ending of the word and check if the condition applies. The first clause of `D` applies since the "adventure" ends in 'e', and we add a 'd' to the end. When checking this happens in reverse. Starting with a word like "adventured" we strip the 'd' and check the condition. Similarly with `R`, the first clause matches because "adventure" ends with 'e' and we add an 'r', matching "adventurer".
 
 Hunspell dictionaries use these prefixing and suffixing rules to compress the dictionary. Without prefixes and suffixes we'd need a big set of every possible conjugation of every word in the dictionary. That might be possible with the gigabytes of RAM we have today but it certainly isn't efficient.
 
@@ -123,5 +123,6 @@ A [prefix tree](https://en.wikipedia.org/wiki/Trie) would allow very quick looku
 * The parser for `.dic` and `.aff` files is loosely based on [ZSpell](https://github.com/pluots/zspell).
 
 [`hashbrown`]: https://github.com/rust-lang/hashbrown
+[`ahash`]: https://github.com/tkaitchuck/aHash
 [`@zverok`]: https://github.com/zverok
 [zverok-blog]: https://zverok.space/spellchecker.html
