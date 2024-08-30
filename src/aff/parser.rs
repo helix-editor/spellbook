@@ -504,6 +504,7 @@ fn parse_compound_syllable<'aff>(
     cx: &mut AffLineParser<'aff>,
     lines: &mut Lines<'aff>,
 ) -> ParseResult {
+    // TODO: can this just use parse_table2?
     // Takes the shape COMPOUNDSYLLABLE <compound_syllable_max> <compound_syllable_vowels>
     let mut words = match lines.words.take() {
         Some(words) => words,
@@ -593,11 +594,88 @@ fn parse_compound_rule_table(cx: &mut AffLineParser, lines: &mut Lines) -> Parse
 }
 
 fn parse_compound_pattern_table(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
-    lines.parse_table2("CHECKCOMPOUNDPATTERN", |str1, str2| {
-        let pattern = parse_compound_pattern(str1, str2, cx.flag_type)?;
-        cx.compound_patterns.push(pattern);
-        Ok(())
-    })
+    // A parser that works basically like `parse_table2` but allows for an optional third column,
+    // and trims comments since some dictionaries seem to use them.
+    let row_count = lines
+        .take_exactly_one_word()?
+        .parse::<usize>()
+        .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedNumber(err)))?;
+
+    for row in 1..=row_count {
+        lines.advance_line();
+        if lines.is_finished() || lines.next_word() != Some("CHECKCOMPOUNDPATTERN") {
+            return Err(lines.error(ParseDictionaryErrorKind::MismatchedRowCount {
+                expected: row_count,
+                actual: row,
+            }));
+        }
+
+        let mut words = match lines.words.take() {
+            Some(words) => words,
+            None => {
+                return Err(lines.error(ParseDictionaryErrorKind::MismatchedArity {
+                    expected: 2,
+                    actual: 0,
+                }))
+            }
+        };
+
+        let first_word_end = match words.next() {
+            Some(word) => word,
+            None => {
+                return Err(lines.error(ParseDictionaryErrorKind::MismatchedArity {
+                    expected: 2,
+                    actual: 0,
+                }))
+            }
+        };
+        let second_word_begin = match words.next() {
+            Some(word) => word,
+            None => {
+                return Err(lines.error(ParseDictionaryErrorKind::MismatchedArity {
+                    expected: 2,
+                    actual: 1,
+                }))
+            }
+        };
+        let replacement = words.next();
+
+        let remaining_words = words.count();
+        if remaining_words > 0 {
+            return Err(lines.error(ParseDictionaryErrorKind::MismatchedArity {
+                expected: 3,
+                actual: 3 + remaining_words,
+            }));
+        }
+
+        let (first_word_end, first_word_flag) = split_word_and_flagset_naive(first_word_end);
+        let (second_word_begin, second_word_flag) = split_word_and_flagset_naive(second_word_begin);
+        let first_word_flag = (!first_word_flag.is_empty())
+            .then(|| parse_flag_from_str(cx.flag_type, first_word_flag))
+            .transpose()
+            .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
+        let second_word_flag = (!second_word_flag.is_empty())
+            .then(|| parse_flag_from_str(cx.flag_type, second_word_flag))
+            .transpose()
+            .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
+        let (first_word_end, match_first_only_unaffixed_or_zero_affixed) = if first_word_end == "0"
+        {
+            ("", true)
+        } else {
+            (first_word_end, false)
+        };
+        let begin_end_chars = super::StrPair::new(first_word_end, second_word_begin);
+
+        cx.compound_patterns.push(CompoundPattern {
+            begin_end_chars,
+            replacement: replacement.map(|word| word.into()),
+            first_word_flag,
+            second_word_flag,
+            match_first_only_unaffixed_or_zero_affixed,
+        });
+    }
+
+    Ok(())
 }
 
 /// A helper type that means "words on a line split by whitespace with comments
@@ -1324,35 +1402,6 @@ pub(crate) fn parse_compound_rule(
     }
 
     Ok(rule.into())
-}
-
-fn parse_compound_pattern(
-    first_word_end: &str,
-    second_word_begin: &str,
-    flag_type: FlagType,
-) -> core::result::Result<CompoundPattern, ParseFlagError> {
-    let (first_word_end, first_word_flag) = split_word_and_flagset_naive(first_word_end);
-    let (second_word_begin, second_word_flag) = split_word_and_flagset_naive(second_word_begin);
-    let first_word_flag = (!first_word_flag.is_empty())
-        .then(|| parse_flag_from_str(flag_type, first_word_flag))
-        .transpose()?;
-    let second_word_flag = (!second_word_flag.is_empty())
-        .then(|| parse_flag_from_str(flag_type, second_word_flag))
-        .transpose()?;
-    let (first_word_end, match_first_only_unaffixed_or_zero_affixed) = if first_word_end == "0" {
-        ("", true)
-    } else {
-        (first_word_end, false)
-    };
-    let begin_end_chars = super::StrPair::new(first_word_end, second_word_begin);
-
-    Ok(CompoundPattern {
-        begin_end_chars,
-        _replacement: None,
-        first_word_flag,
-        second_word_flag,
-        match_first_only_unaffixed_or_zero_affixed,
-    })
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

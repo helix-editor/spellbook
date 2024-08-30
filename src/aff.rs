@@ -955,9 +955,7 @@ impl StrPair {
 #[derive(Debug)]
 pub(crate) struct CompoundPattern {
     pub begin_end_chars: StrPair,
-    // TODO: does any dictionary use this? It might be hard to parse since nl_NL and hu_HU add
-    // comments at the end of the line with '#'s.
-    pub _replacement: Option<Box<str>>,
+    pub replacement: Option<Box<str>>,
     pub first_word_flag: Option<Flag>,
     pub second_word_flag: Option<Flag>,
     pub match_first_only_unaffixed_or_zero_affixed: bool,
