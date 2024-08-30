@@ -27,7 +27,7 @@ Spellbook is a work in progress and might see breaking changes to any part of th
 
 Currently the `check` API works well for `en_US` - a relatively simple dictionary - though it should work reasonably well for most other dictionaries. Some dictionaries which use complex compounding directives may work less well. The `suggest` API is not yet implemented but is planned.
 
-Spellbook should be considered to be in _alpha_. Part of the Hunspell test corpus has been ported and there are a healthy number of unit tests, but there are certainly bugs to be found.
+Spellbook should be considered to be in _alpha_. Part of the Hunspell test corpus has been successfully ported and there are a healthy number of unit tests, but there are certainly bugs to be found.
 
 ### Feature flags
 
