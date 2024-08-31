@@ -82,17 +82,31 @@ By default Spellbook prefers boxed slices (`Box<[T]>`) and boxed strs (`Box<str>
 
 ##### Flag sets
 
+```rust
+struct FlagSet {
+    inner: Box<[Flag]>,
+}
+```
+
 Words in the dictionary are associated with any number of flags, like `adventure/DRSMZG` mentioned above. The order of the flags as written in the dictionary isn't important. We need a way to look up whether a flag exists in that set quickly. The right tool for the job might seem like a `HashSet<Flag>` or a `BTreeSet<Flag>`. Those are mutable though so they carry some extra overhead. A dictionary contains many many flag sets and the overhead adds up. So what we use instead is a sorted `Box<[Flag]>` and look up flags with `slice::binary_search`.
 
 Binary searching a small slice is typically a tiny bit slower than `slice::contains` but we prefer `slice::binary_search` for its consistent performance. See [`examples/bench-slice-contains.rs`](./examples/bench-slice-contains.rs) for more details.
 
 ##### Flags
 
-While we're talking about flags, the internal representation in Spellbook is a `NonZeroU16`. Flags are always non-`0` so `NonZeroU16` is appropriate. `NonZeroU16` also has a layout optimization in Rust such that an `Option<NonZeroU16>` is represented by 16 bits: you don't pay for the `Option`. This optimization isn't useful when flags are in flag sets but flags are also used in `.aff` files to mark stems as having special properties. For example `en_US` uses `ONLYINCOMPOUND c` to declare that stems in the dictionary with the `c` flag are only valid when used in a compound, for example `1th/tc`, `2th/tc` or `3th/tc`. These stems are only meant to be combined in a compound like "11th", "12th" or "13th" and aren't valid words themselves.
+```rust
+type Flag = core::num::NonZeroU16;
+```
+
+While we're talking about flags, the internal representation in Spellbook is a `NonZeroU16`. Flags are always non-`0` so `NonZeroU16` is appropriate. `NonZeroU16` also has a layout optimization in Rust such that an `Option<NonZeroU16>` is represented by 16 bits: you don't pay for the `Option`. This optimization isn't useful when flags are in flag sets but flags are also used in `.aff` files to mark stems as having special properties. For example `en_US` uses `ONLYINCOMPOUND c` to declare that stems in the dictionary with the `c` flag are only valid when used in a compound, for example `1th/tc`, `2th/tc` or `3th/tc`. These stems are only meant to be combined in a compound like "11th", "12th" or "13th" and aren't valid words themselves. Internally Spellbook keeps a bunch of these `Option<Flag>`s so the layout optimization saves some space.
 
 By default, flags are encoded in a dictionary with the `UTF-8` flag type. For `en_US` that means that each character after the `/` in a word in the dictionary and any flags declared in `en_US.aff` are converted to a `u16` (and then `NonZeroU16`). A 16 bit integer can't actually fit all UTF-8 codepoints (UTF-8 codepoints may be up to 32 bits) but the lower 16 bits of UTF-8 are more than sufficient for declaring flags: flags are only used to specify properties with the `.aff` file rather than stems. There are other encoding for flags used by some dictionaries. See the `FlagType` enum for more details.
 
 ##### Word list
+
+```rust
+type WordList<S> = HashBag<Box<str>, FlagSet, S>;
+```
 
 The word list is one of the two central data structures. It stores the set of `(stem, flag_set)`. We need to look up whether a word is in the dictionary (and what flags it has) very quickly. A natural choice might be `HashMap<String, FlagSet>` or `BTreeSet<String, FlagSet>`. Unlike flag sets and boxed slices and strs mentioned above, it's ok for this type to be mutable. There's only one instance of it in a dictionary and it might make sense to add an API to add words to the dictionary, to cover the use-case of adding to a personal dictionary interactively for example. Instead the snag with this type is that there can be duplicate stems in the dictionary with different flag sets. Merging the flag sets together isn't correct: the combination of flags might allow one prefix/suffix to apply but not work in a compounds while another entry provides a different prefix/suffix which can compound.
 
