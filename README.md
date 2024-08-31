@@ -1,6 +1,6 @@
 # Spellbook
 
-Spellbook is a Rust spellchecker library compatible with the Hunspell dictionary format.
+Spellbook is a Rust spellchecking library compatible with the Hunspell dictionary format.
 
 ```rust
 fn main() {

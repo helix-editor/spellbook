@@ -1,7 +1,7 @@
 [package]
 name = "spellbook"
-description = "A lightweight, Hunspell-like spell checking library"
-version = "0.1.0"
+description = "A spellchecking library compatible with Hunspell dictionaries"
+version = "0.0.1"
 authors = ["Michael Davis <mcarsondavis@gmail.com>"]
 edition = "2021"
 license = "MPL-2.0"
