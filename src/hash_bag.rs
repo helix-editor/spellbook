@@ -76,7 +76,7 @@ where
         self.table.insert(hash, (k, v), hasher);
     }
 
-    pub fn get<'map, 'key, Q>(&'map self, k: &'key Q) -> GetAllIter<'map, 'key, Q, K, V>
+    pub fn get<'bag, 'key, Q>(&'bag self, k: &'key Q) -> GetAllIter<'bag, 'key, Q, K, V>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -182,22 +182,22 @@ impl<K, V> ExactSizeIterator for Iter<'_, K, V> {
     }
 }
 
-pub struct GetAllIter<'map, 'key, Q: ?Sized, K, V>
+pub struct GetAllIter<'bag, 'key, Q: ?Sized, K, V>
 where
     K: Borrow<Q>,
     Q: Hash + Eq,
 {
     inner: RawIterHash<(K, V)>,
     key: &'key Q,
-    marker: PhantomData<(&'map K, &'map V)>,
+    marker: PhantomData<(&'bag K, &'bag V)>,
 }
 
-impl<'map, 'key, Q: ?Sized, K, V> Iterator for GetAllIter<'map, 'key, Q, K, V>
+impl<'bag, 'key, Q: ?Sized, K, V> Iterator for GetAllIter<'bag, 'key, Q, K, V>
 where
     K: Borrow<Q>,
     Q: Hash + Eq,
 {
-    type Item = (&'map K, &'map V);
+    type Item = (&'bag K, &'bag V);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -227,33 +227,33 @@ mod test {
 
     #[test]
     fn insert_and_get_duplicate_keys() {
-        let mut map = HashBag::new();
-        map.insert(1, 1);
-        map.insert(5, 5);
-        assert!(map.len() == 2);
-        map.insert(1, 1);
-        map.insert(1, 2);
-        assert!(map.len() == 4);
+        let mut bag = HashBag::new();
+        bag.insert(1, 1);
+        bag.insert(5, 5);
+        assert!(bag.len() == 2);
+        bag.insert(1, 1);
+        bag.insert(1, 2);
+        assert!(bag.len() == 4);
 
-        let mut vals: Vec<_> = map.get(&1).map(|kv| kv.1).copied().collect();
+        let mut vals: Vec<_> = bag.get(&1).map(|kv| kv.1).copied().collect();
         vals.sort_unstable();
         assert_eq!(&[1, 1, 2], vals.as_slice());
-        let vals = map.get(&5).map(|kv| kv.1).copied().collect::<Vec<_>>();
+        let vals = bag.get(&5).map(|kv| kv.1).copied().collect::<Vec<_>>();
         assert_eq!(&[5], vals.as_slice());
     }
 
     #[test]
     fn string_keys() {
-        let mut map = HashBag::new();
-        map.insert("hello".to_string(), "bob");
-        map.insert("hello".to_string(), "world");
-        map.insert("bye".to_string(), "bob");
+        let mut bag = HashBag::new();
+        bag.insert("hello".to_string(), "bob");
+        bag.insert("hello".to_string(), "world");
+        bag.insert("bye".to_string(), "bob");
 
-        let mut hellos: Vec<_> = map.get("hello").map(|kv| kv.1).copied().collect();
+        let mut hellos: Vec<_> = bag.get("hello").map(|kv| kv.1).copied().collect();
         hellos.sort_unstable();
         assert_eq!(&["bob", "world"], hellos.as_slice());
 
-        let vals: Vec<_> = map.get("bye").map(|kv| kv.1).copied().collect();
+        let vals: Vec<_> = bag.get("bye").map(|kv| kv.1).copied().collect();
         assert_eq!(&["bob"], vals.as_slice());
     }
 
@@ -280,14 +280,14 @@ mod test {
     fn iter() {
         // The iterator is currently unused but very small and could be useful for debugging.
         let pairs = &[(1, 1), (1, 2), (1, 3), (3, 1)];
-        let mut map = HashBag::new();
+        let mut bag = HashBag::new();
         for (k, v) in pairs {
-            map.insert(k, v);
+            bag.insert(k, v);
         }
 
-        assert_eq!(map.iter().len(), pairs.len());
+        assert_eq!(bag.iter().len(), pairs.len());
 
-        let mut values: Vec<_> = map.iter().map(|(k, v)| (**k, **v)).collect();
+        let mut values: Vec<_> = bag.iter().map(|(k, v)| (**k, **v)).collect();
         values.sort_unstable();
         assert_eq!(&values, pairs);
     }
@@ -296,18 +296,18 @@ mod test {
     fn display() {
         // Shameless coverage test, it brings the file to 100% :P
         let pairs = &[(1, 1), (1, 1), (1, 2), (1, 3), (3, 1)];
-        let mut map = super::HashBag::with_capacity_and_hasher(
+        let mut bag = super::HashBag::with_capacity_and_hasher(
             pairs.len(),
             // We use a hard-coded seed so that the display is deterministic.
             ahash::RandomState::with_seeds(123, 456, 789, 1000),
         );
         for (k, v) in pairs {
-            map.insert(k, v);
+            bag.insert(k, v);
         }
 
         assert_eq!(
             "{1: 1, 1: 1, 1: 2, 1: 3, 3: 1}",
-            crate::alloc::format!("{map:?}").as_str()
+            crate::alloc::format!("{bag:?}").as_str()
         );
     }
 }
