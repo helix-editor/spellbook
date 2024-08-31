@@ -258,6 +258,25 @@ mod test {
     }
 
     #[test]
+    fn lookup_correctness_on_large_corpus() {
+        let max = 100_000;
+        let expected: Vec<_> = (1..max).flat_map(|n| [(n, n), (n, n + 1)]).collect();
+
+        let mut bag = HashBag::new();
+        for (k, v) in expected.iter() {
+            bag.insert(*k, *v);
+        }
+
+        let mut buf = Vec::with_capacity(2);
+        for n in 1..max {
+            buf.clear();
+            buf.extend(bag.get(&n).map(|(k, v)| (*k, *v)));
+            buf.sort_unstable();
+            assert_eq!(&[(n, n), (n, n + 1)], buf.as_slice());
+        }
+    }
+
+    #[test]
     fn iter() {
         // The iterator is currently unused but very small and could be useful for debugging.
         let pairs = &[(1, 1), (1, 2), (1, 3), (3, 1)];
