@@ -24,7 +24,7 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    has_flag, Casing, WordList,
+    erase_chars, has_flag, Casing, WordList,
 };
 
 use crate::{Flag, FlagSet};
@@ -50,7 +50,7 @@ struct AffLineParser<'aff> {
     output_conversions: Vec<(&'aff str, &'aff str)>,
     break_patterns: Vec<&'aff str>,
     compound_syllable_vowels: &'aff str,
-    ignore_chars: &'aff str,
+    ignore_chars: Vec<char>,
     try_chars: &'aff str,
     keyboard_closeness: &'aff str,
     prefixes: Vec<Prefix>,
@@ -192,8 +192,9 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
             continue;
         }
 
-        let (word, flagset) = parse_dic_line(word, cx.flag_type, &cx.flag_aliases, cx.ignore_chars)
-            .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
+        let (word, flagset) =
+            parse_dic_line(word, cx.flag_type, &cx.flag_aliases, &cx.ignore_chars)
+                .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
         // Normalize out Pascal and Camel cases (and uppercase when there are no flags) by
         // converting them to titlecase and setting the hidden homonym flag.
         let casing = crate::classify_casing(&word);
@@ -205,6 +206,17 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
             words.insert(word, flagset.with_flag(HIDDEN_HOMONYM_FLAG));
         }
         words.insert(word, flagset);
+    }
+
+    if !cx.ignore_chars.is_empty() {
+        for prefix in cx.prefixes.iter_mut() {
+            let add = erase_chars(&prefix.add, &cx.ignore_chars);
+            prefix.add = add.into_owned();
+        }
+        for suffix in cx.suffixes.iter_mut() {
+            let add = erase_chars(&suffix.add, &cx.ignore_chars);
+            suffix.add = add.into_owned();
+        }
     }
 
     // Collect everything into AffData.
@@ -219,7 +231,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         compound_rules: cx.compound_rules.into(),
         compound_syllable_vowels: cx.compound_syllable_vowels.to_string(),
         compound_patterns: cx.compound_patterns.into(),
-        ignore_chars: cx.ignore_chars.to_string(),
+        ignore_chars: cx.ignore_chars.into(),
         keyboard_closeness: cx.keyboard_closeness.to_string(),
         try_chars: cx.try_chars.to_string(),
         options: cx.options,
@@ -435,7 +447,7 @@ fn parse_max_diff_factor(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResu
 fn parse_ignore_chars<'a>(cx: &mut AffLineParser<'a>, lines: &mut Lines<'a>) -> ParseResult {
     lines
         .take_exactly_one_word()
-        .map(|word| cx.ignore_chars = word)
+        .map(|word| cx.ignore_chars = word.chars().collect())
 }
 
 fn parse_keyboard_closeness<'a>(cx: &mut AffLineParser<'a>, lines: &mut Lines<'a>) -> ParseResult {
@@ -1185,19 +1197,30 @@ fn parse_dic_line(
     input: &str,
     flag_type: FlagType,
     aliases: &[FlagSet],
-    ignore_chars: &str,
+    ignore: &[char],
 ) -> core::result::Result<(Box<str>, FlagSet), ParseFlagError> {
+    fn ignore_chars(s: &str, ignore: &[char]) -> Box<str> {
+        if ignore.is_empty() {
+            s.into()
+        } else {
+            s.chars()
+                .filter(|ch| !ignore.contains(ch))
+                .collect::<String>()
+                .into_boxed_str()
+        }
+    }
+
     let slash = match input.find(['/', '\\']) {
         Some(idx) => idx,
         // Fast-lane words that don't have flags.
-        None => return Ok((input.into(), FlagSet::empty())),
+        None => return Ok((ignore_chars(input, ignore), FlagSet::empty())),
     };
 
     // Backslashes are unlikely. It's more efficient to split the str and allocate directly into
     // a boxed str than going through a String.
     if &input[slash..slash + 1] == "/" {
         let flag_set = decode_flagset(&input[slash + 1..], flag_type, aliases)?;
-        return Ok((input[..slash].into(), flag_set));
+        return Ok((ignore_chars(&input[..slash], ignore), flag_set));
     }
 
     let mut word = input[..slash].to_string();
@@ -1210,13 +1233,19 @@ fn parse_dic_line(
             _ => word.push(ch),
         }
     }
-    if !ignore_chars.is_empty() {
-        todo!("erase ignored characters from the word")
-    }
+
     let flags_str: String = chars.collect();
     let flag_set = decode_flagset(&flags_str, flag_type, aliases)?;
+    let word = if !ignore.is_empty() {
+        word.into_boxed_str()
+    } else {
+        word.chars()
+            .filter(|ch| !ignore.contains(ch))
+            .collect::<String>()
+            .into_boxed_str()
+    };
 
-    Ok((word.into_boxed_str(), flag_set))
+    Ok((word, flag_set))
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1896,7 +1925,7 @@ mod test {
     #[test]
     fn parse_dic_line_test() {
         fn parse(input: &str) -> (Box<str>, FlagSet) {
-            parse_dic_line(input, FlagType::default(), &[], "").unwrap()
+            parse_dic_line(input, FlagType::default(), &[], &[]).unwrap()
         }
 
         assert_eq!(("stem".into(), flagset![]), parse("stem"));

@@ -2,7 +2,7 @@
 
 // TODO: remove.
 #![allow(dead_code)]
-#![no_std]
+// #![no_std]
 
 extern crate alloc;
 
@@ -13,7 +13,7 @@ pub(crate) mod macros;
 
 pub use aff::parser::{ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource};
 
-use crate::alloc::{boxed::Box, slice, vec::Vec};
+use crate::alloc::{borrow::Cow, boxed::Box, slice, vec::Vec};
 use aff::AffData;
 use checker::Checker;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
@@ -326,6 +326,18 @@ pub(crate) fn classify_casing(word: &str) -> Casing {
     }
 }
 
+pub(crate) fn erase_chars<'a>(word: &'a str, ignore: &[char]) -> Cow<'a, str> {
+    if ignore.is_empty() {
+        Cow::Borrowed(word)
+    } else {
+        Cow::Owned(
+            word.chars()
+                .filter(|ch| !ignore.contains(ch))
+                .collect::<String>(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -404,5 +416,16 @@ mod test {
         assert_eq!(Casing::All, classify_casing("ЗДРАВО"));
         assert_eq!(Casing::Camel, classify_casing("здРаВо"));
         assert_eq!(Casing::Pascal, classify_casing("ЗдрАво"));
+    }
+
+    #[test]
+    fn erase_chars_test() {
+        fn erase_chars(word: &str, ignore: &[char]) -> String {
+            super::erase_chars(word, ignore).into_owned()
+        }
+        assert_eq!(
+            erase_chars("example", &['a', 'e', 'i', 'o', 'u']),
+            "xmpl".to_owned()
+        );
     }
 }

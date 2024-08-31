@@ -5,8 +5,8 @@ use crate::{
         AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG,
     },
     alloc::{string::String, vec::Vec},
-    classify_casing, flag, has_flag, AffixingMode, Casing, Flag, FlagSet, AT_COMPOUND_BEGIN,
-    AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD,
+    classify_casing, erase_chars, flag, has_flag, AffixingMode, Casing, Flag, FlagSet,
+    AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD,
 };
 
 // Nuspell limits the length of the input word:
@@ -35,6 +35,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return true;
         }
 
+        // TODO: remove this abbreviation stuff and have the tokenizer take over
+        // responsibility for it?
         let trimmed_word = word.trim_end_matches('.');
         let abbreviated = trimmed_word.len() != word.len();
 
@@ -42,9 +44,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return true;
         }
 
-        // TODO: erase chars in `trimmed_word`
+        let trimmed_word = erase_chars(trimmed_word, &self.aff.ignore_chars);
 
-        if self.spell_break(trimmed_word) {
+        if self.spell_break(&trimmed_word) {
             return true;
         }
 

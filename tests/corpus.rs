@@ -20,7 +20,6 @@ fn check() {
         "hu",
         "i54980",
         "iconv2",
-        "ignore",
         "ignoreutf",
         "morph",
         "nepali",

@@ -1069,7 +1069,7 @@ pub(crate) struct AffData<S> {
     pub replacements: ReplacementTable,
     // similarities: Vec<SimilarityGroup>,
     // phonetic_table: PhoneticTable,
-    pub ignore_chars: String,
+    pub ignore_chars: Box<[char]>,
     pub keyboard_closeness: String,
     pub try_chars: String,
     pub options: AffOptions,
