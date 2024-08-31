@@ -14,7 +14,6 @@ fn check() {
         "checkcompoundpattern4",
         // TODO figure out why these fail.
         "condition",
-        "conditionalprefix",
         "encoding",
         "germancompounding",
         "germancompoundingold",

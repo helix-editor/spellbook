@@ -593,7 +593,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         && (suffix.flags.contains(&prefix.flag) || flags.contains(&prefix.flag));
 
                     let valid_cross_suffix_outer = !has_needaffix_suffix
-                        && flags.contains(&suffix.flag)
+                        && flags.contains(&prefix.flag)
                         && (prefix.flags.contains(&suffix.flag) || flags.contains(&suffix.flag));
 
                     if !valid_cross_prefix_outer && !valid_cross_suffix_outer {
@@ -2483,6 +2483,7 @@ mod test {
         // "un" is a prefix in en_US and "drink" is a stem. "drink"'s flags don't allow you to use
         // the "un" prefix though, so this word isn't correct.
         assert!(!EN_US.check("undrink"));
+        assert!(!EN_US.check("undrinks"));
     }
 
     #[test]
