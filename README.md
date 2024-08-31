@@ -19,7 +19,7 @@ fn main() {
 }
 ```
 
-Spellbook is `no_std` and only requires [`hashbrown`] as a dependency. (Note that [`ahash`] is included by default, see the feature flags section below.) This may change in the future for performance tweaks like small-string optimizations and maybe `memchr` but the hope is to keep this library as lightweight as possible.
+Spellbook is `no_std` and only requires [`hashbrown`] as a dependency. (Note that [`ahash`] is included by default, see the feature flags section below.) This may change in the future for performance tweaks like small-string optimizations and maybe `memchr` but the hope is to keep this library as lightweight as possible: new dependencies must considerably improve performance or correctness.
 
 ### Maturity
 
@@ -114,7 +114,7 @@ PFX E   0     dis         .
 
 Which might apply to a stem in the dictionary like `pose/CAKEGDS` to allow words "depose" and "dispose". When checking "depose" we look up in the set of prefixes to find any where the "add" port are prefixes of the input word (`"depose".starts_with("de")`).
 
-A [prefix tree](https://en.wikipedia.org/wiki/Trie) would allow very quick lookup. Trees and graph-like structures are not the most straightforward things to write in Rust though. Luckily Nuspell has a trick for this type which works well in Rust. Instead of a tree, we collect the set of prefixes into a sorted `Box<[Prefix]>` table. We can then binary search based on whether a prefix matches (`str::starts_with`). There are some additional optimizations like an extra lookup table that maps the first character in a prefix to the starting index in the `Box<[Prefix]>` table so that we can jump to the right region of the table quickly.
+A [prefix tree](https://en.wikipedia.org/wiki/Trie) would allow very quick lookup. Trees and graph-like structures are not the most straightforward things to write in Rust though. Luckily Nuspell has a trick for this type which works well in Rust. Instead of a tree, we collect the set of prefixes into a `Box<[Prefix]>` table sorted by the "add" part of a prefix/suffix ("de" or "dis" above, for example). We can then binary search based on whether a prefix matches (`str::starts_with`). There are some additional optimizations like an extra lookup table that maps the first character in a prefix to the starting index in the `Box<[Prefix]>` table so that we can jump to the right region of the table quickly.
 
 ### Credits
 
