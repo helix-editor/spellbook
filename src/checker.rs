@@ -2316,18 +2316,6 @@ mod test {
     }
 
     #[test]
-    fn classify_casing_nuspell_unit_test() {
-        // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L451-L459>
-
-        assert_eq!(Casing::None, classify_casing(""));
-        assert_eq!(Casing::None, classify_casing("здраво"));
-        assert_eq!(Casing::Init, classify_casing("Здраво"));
-        assert_eq!(Casing::All, classify_casing("ЗДРАВО"));
-        assert_eq!(Casing::Camel, classify_casing("здРаВо"));
-        assert_eq!(Casing::Pascal, classify_casing("ЗдрАво"));
-    }
-
-    #[test]
     fn huge_word_is_rejected() {
         assert!(!EN_US.check(&"hello".repeat(MAX_WORD_LEN)));
     }

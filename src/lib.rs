@@ -269,7 +269,6 @@ pub(crate) const AT_COMPOUND_END: AffixingMode = 3;
 /// The casing of a word.
 // Hunspell: <https://github.com/hunspell/hunspell/blob/8f9bb2957bfd74ca153fad96083a54488b518ca5/src/hunspell/csutil.hxx#L91-L96>
 // Nuspell: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/utils.hxx#L91-L104>
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum Casing {
     /// All letters are lowercase. For example "foobar".
     ///
@@ -410,12 +409,12 @@ mod test {
     fn classify_casing_nuspell_unit_test() {
         // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L451-L459>
 
-        assert_eq!(Casing::None, classify_casing(""));
-        assert_eq!(Casing::None, classify_casing("здраво"));
-        assert_eq!(Casing::Init, classify_casing("Здраво"));
-        assert_eq!(Casing::All, classify_casing("ЗДРАВО"));
-        assert_eq!(Casing::Camel, classify_casing("здРаВо"));
-        assert_eq!(Casing::Pascal, classify_casing("ЗдрАво"));
+        assert!(matches!(classify_casing(""), Casing::None));
+        assert!(matches!(classify_casing("здраво"), Casing::None));
+        assert!(matches!(classify_casing("Здраво"), Casing::Init));
+        assert!(matches!(classify_casing("ЗДРАВО"), Casing::All));
+        assert!(matches!(classify_casing("здРаВо"), Casing::Camel));
+        assert!(matches!(classify_casing("ЗдрАво"), Casing::Pascal));
     }
 
     #[test]
