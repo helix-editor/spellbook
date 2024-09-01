@@ -1132,17 +1132,15 @@ fn parse_flags_from_chars(
             let mut number = String::new();
             let mut separated = false;
             for ch in chars.by_ref() {
-                if ch.is_ascii_digit() {
-                    number.push(ch);
-                } else {
-                    if ch == ',' && separated {
+                if ch == ',' {
+                    if separated {
                         return Err(DuplicateComma);
                     }
-                    if ch == ',' {
-                        let n = number.parse::<u16>().map_err(ParseIntError)?;
-                        flags.push(try_flag_from_u16(n)?);
-                        number.clear();
-                    }
+                    let n = number.parse::<u16>().map_err(ParseIntError)?;
+                    flags.push(try_flag_from_u16(n)?);
+                    number.clear();
+                } else {
+                    number.push(ch);
                 }
                 separated = ch == ',';
             }
