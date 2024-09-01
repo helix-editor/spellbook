@@ -427,4 +427,16 @@ mod test {
             "xmpl".to_owned()
         );
     }
+
+    #[test]
+    fn new_on_bad_dictionary() {
+        let aff = r#"
+        FLAG num
+        "#;
+        // Not numeric flags:
+        let dic = r#"1
+        hello/world
+        "#;
+        assert!(Dictionary::new(dic, aff).is_err());
+    }
 }
