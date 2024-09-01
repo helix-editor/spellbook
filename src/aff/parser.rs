@@ -45,7 +45,7 @@ struct AffLineParser<'aff> {
     // encoding: Encoding,
     flag_aliases: Vec<FlagSet>,
     // wordchars: String, deprecated?
-    replacements: Vec<(&'aff str, &'aff str)>,
+    replacements: Vec<(&'aff str, String)>,
     input_conversions: Vec<(&'aff str, &'aff str)>,
     output_conversions: Vec<(&'aff str, &'aff str)>,
     break_patterns: Vec<&'aff str>,
@@ -474,7 +474,7 @@ fn parse_language<'a>(cx: &mut AffLineParser<'a>, lines: &mut Lines<'a>) -> Pars
 
 fn parse_replacements<'aff>(cx: &mut AffLineParser<'aff>, lines: &mut Lines<'aff>) -> ParseResult {
     lines.parse_table2("REP", |str1, str2| {
-        cx.replacements.push((str1, str2));
+        cx.replacements.push((str1, str2.replace('_', " ")));
         Ok(())
     })
 }

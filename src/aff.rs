@@ -686,8 +686,8 @@ pub(crate) struct ReplacementTable {
     end_word_replacements_last_idx: usize,
 }
 
-impl From<Vec<(&str, &str)>> for ReplacementTable {
-    fn from(replacements: Vec<(&str, &str)>) -> Self {
+impl From<Vec<(&str, String)>> for ReplacementTable {
+    fn from(replacements: Vec<(&str, String)>) -> Self {
         let mut whole = Vec::new();
         let mut start = Vec::new();
         let mut end = Vec::new();
