@@ -1447,7 +1447,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             .aff
             .options
             .compound_max_word_count
-            .is_some_and(|max| num_part > max.get().into())
+            .is_some_and(|max| num_part + 1 >= max.get().into())
         {
             // Nuspell: "is not Hungarian"
             if self.aff.compound_syllable_vowels.is_empty() {
