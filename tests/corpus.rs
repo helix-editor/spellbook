@@ -15,8 +15,6 @@ fn check() {
         // TODO figure out why these fail.
         "condition",
         "encoding",
-        "germancompounding",
-        "germancompoundingold",
         "hu",
         "i54980",
         "iconv2",

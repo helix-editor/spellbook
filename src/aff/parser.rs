@@ -1007,6 +1007,10 @@ impl<'text> Lines<'text> {
                 }
             };
 
+            // Like the strip part, add can be nullified with `0`. This is necessary because of
+            // the way Nuspell & Hunspell parse "/FLAGS".
+            let add = if add == "0" { "" } else { add };
+
             // "." is the empty condition - it always matches. We'll use an Option for this
             // fast lane instead.
             let condition = words.next().filter(|&cond| cond != ".");
