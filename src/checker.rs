@@ -1907,7 +1907,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         flags: &FlagSet,
         suffix: &Suffix,
     ) -> i16 {
-        if MODE != AT_COMPOUND_END {
+        if MODE != AT_COMPOUND_END || self.aff.compound_syllable_vowels.is_empty() {
             return 0;
         }
 
