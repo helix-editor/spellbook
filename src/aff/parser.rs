@@ -178,14 +178,12 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
     while !lines.is_finished() {
         lines.advance_line();
 
-        // NOTE: currently we ignore morphological fields.
-        let word = match lines.next_word() {
-            Some(word) => word,
+        let Some(line) = lines.line().map(|l| l.trim()) else {
             // Empty lines are skipped.
-            None => continue,
+            continue;
         };
 
-        if word.starts_with('/') {
+        if line.starts_with('/') {
             // Some dictionaries like it_IT use a leading slash as a comment.
             // The empty word isn't a valid entry in the word list so it doesn't matter which
             // flags come after it.
@@ -193,7 +191,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         }
 
         let (word, flagset) =
-            parse_dic_line(word, cx.flag_type, &cx.flag_aliases, &cx.ignore_chars)
+            parse_dic_line(line, cx.flag_type, &cx.flag_aliases, &cx.ignore_chars)
                 .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
         // Normalize out Pascal and Camel cases (and uppercase when there are no flags) by
         // converting them to titlecase and setting the hidden homonym flag.
@@ -727,6 +725,10 @@ impl<'text> Lines<'text> {
         });
     }
 
+    fn line(&mut self) -> Option<&str> {
+        self.lines.peek().map(|(_line_no, line)| *line)
+    }
+
     fn next_word(&mut self) -> Option<&str> {
         let mut words = self.words.take()?;
         let word = words.next()?;
@@ -1221,8 +1223,13 @@ fn parse_dic_line(
     // Backslashes are unlikely. It's more efficient to split the str and allocate directly into
     // a boxed str than going through a String.
     if &input[slash..slash + 1] == "/" {
-        let flag_set = decode_flagset(&input[slash + 1..], flag_type, aliases)?;
-        return Ok((ignore_chars(&input[..slash], ignore), flag_set));
+        let flagset_str = input[slash + 1..]
+            .split_whitespace()
+            .next()
+            .unwrap_or(&input[slash + 1..]);
+        let flagset = decode_flagset(flagset_str, flag_type, aliases)?;
+        let word = ignore_chars(&input[..slash], ignore);
+        return Ok((word, flagset));
     }
 
     let mut word = input[..slash].to_string();
@@ -1944,6 +1951,21 @@ mod test {
         );
         // nn_NO
         assert_eq!(("Håkon".into(), flagset!['J', '\\']), parse("Håkon/J\\"));
+
+        // hu corpus
+        assert_eq!(("devon kor".into(), flagset![]), parse("devon kor"));
+
+        // en_GB
+        assert_eq!(
+            ("activewear".into(), flagset!['M']),
+            parse("activewear/M	Noun: uncountable")
+        );
+        // gl_ES
+        // FIXME:
+        // assert_eq!(
+        //     ("Aguileño".into(), flagset![]),
+        //     parse("Aguileño po:nome is:ngrama_Movimiento_Aguileño_Socialdemócrata")
+        // );
     }
 
     #[test]

@@ -15,7 +15,6 @@ fn check() {
         // TODO figure out why these fail.
         "condition",
         "encoding",
-        "hu",
         "i54980",
         "iconv2",
         "ignoreutf",
