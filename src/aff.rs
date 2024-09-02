@@ -7,13 +7,22 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    has_flag, AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END, FULL_WORD,
+    AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END, FULL_WORD,
 };
 
 use core::{marker::PhantomData, num::NonZeroU16, str::Chars};
 
 pub(crate) const HIDDEN_HOMONYM_FLAG: Flag = unsafe { Flag::new_unchecked(u16::MAX) };
 pub(crate) const MAX_SUGGESTIONS: usize = 16;
+
+macro_rules! has_flag {
+    ( $flags:expr, $flag:expr ) => {{
+        match $flag {
+            Some(flag) => $flags.contains(&flag),
+            None => false,
+        }
+    }};
+}
 
 /// The representation of a flag in a `.dic` or `.aff` file.
 ///
@@ -1247,7 +1256,22 @@ impl Default for AffOptions {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::*;
+
+    macro_rules! flag {
+        ( $x:expr ) => {{
+            Flag::new($x as u16).unwrap()
+        }};
+    }
+    macro_rules! flagset {
+        () => {{
+            FlagSet::empty()
+        }};
+        ( $( $x:expr ),* ) => {
+            {
+                FlagSet::from( $crate::alloc::vec![ $( Flag::new( $x as u16 ).unwrap() ),* ] )
+            }
+        };
+    }
 
     #[test]
     fn condition_matches() {

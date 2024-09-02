@@ -26,7 +26,6 @@ extern crate alloc;
 pub(crate) mod aff;
 pub(crate) mod checker;
 mod hash_bag;
-pub(crate) mod macros;
 
 pub use aff::parser::{ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource};
 
@@ -376,6 +375,22 @@ pub(crate) fn erase_chars<'a>(word: &'a str, ignore: &[char]) -> Cow<'a, str> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    macro_rules! flag {
+        ( $x:expr ) => {{
+            Flag::new($x as u16).unwrap()
+        }};
+    }
+    macro_rules! flagset {
+        () => {{
+            FlagSet::empty()
+        }};
+        ( $( $x:expr ),* ) => {
+            {
+                FlagSet::from( $crate::alloc::vec![ $( Flag::new( $x as u16 ).unwrap() ),* ] )
+            }
+        };
+    }
 
     #[test]
     fn flagset_display() {

@@ -24,10 +24,8 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    erase_chars, has_flag, Casing, WordList,
+    erase_chars, Casing, Flag, FlagSet, WordList,
 };
-
-use crate::{Flag, FlagSet};
 
 use super::{
     AffData, AffOptions, BreakTable, CaseHandling, CompoundPattern, CompoundRule, Condition,
@@ -197,7 +195,10 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         // converting them to titlecase and setting the hidden homonym flag.
         let casing = crate::classify_casing(&word);
         if (matches!(casing, Casing::Pascal | Casing::Camel)
-            && !has_flag!(flagset, cx.options.forbidden_word_flag))
+            && !cx
+                .options
+                .forbidden_word_flag
+                .is_some_and(|flag| flagset.contains(&flag)))
             || (matches!(casing, Casing::All) && !flagset.is_empty())
         {
             let word = cx.options.case_handling.titlecase(&word).into();
@@ -1747,9 +1748,23 @@ impl FromStr for Condition {
 
 #[cfg(test)]
 mod test {
-    use crate::{flag, flagset};
-
     use super::*;
+
+    macro_rules! flag {
+        ( $x:expr ) => {{
+            Flag::new($x as u16).unwrap()
+        }};
+    }
+    macro_rules! flagset {
+        () => {{
+            FlagSet::empty()
+        }};
+        ( $( $x:expr ),* ) => {
+            {
+                FlagSet::from( $crate::alloc::vec![ $( Flag::new( $x as u16 ).unwrap() ),* ] )
+            }
+        };
+    }
 
     #[test]
     fn naive_word_flagset_split_test() {

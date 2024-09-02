@@ -5,13 +5,27 @@ use crate::{
         AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG,
     },
     alloc::{string::String, vec::Vec},
-    classify_casing, erase_chars, flag, has_flag, AffixingMode, Casing, Dictionary, Flag, FlagSet,
-    WordList, AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD,
+    classify_casing, erase_chars, AffixingMode, Casing, Dictionary, Flag, FlagSet, WordList,
+    AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD,
 };
 
 // Nuspell limits the length of the input word:
 // <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/dictionary.cxx#L156>
 const MAX_WORD_LEN: usize = 360;
+
+macro_rules! has_flag {
+    ( $flags:expr, $flag:expr ) => {{
+        match $flag {
+            Some(flag) => $flags.contains(&flag),
+            None => false,
+        }
+    }};
+}
+macro_rules! flag {
+    ( $x:expr ) => {{
+        Flag::new($x as u16).unwrap()
+    }};
+}
 
 // TODO: expose type and add options to it?
 pub(crate) struct Checker<'a, S: BuildHasher> {
