@@ -2,7 +2,7 @@
 
 // TODO: remove.
 #![allow(dead_code)]
-// #![no_std]
+#![no_std]
 
 extern crate alloc;
 
@@ -13,7 +13,7 @@ pub(crate) mod macros;
 
 pub use aff::parser::{ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource};
 
-use crate::alloc::{borrow::Cow, boxed::Box, slice, vec::Vec};
+use crate::alloc::{borrow::Cow, boxed::Box, slice, string::String, vec::Vec};
 use aff::AffData;
 use checker::Checker;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
@@ -424,7 +424,7 @@ mod test {
         }
         assert_eq!(
             erase_chars("example", &['a', 'e', 'i', 'o', 'u']),
-            "xmpl".to_owned()
+            String::from("xmpl")
         );
     }
 
