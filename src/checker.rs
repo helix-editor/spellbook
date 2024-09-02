@@ -405,9 +405,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if MODE == FULL_WORD
-                    && has_flag!(suffix.flags, self.aff.options.only_in_compound_flag)
-                {
+                if MODE == FULL_WORD && has_flag!(flags, self.aff.options.only_in_compound_flag) {
                     continue;
                 }
 
@@ -468,9 +466,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                if MODE == FULL_WORD
-                    && has_flag!(prefix.flags, self.aff.options.only_in_compound_flag)
-                {
+                if MODE == FULL_WORD && has_flag!(flags, self.aff.options.only_in_compound_flag) {
                     continue;
                 }
 
@@ -688,7 +684,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
                     // Note: assumed `AffixingMode::FullWord`
-                    if has_flag!(inner_suffix.flags, self.aff.options.only_in_compound_flag) {
+                    if has_flag!(flags, self.aff.options.only_in_compound_flag) {
                         continue;
                     }
 
@@ -763,7 +759,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
                     // Note: assumed `AffixingMode::FullWord`
-                    if has_flag!(inner_prefix.flags, self.aff.options.only_in_compound_flag) {
+                    if has_flag!(flags, self.aff.options.only_in_compound_flag) {
                         continue;
                     }
 
@@ -869,7 +865,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         }
 
                         // Note: assumed `AffixingMode::FullWord`
-                        if has_flag!(inner_suffix.flags, self.aff.options.only_in_compound_flag) {
+                        if has_flag!(flags, self.aff.options.only_in_compound_flag) {
                             continue;
                         }
 
@@ -1006,7 +1002,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         }
 
                         // Note: assumed `AffixingMode::FullWord`
-                        if has_flag!(inner_suffix.flags, self.aff.options.only_in_compound_flag) {
+                        if has_flag!(flags, self.aff.options.only_in_compound_flag) {
                             continue;
                         }
 
@@ -1112,7 +1108,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         }
 
                         // Note: assumed `AffixingMode::FullWord`
-                        if has_flag!(inner_prefix.flags, self.aff.options.only_in_compound_flag) {
+                        if has_flag!(flags, self.aff.options.only_in_compound_flag) {
                             continue;
                         }
 
@@ -1249,7 +1245,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         }
 
                         // Note: assumed `AffixingMode::FullWord`
-                        if has_flag!(inner_prefix.flags, self.aff.options.only_in_compound_flag) {
+                        if has_flag!(flags, self.aff.options.only_in_compound_flag) {
                             continue;
                         }
 

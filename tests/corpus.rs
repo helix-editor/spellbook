@@ -19,7 +19,6 @@ fn check() {
         "morph",
         "nepali",
         "oconv",
-        "onlyincompound",
         "utf8_bom",
         "utf8_bom2",
         "utf8_nonbmp",
