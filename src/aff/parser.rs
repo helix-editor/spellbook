@@ -1214,47 +1214,102 @@ fn parse_dic_line(
         }
     }
 
-    let slash = match input.find(['/', '\\']) {
-        Some(idx) => idx,
-        // Fast-lane words that don't have flags.
-        None => return Ok((ignore_chars(input, ignore), FlagSet::empty())),
+    let Some((idx, byte)) = input
+        .find(['/', '\\', ' ', '\t'])
+        // Note that the pattern characters above are all ASCII so we can byte index.
+        .map(|idx| (idx, input.as_bytes()[idx]))
+        // Treat tabs the same as the end-of-line.
+        .filter(|(_idx, byte)| *byte != b'\t')
+    else {
+        // A fast-lane for words without flagsets.
+        let word = ignore_chars(input, ignore);
+        return Ok((word, FlagSet::empty()));
     };
 
-    // Backslashes are unlikely. It's more efficient to split the str and allocate directly into
-    // a boxed str than going through a String.
-    if &input[slash..slash + 1] == "/" {
-        let flagset_str = input[slash + 1..]
+    // Note: ignore '/' at the start of the line. Not sure why this is correct but it's in the
+    // test corpus.
+    if byte == b'/' && idx != 0 {
+        // Another fast-lane for a common case: a word with a flagset that doesn't use
+        // backslash escaping or contain a space.
+        let word = ignore_chars(&input[..idx], ignore);
+        // Ignore morphological fields for now.
+        let flagset_str = input[idx + 1..]
             .split_whitespace()
             .next()
-            .unwrap_or(&input[slash + 1..]);
+            .unwrap_or(&input[idx + 1..]);
         let flagset = decode_flagset(flagset_str, flag_type, aliases)?;
-        let word = ignore_chars(&input[..slash], ignore);
         return Ok((word, flagset));
     }
 
-    let mut word = input[..slash].to_string();
-    let mut chars = input[slash..].chars();
-    let mut escape = false;
-    for ch in chars.by_ref() {
+    // Worst-case scenario the word contains a space or uses backslash to escape the separator
+    // '/'. Construct the word gradually.
+
+    // This is always an overallocation but should be more precise than naive string growth.
+    let mut word = String::with_capacity(input.len());
+    word.push_str(&input[..idx]);
+
+    let input = &input[idx..];
+    let mut chars = input.char_indices();
+    let mut escaped = false;
+    for (idx, ch) in chars.by_ref() {
         match ch {
-            '\\' => escape = !escape,
-            '/' if !escape => break,
+            '/' if escaped => {
+                // Replace the backslash with the slash. This is safe as both characters are the
+                // same size.
+                debug_assert!(!word.is_empty());
+                // Note: guaranteed to not underflow because we must have at least one character
+                // pushed in order for `escaped` to be true.
+                let last_idx = word.len() - 1;
+                debug_assert_eq!(word.as_bytes()[last_idx], b'\\');
+                unsafe {
+                    word.as_bytes_mut()[last_idx] = b'/';
+                }
+            }
+            // Note: '/' is allowed at the beginning of a dictionary word.
+            '/' if idx != 0 => break,
+            '\t' => {
+                // Treat tabs as the end-of-line.
+                let word = ignore_chars(&word, ignore);
+                return Ok((word, FlagSet::empty()));
+            }
+            ' ' => {
+                // Detect and ignore morphological fields. Scan ahead three characters into the
+                // next non-whitespace part of the input. If it's a lowercase char, a lowercase
+                // char and then ':' it's the marker of a morphological field.
+                let separates_morphological_field = input[idx + 1..]
+                    .find(|ch: char| !ch.is_whitespace())
+                    .map(|match_idx| match_idx + idx + 1)
+                    .is_some_and(|non_whitespace_idx| {
+                        let mut next_non_whitespace = input[non_whitespace_idx..].chars();
+
+                        next_non_whitespace
+                            .next()
+                            .is_some_and(|ch| ch.is_lowercase())
+                            && next_non_whitespace
+                                .next()
+                                .is_some_and(|ch| ch.is_lowercase())
+                            && next_non_whitespace.next() == Some(':')
+                    });
+
+                if separates_morphological_field {
+                    let word = ignore_chars(&word, ignore);
+                    return Ok((word, FlagSet::empty()));
+                } else {
+                    word.push(ch);
+                }
+            }
             _ => word.push(ch),
         }
+        escaped = ch == '\\';
     }
 
-    let flags_str: String = chars.collect();
-    let flag_set = decode_flagset(&flags_str, flag_type, aliases)?;
-    let word = if !ignore.is_empty() {
-        word.into_boxed_str()
-    } else {
-        word.chars()
-            .filter(|ch| !ignore.contains(ch))
-            .collect::<String>()
-            .into_boxed_str()
-    };
-
-    Ok((word, flag_set))
+    let flagset_str: String = chars
+        .map(|(_idx, ch)| ch)
+        .take_while(|ch| !ch.is_whitespace())
+        .collect();
+    let flagset = decode_flagset(&flagset_str, flag_type, aliases)?;
+    let word = ignore_chars(&word, ignore);
+    Ok((word, flagset))
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1956,16 +2011,22 @@ mod test {
         assert_eq!(("devon kor".into(), flagset![]), parse("devon kor"));
 
         // en_GB
+        // The '\t' marks the end of the word+flagset.
         assert_eq!(
             ("activewear".into(), flagset!['M']),
             parse("activewear/M	Noun: uncountable")
         );
         // gl_ES
-        // FIXME:
-        // assert_eq!(
-        //     ("Aguileño".into(), flagset![]),
-        //     parse("Aguileño po:nome is:ngrama_Movimiento_Aguileño_Socialdemócrata")
-        // );
+        assert_eq!(
+            ("Aguileño".into(), flagset![]),
+            parse("Aguileño po:nome is:ngrama_Movimiento_Aguileño_Socialdemócrata")
+        );
+
+        assert_eq!(("devon  kor".into(), flagset!['A']), parse("devon  kor/A"));
+        assert_eq!(
+            ("activewear".into(), flagset!['M']),
+            parse("activewear/M po: nome")
+        );
     }
 
     #[test]
