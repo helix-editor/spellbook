@@ -961,6 +961,30 @@ pub(crate) struct CompoundPattern {
     pub match_first_only_unaffixed_or_zero_affixed: bool,
 }
 
+#[derive(Debug)]
+struct Conversion {
+    from: Box<str>,
+    to: Box<str>,
+    /// ICONV/OCONV use '_' at the end of the pattern text like '$' in regex: if the match only
+    /// applies at the end of the word.
+    anchor_end: bool,
+}
+
+impl Conversion {
+    fn find(&self, word: &str) -> Option<usize> {
+        if word.len() < self.from.len() {
+            return None;
+        }
+
+        if self.anchor_end {
+            word.ends_with(&*self.from)
+                .then_some(word.len() - self.from.len())
+        } else {
+            word.find(&*self.from)
+        }
+    }
+}
+
 /// The conversion table used by ICONV and OCONV rules.
 ///
 /// This is nothing more than a sequence of `(from, to)` replacement pairs. Not many dictionaries
@@ -969,18 +993,29 @@ pub(crate) struct CompoundPattern {
 /// unicode representations of letters, like "à" becoming "à".
 #[derive(Debug)]
 pub(crate) struct ConversionTable {
-    inner: Box<[(Box<str>, Box<str>)]>,
+    inner: Box<[Conversion]>,
 }
 
 impl From<Vec<(&str, &str)>> for ConversionTable {
     fn from(mut table: Vec<(&str, &str)>) -> Self {
         // Sort the table so that longer patterns come before shorter.
-        table.sort_unstable_by_key(|(x, _y)| core::cmp::Reverse(*x));
+        table.sort_unstable_by_key(|(from, _to)| core::cmp::Reverse(*from));
 
         Self {
             inner: table
                 .into_iter()
-                .map(|(from, to)| (from.into(), to.into()))
+                .map(|(from, to)| {
+                    let (from, anchor_end) = if let Some(from) = from.strip_suffix('_') {
+                        (from, true)
+                    } else {
+                        (from, false)
+                    };
+                    Conversion {
+                        to: to.into(),
+                        from: from.into(),
+                        anchor_end,
+                    }
+                })
                 .collect(),
         }
     }
@@ -989,7 +1024,7 @@ impl From<Vec<(&str, &str)>> for ConversionTable {
 /// A match of an ICONV/OCONV pattern in a word.
 /// The lifetime belongs to the table.
 #[derive(Debug)]
-struct Conversion<'a> {
+struct ConversionMatch<'a> {
     /// The byte index in the word at which the match starts.
     start: usize,
     /// The pattern which matched.
@@ -1000,15 +1035,15 @@ struct Conversion<'a> {
 
 impl ConversionTable {
     /// Finds the longest "from" in the table which matches some part of the word.
-    fn find_match<'a>(&'a self, word: &str, offset: usize) -> Option<Conversion<'a>> {
+    fn find_match<'a>(&'a self, word: &str, offset: usize) -> Option<ConversionMatch<'a>> {
         self.inner
             .iter()
-            .filter_map(|(from, replacement)| {
-                let start = word[offset..].find(&**from)? + offset;
-                Some(Conversion {
+            .filter_map(|conversion| {
+                let start = conversion.find(&word[offset..])? + offset;
+                Some(ConversionMatch {
                     start,
-                    from,
-                    replacement,
+                    from: &conversion.from,
+                    replacement: &conversion.to,
                 })
             })
             .max_by_key(|conversion| conversion.replacement.len())
