@@ -7,7 +7,7 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    has_flag, AffixingMode, Flag, FlagSet, WordList, AT_COMPOUND_BEGIN, AT_COMPOUND_END, FULL_WORD,
+    has_flag, AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END, FULL_WORD,
 };
 
 use core::{marker::PhantomData, num::NonZeroU16, str::Chars};
@@ -1135,9 +1135,8 @@ impl CaseHandling {
 }
 
 #[derive(Debug)]
-pub(crate) struct AffData<S> {
+pub(crate) struct AffData {
     // checking options
-    pub words: WordList<S>,
     pub prefixes: PrefixIndex,
     pub suffixes: SuffixIndex,
     pub break_table: BreakTable,

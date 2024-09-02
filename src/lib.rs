@@ -27,11 +27,15 @@ pub type DefaultHashBuilder = core::hash::BuildHasherDefault<ahash::AHasher>;
 #[cfg(not(feature = "default-hasher"))]
 pub enum DefaultHashBuilder {}
 
+// We represent the stem as a boxed str to save on space.
+pub(crate) type WordList<S> = HashBag<Box<str>, FlagSet, S>;
+
 // Allow passing down an Allocator too?
 
 /// TODO
 pub struct Dictionary<S = DefaultHashBuilder> {
-    aff_data: AffData<S>,
+    words: WordList<S>,
+    aff_data: AffData,
 }
 
 impl<S: BuildHasher + Clone> Dictionary<S> {
@@ -40,8 +44,8 @@ impl<S: BuildHasher + Clone> Dictionary<S> {
         aff: &str,
         build_hasher: S,
     ) -> Result<Self, ParseDictionaryError> {
-        let aff_data = aff::parser::parse(dic, aff, build_hasher)?;
-        Ok(Self { aff_data })
+        let (words, aff_data) = aff::parser::parse(dic, aff, build_hasher)?;
+        Ok(Self { words, aff_data })
     }
 }
 
@@ -53,7 +57,7 @@ impl Dictionary<DefaultHashBuilder> {
 
 impl<S: BuildHasher> Dictionary<S> {
     pub fn check(&self, word: &str) -> bool {
-        Checker::new(&self.aff_data).check(word)
+        Checker::new(self).check(word)
     }
 
     // suggest(&self, word: &str) -> impl Iterator<Item = String> ?
@@ -255,9 +259,6 @@ impl fmt::Debug for FlagSet {
         f.write_fmt(format_args!("flagset!{:?}", self.inner))
     }
 }
-
-// We represent the stem as a boxed str to save on space.
-pub(crate) type WordList<S> = HashBag<Box<str>, FlagSet, S>;
 
 // Ideally these would be an enum but const generics do not yet support custom enums.
 pub(crate) type AffixingMode = u8;

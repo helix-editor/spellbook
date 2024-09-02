@@ -5,8 +5,8 @@ use crate::{
         AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG,
     },
     alloc::{string::String, vec::Vec},
-    classify_casing, erase_chars, flag, has_flag, AffixingMode, Casing, Flag, FlagSet,
-    AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD,
+    classify_casing, erase_chars, flag, has_flag, AffixingMode, Casing, Dictionary, Flag, FlagSet,
+    WordList, AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD,
 };
 
 // Nuspell limits the length of the input word:
@@ -15,12 +15,16 @@ const MAX_WORD_LEN: usize = 360;
 
 // TODO: expose type and add options to it?
 pub(crate) struct Checker<'a, S: BuildHasher> {
-    aff: &'a AffData<S>,
+    words: &'a WordList<S>,
+    aff: &'a AffData,
 }
 
 impl<'a, S: BuildHasher> Checker<'a, S> {
-    pub fn new(aff: &'a AffData<S>) -> Self {
-        Self { aff }
+    pub fn new(dict: &'a Dictionary<S>) -> Self {
+        Self {
+            words: &dict.words,
+            aff: &dict.aff_data,
+        }
     }
 
     /// Checks that the word is valid according to the dictionary.
@@ -310,7 +314,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     }
 
     fn check_simple_word(&self, word: &str, hidden_homonym: HiddenHomonym) -> Option<&FlagSet> {
-        for (_stem, flags) in self.aff.words.get(word) {
+        for (_stem, flags) in self.words.get(word) {
             if has_flag!(flags, self.aff.options.need_affix_flag) {
                 continue;
             }
@@ -397,7 +401,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            for (stem, flags) in self.aff.words.get(stem.as_ref()) {
+            for (stem, flags) in self.words.get(stem.as_ref()) {
                 // Nuspell:
                 // if (!cross_valid_inner_outer(word_flags, e))
                 // 	continue;
@@ -458,7 +462,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            for (stem, flags) in self.aff.words.get(stem.as_ref()) {
+            for (stem, flags) in self.words.get(stem.as_ref()) {
                 // Nuspell:
                 // if (!cross_valid_inner_outer(word_flags, e))
                 // 	continue;
@@ -585,7 +589,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                for (stem, flags) in self.aff.words.get(stem_without_suffix.as_ref()) {
+                for (stem, flags) in self.words.get(stem_without_suffix.as_ref()) {
                     let valid_cross_prefix_outer = !has_needaffix_prefix
                         && flags.contains(&suffix.flag)
                         && (suffix.flags.contains(&prefix.flag) || flags.contains(&prefix.flag));
@@ -679,7 +683,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                for (stem, flags) in self.aff.words.get(stem2.as_ref()) {
+                for (stem, flags) in self.words.get(stem2.as_ref()) {
                     if !flags.contains(&inner_suffix.flag) {
                         continue;
                     }
@@ -754,7 +758,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                for (stem, flags) in self.aff.words.get(stem2.as_ref()) {
+                for (stem, flags) in self.words.get(stem2.as_ref()) {
                     if !flags.contains(&inner_prefix.flag) {
                         continue;
                     }
@@ -853,7 +857,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     // Check that the fully stripped word is a stem in the dictionary.
-                    for (stem, flags) in self.aff.words.get(stem3.as_ref()) {
+                    for (stem, flags) in self.words.get(stem3.as_ref()) {
                         if !outer_suffix.flags.contains(&prefix.flag)
                             && !flags.contains(&prefix.flag)
                         {
@@ -990,7 +994,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    for (stem, flags) in self.aff.words.get(stem3.as_ref()) {
+                    for (stem, flags) in self.words.get(stem3.as_ref()) {
                         if !inner_suffix.flags.contains(&prefix.flag)
                             && !flags.contains(&prefix.flag)
                         {
@@ -1096,7 +1100,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     }
 
                     // Check that the fully stripped word is a stem in the dictionary.
-                    for (stem, flags) in self.aff.words.get(stem3.as_ref()) {
+                    for (stem, flags) in self.words.get(stem3.as_ref()) {
                         if !outer_prefix.flags.contains(&suffix.flag)
                             && !flags.contains(&suffix.flag)
                         {
@@ -1233,7 +1237,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    for (stem, flags) in self.aff.words.get(stem3.as_ref()) {
+                    for (stem, flags) in self.words.get(stem3.as_ref()) {
                         if !inner_prefix.flags.contains(&suffix.flag)
                             && !flags.contains(&suffix.flag)
                         {
@@ -1801,7 +1805,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             _ => None,
         };
 
-        for (stem, flags) in self.aff.words.get(word) {
+        for (stem, flags) in self.words.get(word) {
             if has_flag!(flags, self.aff.options.need_affix_flag) {
                 continue;
             }
@@ -2033,20 +2037,17 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
         for i in bytes_within(word, start_pos, min_chars) {
             let Some((part1_stem, part1_flags)) =
-                self.aff
-                    .words
-                    .get(&word[start_pos..i])
-                    .find(|(_stem, flags)| {
-                        !has_flag!(flags, self.aff.options.need_affix_flag)
-                            && self.aff.compound_rules.has_any_flags(flags)
-                    })
+                self.words.get(&word[start_pos..i]).find(|(_stem, flags)| {
+                    !has_flag!(flags, self.aff.options.need_affix_flag)
+                        && self.aff.compound_rules.has_any_flags(flags)
+                })
             else {
                 continue;
             };
             words_data.push(part1_flags);
 
             let Some((_part2_stem, part2_flags)) =
-                self.aff.words.get(&word[i..]).find(|(_stem, flags)| {
+                self.words.get(&word[i..]).find(|(_stem, flags)| {
                     !has_flag!(flags, self.aff.options.need_affix_flag)
                         && self.aff.compound_rules.has_any_flags(flags)
                 })
@@ -2275,7 +2276,6 @@ mod test {
     use once_cell::sync::Lazy;
 
     use super::*;
-    use crate::*;
 
     const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
     const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
