@@ -15,13 +15,9 @@ fn check() {
         // TODO figure out why these fail.
         "i54980",
         "iconv2",
-        "ignoreutf",
         "morph",
         "nepali",
         "oconv",
-        "utf8_bom",
-        "utf8_bom2",
-        "utf8_nonbmp",
         // These fail due to weird encoding of the aff/dic:
         "condition",
         "encoding",
@@ -51,9 +47,10 @@ fn check() {
             .iter()
             .flat_map(|text| text.lines())
         {
+            let word = good_word.trim();
             assert!(
-                dict.check(good_word),
-                "case {case:?}: expected {good_word:?} to be correct but it was incorrect"
+                dict.check(word),
+                "case {case:?}: expected {word:?} to be correct but it was incorrect"
             );
         }
 
@@ -61,9 +58,10 @@ fn check() {
             .iter()
             .flat_map(|text| text.lines())
         {
+            let word = wrong_word.trim();
             assert!(
                 !dict.check(wrong_word),
-                "case {case:?}: expected {wrong_word:?} to be incorrect but it was correct"
+                "case {case:?}: expected {word:?} to be incorrect but it was correct"
             );
         }
 
