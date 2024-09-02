@@ -1,4 +1,21 @@
-//! A lightweight, Hunspell-like spell checking library.
+//! A spellchecking library compatible with the Hunspell dictionary format.
+//!
+//! Spellbook is a lightweight library to do spellchecking based on Hunspell dictionaries. It's
+//! essentially a rewrite of the excellent C++ library Nuspell in Rust. Spellbook is `no_std`
+//! (but requires alloc) and carries only [`hashbrown`] as a dependency.
+//!
+//! ```
+//! let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+//! let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
+//! let dict = spellbook::Dictionary::new(&dic, &aff).unwrap();
+//!
+//! assert!(dict.check("hello"));
+//! assert!(dict.check("world"));
+//! assert!(!dict.check("foobarbaz"));
+//! ```
+//!
+//! [`hashbrown`]: https://github.com/rust-lang/hashbrown
+// TODO: more.
 
 // TODO: remove.
 #![allow(dead_code)]
@@ -27,7 +44,11 @@ pub type DefaultHashBuilder = core::hash::BuildHasherDefault<ahash::AHasher>;
 #[cfg(not(feature = "default-hasher"))]
 pub enum DefaultHashBuilder {}
 
-// We represent the stem as a boxed str to save on space.
+/// A collection of stems and their associated flagsets from a dictionary's `.dic` file.
+///
+/// This is like a `HashMap<String, FlagSet>` but we use a `Box<str>` to save on space and we
+/// allow multiple entries of the same stem string. See the `HashBag` type for a more detailed
+/// description.
 pub(crate) type WordList<S> = HashBag<Box<str>, FlagSet, S>;
 
 // Allow passing down an Allocator too?
@@ -49,13 +70,27 @@ impl<S: BuildHasher + Clone> Dictionary<S> {
     }
 }
 
+#[cfg(feature = "default-hasher")]
 impl Dictionary<DefaultHashBuilder> {
+    /// Initializes a new dictionary with the default hasher.
+    ///
+    /// This function is only available if the `default-hasher` feature is enabled (true by
+    /// default).
+    // TODO: what to accept other than `&str`? Would this play well with the Read trait? An
+    // iterator over lines?
     pub fn new(dic: &str, aff: &str) -> Result<Self, ParseDictionaryError> {
         Self::new_with_hasher(dic, aff, DefaultHashBuilder::default())
     }
 }
 
 impl<S: BuildHasher> Dictionary<S> {
+    /// Checks whether the given word is in the dictionary.
+    ///
+    /// Spellbook delegates tokenization of input to the caller: `check` does not attempt to
+    /// break up prose, punctuation or programming languages. Some dictionaries define "break
+    /// patterns" which Spellbook respects though. For example `check("light-weight-like")`
+    /// returns `true` for the `en_US` dictionary because the break patterns allow splitting into
+    /// the words "light", "weight" and "like".
     pub fn check(&self, word: &str) -> bool {
         Checker::new(self).check(word)
     }

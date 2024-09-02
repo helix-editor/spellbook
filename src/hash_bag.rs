@@ -43,6 +43,9 @@ impl<K, V, S: BuildHasher + Default> HashBag<K, V, S> {
 }
 
 impl<K, V, S> HashBag<K, V, S> {
+    /// Returns an iterator over the key-value pairs in the bag.
+    ///
+    /// The ordering of the pairs returned by the iterator is undefined.
     pub fn iter(&self) -> Iter<'_, K, V> {
         // Here we tie the lifetime of self to the iter.
         Iter {
@@ -51,6 +54,7 @@ impl<K, V, S> HashBag<K, V, S> {
         }
     }
 
+    /// The number of key-value pairs in the table.
     pub fn len(&self) -> usize {
         self.table.len()
     }
@@ -68,6 +72,9 @@ where
         }
     }
 
+    /// Inserts a key-value pair into the bag.
+    ///
+    /// Duplicate keys or entire key-value pairs are permitted.
     pub fn insert(&mut self, k: K, v: V) {
         let hash = make_hash(&self.build_hasher, &k);
         let hasher = make_hasher(&self.build_hasher);
@@ -76,6 +83,9 @@ where
         self.table.insert(hash, (k, v), hasher);
     }
 
+    /// Gets all key-value pairs in the bag with the given key.
+    // NOTE: we return the key strictly for lifetime reasons: we can "smuggle" owned Cows through
+    // the bag.
     pub fn get<'bag, 'key, Q>(&'bag self, k: &'key Q) -> GetAllIter<'bag, 'key, Q, K, V>
     where
         K: Borrow<Q>,
