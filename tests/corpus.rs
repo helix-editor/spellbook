@@ -13,8 +13,6 @@ fn check() {
         "checkcompoundpattern3",
         "checkcompoundpattern4",
         // TODO figure out why these fail.
-        "condition",
-        "encoding",
         "i54980",
         "iconv2",
         "ignoreutf",
@@ -26,6 +24,9 @@ fn check() {
         "utf8_bom",
         "utf8_bom2",
         "utf8_nonbmp",
+        // These fail due to weird encoding of the aff/dic:
+        "condition",
+        "encoding",
     ]
     .into_iter()
     .collect();
