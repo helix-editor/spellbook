@@ -492,7 +492,7 @@ fn parse_output_conversions<'aff>(
     lines: &mut Lines<'aff>,
 ) -> ParseResult {
     lines.parse_table2("OCONV", |str1, str2| {
-        cx.input_conversions.push((str1, str2));
+        cx.output_conversions.push((str1, str2));
         Ok(())
     })
 }

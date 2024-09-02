@@ -16,7 +16,6 @@ fn check() {
         "i54980",
         "morph",
         "nepali",
-        "oconv",
         // These fail due to weird encoding of the aff/dic:
         "condition",
         "encoding",
