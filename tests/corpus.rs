@@ -7,17 +7,17 @@ use std::{
 
 #[test]
 fn check() {
-    let needs_fixing: hashbrown::HashSet<&str, std::hash::BuildHasherDefault<ahash::AHasher>> = [
+    let skip: hashbrown::HashSet<&str, std::hash::BuildHasherDefault<ahash::AHasher>> = [
         // Use CHECKCOMPOUNDPATTERN replacements which aren't implemented yet.
         "checkcompoundpattern2",
         "checkcompoundpattern3",
         "checkcompoundpattern4",
-        // TODO figure out why these fail.
-        "i54980",
-        "morph",
         // These fail due to weird encoding of the aff/dic:
         "condition",
         "encoding",
+        "i54980",
+        // Presumably needs morphology support?
+        "morph",
     ]
     .into_iter()
     .collect();
@@ -30,7 +30,7 @@ fn check() {
         }
         let case = path.file_stem().unwrap().to_string_lossy();
         eprintln!("-- case {case:?} --");
-        if needs_fixing.contains(case.as_ref()) {
+        if skip.contains(case.as_ref()) {
             eprintln!("skipped case {case:?}");
             continue;
         }
