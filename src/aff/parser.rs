@@ -183,7 +183,7 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
             continue;
         };
 
-        if line.starts_with('/') {
+        if line.starts_with('/') && line.len() > 1 {
             // Some dictionaries like it_IT use a leading slash as a comment.
             // The empty word isn't a valid entry in the word list so it doesn't matter which
             // flags come after it.
