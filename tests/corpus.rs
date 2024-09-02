@@ -14,7 +14,6 @@ fn check() {
         "checkcompoundpattern4",
         // TODO figure out why these fail.
         "i54980",
-        "iconv2",
         "morph",
         "nepali",
         "oconv",

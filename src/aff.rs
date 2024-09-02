@@ -973,7 +973,10 @@ pub(crate) struct ConversionTable {
 }
 
 impl From<Vec<(&str, &str)>> for ConversionTable {
-    fn from(table: Vec<(&str, &str)>) -> Self {
+    fn from(mut table: Vec<(&str, &str)>) -> Self {
+        // Sort the table so that longer patterns come before shorter.
+        table.sort_unstable_by_key(|(x, _y)| core::cmp::Reverse(*x));
+
         Self {
             inner: table
                 .into_iter()
@@ -983,21 +986,51 @@ impl From<Vec<(&str, &str)>> for ConversionTable {
     }
 }
 
-impl ConversionTable {
-    pub fn convert<'a>(&self, word: &'a str) -> Cow<'a, str> {
-        // TODO: consider optimizing this structure. I believe Nuspell does some kind of sorting
-        // but given the pattern might appear anywhere in the word this seems tricky. Also
-        // conversion tables are typically _very_ short (< 10 entries, usually 1 entry but up to
-        // 49 in fr_FR). Consider searching all patterns together?
-        let mut converted = Cow::Borrowed(word);
+/// A match of an ICONV/OCONV pattern in a word.
+/// The lifetime belongs to the table.
+#[derive(Debug)]
+struct Conversion<'a> {
+    /// The byte index in the word at which the match starts.
+    start: usize,
+    /// The pattern which matched.
+    from: &'a str,
+    /// The text that should be used to replace the pattern.
+    replacement: &'a str,
+}
 
-        for (from, to) in self.inner.iter() {
-            if word.contains(&**from) {
-                converted = Cow::Owned(word.replace(&**from, to));
-            }
+impl ConversionTable {
+    /// Finds the longest "from" in the table which matches some part of the word.
+    fn find_match<'a>(&'a self, word: &str, offset: usize) -> Option<Conversion<'a>> {
+        self.inner
+            .iter()
+            .filter_map(|(from, replacement)| {
+                let start = word[offset..].find(&**from)? + offset;
+                Some(Conversion {
+                    start,
+                    from,
+                    replacement,
+                })
+            })
+            .max_by_key(|conversion| conversion.replacement.len())
+    }
+
+    /// Applies any ICONV/OCONV conversions to the given word.
+    ///
+    /// Longer patterns are replaced before shorter ones.
+    pub fn convert<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        let mut word = Cow::Borrowed(word);
+
+        let mut i = 0;
+        while let Some(conversion) = self.find_match(&word, i) {
+            let mut string = word.into_owned();
+            // Adjust for finding a match within `&word[i..]`
+            let range = conversion.start..conversion.start + conversion.from.len();
+            string.replace_range(range, conversion.replacement);
+            word = Cow::Owned(string);
+            i = conversion.start + conversion.replacement.len();
         }
 
-        converted
+        word
     }
 }
 
