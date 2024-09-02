@@ -1218,8 +1218,6 @@ fn parse_dic_line(
         .find(['/', '\\', ' ', '\t'])
         // Note that the pattern characters above are all ASCII so we can byte index.
         .map(|idx| (idx, input.as_bytes()[idx]))
-        // Treat tabs the same as the end-of-line.
-        .filter(|(_idx, byte)| *byte != b'\t')
     else {
         // A fast-lane for words without flagsets.
         let word = ignore_chars(input, ignore);
@@ -1239,6 +1237,12 @@ fn parse_dic_line(
             .unwrap_or(&input[idx + 1..]);
         let flagset = decode_flagset(flagset_str, flag_type, aliases)?;
         return Ok((word, flagset));
+    }
+
+    // Fastlane to treat '\t' as the EOL.
+    if byte == b'\t' {
+        let word = ignore_chars(&input[..idx], ignore);
+        return Ok((word, FlagSet::empty()));
     }
 
     // Worst-case scenario the word contains a space or uses backslash to escape the separator
@@ -2026,6 +2030,10 @@ mod test {
         assert_eq!(
             ("activewear".into(), flagset!['M']),
             parse("activewear/M po: nome")
+        );
+        assert_eq!(
+            ("activewear".into(), flagset![]),
+            parse("activewear\tpo:name")
         );
     }
 
