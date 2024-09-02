@@ -15,7 +15,6 @@ fn check() {
         // TODO figure out why these fail.
         "i54980",
         "morph",
-        "nepali",
         // These fail due to weird encoding of the aff/dic:
         "condition",
         "encoding",

@@ -1034,19 +1034,33 @@ struct ConversionMatch<'a> {
 }
 
 impl ConversionTable {
-    /// Finds the longest "from" in the table which matches some part of the word.
+    /// Finds the earliest conversion which matches the given word at the offset with the longest
+    /// replacement length.
     fn find_match<'a>(&'a self, word: &str, offset: usize) -> Option<ConversionMatch<'a>> {
-        self.inner
-            .iter()
-            .filter_map(|conversion| {
-                let start = conversion.find(&word[offset..])? + offset;
-                Some(ConversionMatch {
+        let mut mat: Option<ConversionMatch> = None;
+
+        for conversion in self.inner.iter() {
+            let start = match conversion.find(&word[offset..]) {
+                Some(idx) => idx + offset,
+                None => continue,
+            };
+
+            // Favor the longest pattern which starts at the earliest byte.
+            if mat.is_none()
+                || mat.as_ref().is_some_and(|mat| {
+                    start < mat.start
+                        || (start == mat.start && conversion.from.len() > mat.from.len())
+                })
+            {
+                mat = Some(ConversionMatch {
                     start,
                     from: &conversion.from,
                     replacement: &conversion.to,
                 })
-            })
-            .max_by_key(|conversion| conversion.replacement.len())
+            }
+        }
+
+        mat
     }
 
     /// Applies any ICONV/OCONV conversions to the given word.
