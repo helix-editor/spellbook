@@ -233,6 +233,8 @@ pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
         keyboard_closeness: cx.keyboard_closeness.to_string(),
         try_chars: cx.try_chars.to_string(),
         options: cx.options,
+        flag_type: cx.flag_type,
+        flag_aliases: cx.flag_aliases.into(),
     };
     Ok((words, aff_data))
 }
@@ -1198,7 +1200,7 @@ fn decode_flagset(
     }
 }
 
-fn parse_dic_line(
+pub(crate) fn parse_dic_line(
     input: &str,
     flag_type: FlagType,
     aliases: &[FlagSet],

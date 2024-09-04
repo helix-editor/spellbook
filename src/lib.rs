@@ -27,7 +27,9 @@ pub(crate) mod aff;
 pub(crate) mod checker;
 mod hash_bag;
 
-pub use aff::parser::{ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource};
+pub use aff::parser::{
+    ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource, ParseFlagError,
+};
 
 use crate::alloc::{borrow::Cow, boxed::Box, slice, string::String, vec::Vec};
 use aff::AffData;
@@ -96,6 +98,53 @@ impl<S: BuildHasher> Dictionary<S> {
 
     // suggest(&self, word: &str) -> impl Iterator<Item = String> ?
     // accept a &mut Vec instead?
+
+    /// Adds a word to the dictionary.
+    ///
+    /// This function parses the input string the same way that Spellbook parses a line from a
+    /// dictionary's `.dic` file. <!-- TODO: description of dic line parsing -->
+    ///
+    /// This function can be used to support for "personal" dictionaries. While clicking a
+    /// misspelled word you might present a user with an option to add a misspelled word to the
+    /// dictionary. That action might add the word to an append-only "personal-dictionary" text
+    /// file and call this function. Then on restarting/reloading the application, you can `add`
+    /// all lines in the file.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+    /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
+    /// let mut dict = spellbook::Dictionary::new(&dic, &aff).unwrap();
+    ///
+    /// assert!(!dict.check("foobarbaz"));
+    /// // In the `en_US` dictionary the 'G' suffix allows "ing" at the end of the word.
+    /// dict.add("foobarbaz/G").unwrap();
+    /// assert!(dict.check("foobarbaz"));
+    /// assert!(dict.check("foobarbazing"));
+    ///
+    /// // Adding to a dictionary might fail if the line cannot be parsed. For example, a flag
+    /// // using a UTF-8 value that takes more than two bytes is not allowed.
+    /// assert_eq!("😓".len(), 4); // 😓 as hex is "f0 9f 98 93" - 4 bytes.
+    /// assert!(dict.add("notallowed/😓").is_err());
+    /// ```
+    pub fn add(&mut self, input: &str) -> Result<(), ParseFlagError> {
+        // This impl might be expanded in the future.
+        // Can we do some clever storage in compound rules that lists the bytes/chars that might
+        // start a compound (created by compound rules)? Then we might need to update that info
+        // here as well as during `new`.
+        // TODO: for the sake of personal dictionaries consider adding an `extend` function which
+        // takes an iterator of `.dic` file lines, uses the size hint to preallocate and only
+        // appends any word if all words succeed in parsing.
+        let (word, flagset) = aff::parser::parse_dic_line(
+            input,
+            self.aff_data.flag_type,
+            &self.aff_data.flag_aliases,
+            &self.aff_data.ignore_chars,
+        )?;
+        self.words.insert(word, flagset);
+        Ok(())
+    }
 }
 
 /// Compressed representation of a Flag.
@@ -376,6 +425,10 @@ pub(crate) fn erase_chars<'a>(word: &'a str, ignore: &[char]) -> Cow<'a, str> {
 mod test {
     use super::*;
 
+    const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
+    const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
+    // static EN_US: Lazy<Dictionary> = Lazy::new(|| Dictionary::new(EN_US_DIC, EN_US_AFF).unwrap());
+
     macro_rules! flag {
         ( $x:expr ) => {{
             Flag::new($x as u16).unwrap()
@@ -489,5 +542,16 @@ mod test {
         hello/world
         "#;
         assert!(Dictionary::new(dic, aff).is_err());
+    }
+
+    #[test]
+    fn add_word() {
+        let mut dict = Dictionary::new(EN_US_DIC, EN_US_AFF).unwrap();
+        assert!(!dict.check("foobarbaz"));
+        dict.add("foobarbaz/G").unwrap();
+        assert!(dict.check("foobarbaz"));
+        assert!(dict.check("foobarbazing"));
+
+        assert!(dict.add("notallowed/😓").is_err());
     }
 }

@@ -1163,6 +1163,9 @@ pub(crate) struct AffData {
     pub keyboard_closeness: String,
     pub try_chars: String,
     pub options: AffOptions,
+    // Parsing options. These are preserved so that we can re-use them in `Dictionary::add`.
+    pub flag_type: FlagType,
+    pub flag_aliases: Box<[FlagSet]>,
 }
 
 #[derive(Debug)]
