@@ -1,7 +1,7 @@
 //! A spellchecking library compatible with the Hunspell dictionary format.
 //!
 //! Spellbook is a lightweight library to do spellchecking based on Hunspell dictionaries. It's
-//! essentially a rewrite of the excellent C++ library Nuspell in Rust. Spellbook is `no_std`
+//! essentially a rewrite of the excellent C++ library [Nuspell] in Rust. Spellbook is `no_std`
 //! (but requires alloc) and carries only [`hashbrown`] as a dependency.
 //!
 //! ```
@@ -14,6 +14,7 @@
 //! assert!(!dict.check("foobarbaz"));
 //! ```
 //!
+//! [Nuspell]: https://github.com/nuspell/nuspell
 //! [`hashbrown`]: https://github.com/rust-lang/hashbrown
 // TODO: more.
 
@@ -38,10 +39,16 @@ use core::{cmp::Ordering, fmt, hash::BuildHasher};
 use hash_bag::HashBag;
 
 /// Default hasher for hash tables.
+///
+/// This type is only meaningful if the `default-hasher` feature is enabled. This type isn't meant
+/// to be used directly: it's used internally to provide a default hasher for [`Dictionary::new`].
 #[cfg(feature = "default-hasher")]
 pub type DefaultHashBuilder = core::hash::BuildHasherDefault<ahash::AHasher>;
 
 /// Dummy default hasher for hash tables.
+///
+/// This type is empty and useless unless the `default-hasher` feature is enabled. Instead of
+/// using this type you should pass your chosen hasher into [`Dictionary::new_with_hasher`].
 #[cfg(not(feature = "default-hasher"))]
 pub enum DefaultHashBuilder {}
 
@@ -60,7 +67,38 @@ pub struct Dictionary<S = DefaultHashBuilder> {
     aff_data: AffData,
 }
 
+#[cfg(feature = "default-hasher")]
+impl Dictionary<DefaultHashBuilder> {
+    /// Initializes a new dictionary with the default hasher.
+    ///
+    /// This function is only available if the `default-hasher` feature is enabled (true by
+    /// default). If the `default-hasher` feature is disabled then you must use
+    /// [`new_with_hasher`] instead and provide a build hasher.
+    ///
+    /// [`new_with_hasher`]: struct.Dictionary.html#method.new_with_hasher
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
+    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+    /// let dict = spellbook::Dictionary::new(&aff, &dic).unwrap();
+    /// ```
+    // TODO: what to accept other than `&str`? Would this play well with the Read trait? An
+    // iterator over lines?
+    pub fn new(aff: &str, dic: &str) -> Result<Self, ParseDictionaryError> {
+        Self::new_with_hasher(aff, dic, DefaultHashBuilder::default())
+    }
+}
+
 impl<S: BuildHasher + Clone> Dictionary<S> {
+    /// Initializes a new dictionary with a custom `BuildHasher`.
+    ///
+    /// While the `default-hasher` feature is enabled, passing [`DefaultHashBuilder`] is the same
+    /// as calling [`new`]. If possible, using a non-cryptographic hasher is highly recommended
+    /// for the sake of performance.
+    ///
+    /// [`new`]: struct.Dictionary.html#method.new
     pub fn new_with_hasher(
         aff: &str,
         dic: &str,
@@ -68,19 +106,6 @@ impl<S: BuildHasher + Clone> Dictionary<S> {
     ) -> Result<Self, ParseDictionaryError> {
         let (words, aff_data) = aff::parser::parse(aff, dic, build_hasher)?;
         Ok(Self { words, aff_data })
-    }
-}
-
-#[cfg(feature = "default-hasher")]
-impl Dictionary<DefaultHashBuilder> {
-    /// Initializes a new dictionary with the default hasher.
-    ///
-    /// This function is only available if the `default-hasher` feature is enabled (true by
-    /// default).
-    // TODO: what to accept other than `&str`? Would this play well with the Read trait? An
-    // iterator over lines?
-    pub fn new(aff: &str, dic: &str) -> Result<Self, ParseDictionaryError> {
-        Self::new_with_hasher(aff, dic, DefaultHashBuilder::default())
     }
 }
 
