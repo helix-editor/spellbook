@@ -92,6 +92,17 @@ impl<S: BuildHasher> Dictionary<S> {
     /// patterns" which Spellbook respects though. For example `check("light-weight-like")`
     /// returns `true` for the `en_US` dictionary because the break patterns allow splitting into
     /// the words "light", "weight" and "like".
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+    /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
+    /// let dict = spellbook::Dictionary::new(&dic, &aff).unwrap();
+    ///
+    /// assert!(dict.check("optimize"));
+    /// assert!(!dict.check("optimise")); // allowed by en_GB but not en_US.
+    /// ```
     pub fn check(&self, word: &str) -> bool {
         Checker::new(self).check(word)
     }
