@@ -78,7 +78,9 @@ There are a few key data structures that power Spellbook and make lookup fast.
 
 ##### Boxed slices
 
-By default Spellbook prefers boxed slices (`Box<[T]>`) and boxed strs (`Box<str>`) rather than their mutable counterparts `Vec<T>` and `String`. Boxed slices are basically the same but are immutable once created. They also discard any excess capacity and don't need to track capacity, saving a very small amount of memory per instance. That memory adds up though across all of the words in the dictionary. For some quick napkin math, this saves at least 392,464 bytes for the word list in `en_US` on a 64 bit target: 4 bytes for the stem's capacity field and another 4 bytes for the flag set's capacity field for each of the 49,058 words in `en_US.dic`.
+By default Spellbook prefers boxed slices (`Box<[T]>`) and boxed strs (`Box<str>`) rather than their mutable counterparts `Vec<T>` and `String`. Boxed slices can be used the same but are immutable once created. You can push to a `Vec` but not a `Box<[T]>` for example. They also discard any excess capacity and don't need to track capacity, saving a very small amount of memory per instance. That memory adds up though across all of the words in the dictionary.
+
+For some quick napkin math, this saves at least 392,464 bytes for the word list in `en_US` on a 64 bit target: 4 bytes for the stem's capacity field and another 4 bytes for the flag set's capacity field for each of the 49,058 words in `en_US.dic`. In practice we can measure the difference with Valgrind's [DHAT](https://valgrind.org/docs/manual/dh-manual.html) tool. If we switch Spellbook's `WordList` type to store `String`s and `Vec<Flag>`s instead of `Box<str>`s and `Box<[Flag]>`s, I see the total heap bytes allocated in a run of `./target/debug/examples/check hello` rise from 3MB to 4MB.
 
 ##### Flag sets
 
