@@ -232,17 +232,13 @@ pub(crate) type Flag = core::num::NonZeroU16;
 /// unless the value needs to be mutated at some point. Once a dictionary is initialized it's
 /// immutable so we don't need a Vec.
 #[derive(Default, PartialEq, Eq, Clone)]
-pub(crate) struct FlagSet {
-    inner: Box<[Flag]>,
-}
+pub(crate) struct FlagSet(Box<[Flag]>);
 
 impl From<Vec<Flag>> for FlagSet {
     fn from(mut flags: Vec<Flag>) -> Self {
         flags.sort_unstable();
         flags.dedup();
-        Self {
-            inner: flags.into_boxed_slice(),
-        }
+        Self(flags.into_boxed_slice())
     }
 }
 
@@ -253,17 +249,17 @@ impl FlagSet {
 
     #[inline]
     pub fn as_slice(&self) -> &[Flag] {
-        &self.inner
+        &self.0
     }
 
     #[inline]
     pub fn iter(&self) -> slice::Iter<'_, Flag> {
-        self.inner.iter()
+        self.0.iter()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.0.len()
     }
 
     #[inline]
@@ -313,9 +309,7 @@ impl FlagSet {
             }
         }
 
-        Self {
-            inner: intersection.into_boxed_slice(),
-        }
+        Self(intersection.into_boxed_slice())
     }
 
     pub fn union(&self, other: &Self) -> Self {
@@ -352,9 +346,7 @@ impl FlagSet {
             }
         }
 
-        Self {
-            inner: union.into_boxed_slice(),
-        }
+        Self(union.into_boxed_slice())
     }
 
     /// Checks whether the given flag is contained in the flagset.
@@ -363,11 +355,11 @@ impl FlagSet {
         // See the docs for `slice::binary_search`: it's preferable to `slice::contains` since
         // it runs in logarithmic time rather than linear w.r.t. slice length. It requires that
         // the slice is sorted (true for flagsets, see `new`).
-        self.inner.binary_search(flag).is_ok()
+        self.0.binary_search(flag).is_ok()
     }
 
     pub fn with_flag(&self, flag: Flag) -> Self {
-        let mut flagset = Vec::from(self.inner.clone());
+        let mut flagset = Vec::from(self.0.clone());
         flagset.push(flag);
         flagset.into()
     }
@@ -375,7 +367,7 @@ impl FlagSet {
 
 impl fmt::Debug for FlagSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("flagset!{:?}", self.inner))
+        f.write_fmt(format_args!("flagset!{:?}", self.0))
     }
 }
 

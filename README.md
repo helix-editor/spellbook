@@ -85,9 +85,7 @@ For some quick napkin math, this saves at least 392,464 bytes for the word list 
 ##### Flag sets
 
 ```rust
-struct FlagSet {
-    inner: Box<[Flag]>,
-}
+struct FlagSet(Box<[Flag]>);
 ```
 
 Words in the dictionary are associated with any number of flags, like `adventure/DRSMZG` mentioned above. The order of the flags as written in the dictionary isn't important. We need a way to look up whether a flag exists in that set quickly. The right tool for the job might seem like a `HashSet<Flag>` or a `BTreeSet<Flag>`. Those are mutable though so they carry some extra overhead. A dictionary contains many many flag sets and the overhead adds up. So what we use instead is a sorted `Box<[Flag]>` and look up flags with `slice::binary_search`.
