@@ -39,9 +39,9 @@ macro_rules! check {
 fn do_check_case(case: &str) {
     let manifest_path = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let path = manifest_path.join("tests/legacy").join(case);
-    let dic = read_to_string(path.with_extension("dic")).unwrap();
     let aff = read_to_string(path.with_extension("aff")).unwrap();
-    let dict = Dictionary::new(&dic, &aff).unwrap();
+    let dic = read_to_string(path.with_extension("dic")).unwrap();
+    let dict = Dictionary::new(&aff, &dic).unwrap();
 
     for good_word in fs::read_to_string(path.with_extension("good"))
         .iter()

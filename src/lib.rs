@@ -5,9 +5,9 @@
 //! (but requires alloc) and carries only [`hashbrown`] as a dependency.
 //!
 //! ```
-//! let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
 //! let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
-//! let dict = spellbook::Dictionary::new(&dic, &aff).unwrap();
+//! let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+//! let dict = spellbook::Dictionary::new(&aff, &dic).unwrap();
 //!
 //! assert!(dict.check("hello"));
 //! assert!(dict.check("world"));
@@ -62,11 +62,11 @@ pub struct Dictionary<S = DefaultHashBuilder> {
 
 impl<S: BuildHasher + Clone> Dictionary<S> {
     pub fn new_with_hasher(
-        dic: &str,
         aff: &str,
+        dic: &str,
         build_hasher: S,
     ) -> Result<Self, ParseDictionaryError> {
-        let (words, aff_data) = aff::parser::parse(dic, aff, build_hasher)?;
+        let (words, aff_data) = aff::parser::parse(aff, dic, build_hasher)?;
         Ok(Self { words, aff_data })
     }
 }
@@ -79,8 +79,8 @@ impl Dictionary<DefaultHashBuilder> {
     /// default).
     // TODO: what to accept other than `&str`? Would this play well with the Read trait? An
     // iterator over lines?
-    pub fn new(dic: &str, aff: &str) -> Result<Self, ParseDictionaryError> {
-        Self::new_with_hasher(dic, aff, DefaultHashBuilder::default())
+    pub fn new(aff: &str, dic: &str) -> Result<Self, ParseDictionaryError> {
+        Self::new_with_hasher(aff, dic, DefaultHashBuilder::default())
     }
 }
 
@@ -96,9 +96,9 @@ impl<S: BuildHasher> Dictionary<S> {
     /// # Example
     ///
     /// ```
-    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
     /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
-    /// let dict = spellbook::Dictionary::new(&dic, &aff).unwrap();
+    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+    /// let dict = spellbook::Dictionary::new(&aff, &dic).unwrap();
     ///
     /// assert!(dict.check("optimize"));
     /// assert!(!dict.check("optimise")); // allowed by en_GB but not en_US.
@@ -124,9 +124,9 @@ impl<S: BuildHasher> Dictionary<S> {
     /// # Example
     ///
     /// ```
-    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
     /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
-    /// let mut dict = spellbook::Dictionary::new(&dic, &aff).unwrap();
+    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+    /// let mut dict = spellbook::Dictionary::new(&aff, &dic).unwrap();
     ///
     /// assert!(!dict.check("foobarbaz"));
     /// // In the `en_US` dictionary the 'G' suffix allows "ing" at the end of the word.
@@ -436,9 +436,9 @@ pub(crate) fn erase_chars<'a>(word: &'a str, ignore: &[char]) -> Cow<'a, str> {
 mod test {
     use super::*;
 
-    const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
     const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
-    // static EN_US: Lazy<Dictionary> = Lazy::new(|| Dictionary::new(EN_US_DIC, EN_US_AFF).unwrap());
+    const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
+    // static EN_US: Lazy<Dictionary> = Lazy::new(|| Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap());
 
     macro_rules! flag {
         ( $x:expr ) => {{
@@ -552,12 +552,12 @@ mod test {
         let dic = r#"1
         hello/world
         "#;
-        assert!(Dictionary::new(dic, aff).is_err());
+        assert!(Dictionary::new(aff, dic).is_err());
     }
 
     #[test]
     fn add_word() {
-        let mut dict = Dictionary::new(EN_US_DIC, EN_US_AFF).unwrap();
+        let mut dict = Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap();
         assert!(!dict.check("foobarbaz"));
         dict.add("foobarbaz/G").unwrap();
         assert!(dict.check("foobarbaz"));

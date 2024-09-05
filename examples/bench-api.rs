@@ -5,8 +5,8 @@ use brunch::Bench;
 use once_cell::sync::OnceCell;
 use spellbook::Dictionary;
 
-const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
 const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
+const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
 
 const SAMPLES: u32 = 500_000;
 
@@ -21,14 +21,14 @@ const HASHER: RandomState = RandomState::with_seeds(
 
 fn en_us() -> &'static Dictionary<RandomState> {
     static EN_US: OnceCell<Dictionary<RandomState>> = OnceCell::new();
-    EN_US.get_or_init(|| Dictionary::new_with_hasher(EN_US_DIC, EN_US_AFF, HASHER).unwrap())
+    EN_US.get_or_init(|| Dictionary::new_with_hasher(EN_US_AFF, EN_US_DIC, HASHER).unwrap())
 }
 
 brunch::benches!(
     // Compilation
     Bench::new("Compile en_US").run(|| Dictionary::new_with_hasher(
-        black_box(EN_US_DIC),
         black_box(EN_US_AFF),
+        black_box(EN_US_DIC),
         HASHER,
     )),
     Bench::spacer(),

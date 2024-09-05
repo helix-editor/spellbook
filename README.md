@@ -6,7 +6,7 @@ Spellbook is a Rust spellchecking library compatible with the Hunspell dictionar
 fn main() {
     let aff = std::fs::read_to_string("en_US.aff").unwrap();
     let dic = std::fs::read_to_string("en_US.dic").unwrap();
-    let dict = spellbook::Dictionary::new(&dic, &aff).unwrap();
+    let dict = spellbook::Dictionary::new(&aff, &dic).unwrap();
 
     let word = std::env::args().nth(1).expect("expected a word to check");
 

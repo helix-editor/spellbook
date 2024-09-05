@@ -145,9 +145,9 @@ const AFF_PARSERS: &[(&str, Parser)] = &[
 ];
 
 // TODO: encoding? Or just require all dictionaries to be UTF-8?
-pub(crate) fn parse<'dic, 'aff, S: BuildHasher + Clone>(
-    dic_text: &'dic str,
+pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
     aff_text: &'aff str,
+    dic_text: &'dic str,
     build_hasher: S,
 ) -> Result<(WordList<S>, AffData)> {
     // First parse the aff file.
@@ -1995,7 +1995,7 @@ mod test {
         PFX A 0 re- e
         "#;
 
-        let (_words, aff_data) = parse(dic, aff, ahash::RandomState::new()).unwrap();
+        let (_words, aff_data) = parse(aff, dic, ahash::RandomState::new()).unwrap();
         assert_eq!(2, aff_data.prefixes.table.len());
         assert_eq!(
             Prefix::new(flag!('A'), true, None, "re", Some("[^e]"), flagset![]).unwrap(),
@@ -2075,7 +2075,7 @@ mod test {
         COMPOUNDROOT o
         FORCEUCASE p
         "#;
-        let (_words, aff_data) = parse(dic, aff, ahash::RandomState::new()).unwrap();
+        let (_words, aff_data) = parse(aff, dic, ahash::RandomState::new()).unwrap();
         assert_eq!(aff_data.options.forbidden_word_flag, Some(flag!('a')));
         assert_eq!(aff_data.options.circumfix_flag, Some(flag!('b')));
         assert_eq!(aff_data.options.keep_case_flag, Some(flag!('c')));
@@ -2101,14 +2101,14 @@ mod test {
     fn break_pattern_parsing() {
         let dic = "0";
         let aff = "";
-        let (_words, aff_data) = parse(dic, aff, ahash::RandomState::new()).unwrap();
+        let (_words, aff_data) = parse(aff, dic, ahash::RandomState::new()).unwrap();
         // By default it's `^-`, `-` and `-$`.
         assert_eq!(aff_data.break_table.table.len(), 3);
         // Default break patterns can be removed by setting `BREAK 0`.
 
         let dic = "0";
         let aff = "BREAK 0";
-        let (_words, aff_data) = parse(dic, aff, ahash::RandomState::new()).unwrap();
+        let (_words, aff_data) = parse(aff, dic, ahash::RandomState::new()).unwrap();
         assert_eq!(aff_data.break_table.table.len(), 0);
     }
 }
