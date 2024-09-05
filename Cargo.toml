@@ -1,8 +1,10 @@
 [package]
 name = "spellbook"
-description = "A spellchecking library compatible with Hunspell dictionaries"
 version = "0.0.1"
 authors = ["Michael Davis <mcarsondavis@gmail.com>"]
+description = "A spellchecking library compatible with Hunspell dictionaries"
+readme = "README.md"
+keywords = ["spellcheck", "no_std"]
 edition = "2021"
 license = "MPL-2.0"
 rust-version = "1.70"
