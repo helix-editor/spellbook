@@ -160,8 +160,8 @@ impl<S: BuildHasher> Dictionary<S> {
     /// assert!(dict.check("foobarbazing"));
     ///
     /// // Adding to a dictionary might fail if the line cannot be parsed. For example, a flag
-    /// // using a UTF-8 value that takes more than two bytes is not allowed.
-    /// assert_eq!("😓".len(), 4); // 😓 as hex is "f0 9f 98 93" - 4 bytes.
+    /// // using a UTF-8 character that takes more than two bytes is not allowed.
+    /// assert_eq!("😓".len(), 4); // 😓 is 4 bytes in UTF-8: 0xf0 0x9f 0x98 0x93
     /// assert!(dict.add("notallowed/😓").is_err());
     /// ```
     pub fn add(&mut self, input: &str) -> Result<(), ParseFlagError> {
