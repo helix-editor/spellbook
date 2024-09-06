@@ -59,9 +59,47 @@ pub enum DefaultHashBuilder {}
 /// description.
 pub(crate) type WordList<S> = HashBag<Box<str>, FlagSet, S>;
 
+/// A data structure allowing for fast lookup of words in a dictionary.
+///
+/// Spellbook reads dictionaries in the Hunspell format: a pair of files `<locale>.aff` describing
+/// rules for checking and suggesting words and `<locale>.dic` containing a listing of stems and
+/// flags that describe words in the dictionary. You can find dictionaries for your locale in the
+/// [LibreOffice/dictionaries](https://github.com/LibreOffice/dictionaries) repository.
+///
+/// To check whether a word is spelled correctly use [`check`]. Also see [`add`] to insert words
+/// into an existing dictionary - this can be useful for building a "personal dictionary" feature.
+///
+/// ## Performance
+///
+/// Note: Spellbook's repository contains benchmarking examples. Use `cargo run --release
+/// --example bench-api` to get an idea of how the API can perform on your system.
+///
+/// When using Spellbook in an application you should avoid initializing dictionaries (via
+/// [`new`] or [`new_with_hasher`]) in a render loop or main thread to prevent pauses in your UI
+/// if possible. Using a release build, dictionary initialization can take on the order of tens or
+/// hundreds of milliseconds depending on the size of the input dictionary.
+///
+/// The [`check`] function is very fast: in the best case a word can be checked in around 50ns. In
+/// the worst case a word might take on the order of single-digit microseconds, so throughput for
+/// checking words should be expected to be somewhere in the millions of words per second. (This
+/// is just checking though, note that tokenization of input will add overhead.) This might be
+/// fast enough to live in a render loop or main thread but consider the size of your input: if
+/// you're checking an arbitrarily large text you should delegate checking to a background thread
+/// to prevent UI hiccups.
+///
+/// <!-- TODO: talk about suggest once implemented. Suggest performance is not so crucial. -->
+///
+/// You should avoid cloning this type if possible. `Clone` is only implemented in case you
+/// absolutely need it. Consider that a dictionary can take megabytes of memory. If you need to
+/// check words in parallel, consider putting the dictionary behind an `Arc` (if immutable) or a
+/// `RwLock`.
+///
+/// [`new`]: struct.Dictionary.html#method.new
+/// [`new_with_hasher`]: struct.Dictionary.html#method.new_with_hasher
+/// [`check`]: struct.Dictionary.html#method.check
+/// [`add`]: struct.Dictionary.html#method.add
+// TODO: impl a dumb Debug for Dictionary.
 // Allow passing down an Allocator too?
-
-/// TODO
 #[derive(Clone)]
 pub struct Dictionary<S = DefaultHashBuilder> {
     words: WordList<S>,
