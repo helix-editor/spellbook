@@ -100,6 +100,15 @@ impl<S: BuildHasher + Clone> Dictionary<S> {
     /// for the sake of performance.
     ///
     /// [`new`]: struct.Dictionary.html#method.new
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
+    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+    /// let hasher = ahash::RandomState::new();
+    /// let dict = spellbook::Dictionary::new_with_hasher(&aff, &dic, hasher).unwrap();
+    /// ```
     pub fn new_with_hasher(
         aff: &str,
         dic: &str,
