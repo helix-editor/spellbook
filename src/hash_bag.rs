@@ -28,6 +28,7 @@ use hashbrown::raw::{RawIter, RawIterHash, RawTable};
 ///
 /// [multimap]: https://en.cppreference.com/w/cpp/container/multimap
 /// [Swiss Tables]: https://abseil.io/blog/20180927-swisstables
+#[derive(Clone)]
 pub struct HashBag<K, V, S> {
     table: RawTable<(K, V)>,
     build_hasher: S,

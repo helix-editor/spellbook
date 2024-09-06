@@ -62,6 +62,7 @@ pub(crate) type WordList<S> = HashBag<Box<str>, FlagSet, S>;
 // Allow passing down an Allocator too?
 
 /// TODO
+#[derive(Clone)]
 pub struct Dictionary<S = DefaultHashBuilder> {
     words: WordList<S>,
     aff_data: AffData,

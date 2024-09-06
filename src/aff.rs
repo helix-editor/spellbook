@@ -437,7 +437,7 @@ pub(crate) type SuffixIndex = AffixIndex<Sfx>;
 /// [radix tree]: https://en.wikipedia.org/wiki/Radix_tree
 // TODO: I originally tried a hashing-based approach using `hashbrown::raw::RawTable`. Lift that
 // structure from the commit history and benchmark it against this Vec based approach.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct AffixIndex<C> {
     table: Box<[Affix<C>]>,
     first_char: Box<[char]>,
@@ -612,7 +612,7 @@ impl<'index, 'word, C: AffixKind> Iterator for AffixesIter<'index, 'word, C> {
 /// anywhere in the middle of a word, and one for patterns that must apply to the end of a word.
 ///
 // TODO: document how breaks are used and what the patterns mean.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct BreakTable {
     table: Box<[Box<str>]>,
     start_word_breaks_last_idx: usize,
@@ -687,7 +687,7 @@ impl BreakTable {
 /// 4. Anywhere in the word.
 ///
 /// Otherwise though it's basically a `Vec<(String, String)>`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ReplacementTable {
     table: Box<[(Box<str>, Box<str>)]>,
     whole_word_replacements_last_idx: usize,
@@ -799,13 +799,13 @@ impl ReplacementTable {
 /// We use a `[CompoundRuleElement]` in Spellbook only for clarity. Few dictionaries use
 /// compound rules and those that do use them tend to use 12 or fewer entries in the table, with
 /// each rule being only a few elements long.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CompoundRuleElement {
     pub flag: Flag,
     pub modifier: Option<CompoundRuleModifier>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompoundRuleModifier {
     ZeroOrOne,
     ZeroOrMore,
@@ -868,7 +868,7 @@ fn compound_rule_matches(pattern: &[CompoundRuleElement], data: &[&FlagSet]) -> 
 /// A set of rules that can be used to detect whether constructed compounds are allowed.
 ///
 /// TODO: talk about wildcards, show a compounding example.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CompoundRuleTable {
     rules: Box<[CompoundRule]>,
     all_flags: FlagSet,
@@ -920,7 +920,7 @@ impl CompoundRuleTable {
 }
 
 /// Storage for two strings within the allocation of one `Box<str>`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct StrPair {
     inner: Box<str>,
     /// The `.len()` of the first string: the index of the partition between the first and
@@ -961,7 +961,7 @@ impl StrPair {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CompoundPattern {
     pub begin_end_chars: StrPair,
     pub replacement: Option<Box<str>>,
@@ -970,7 +970,7 @@ pub(crate) struct CompoundPattern {
     pub match_first_only_unaffixed_or_zero_affixed: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Conversion {
     from: Box<str>,
     to: Box<str>,
@@ -1000,7 +1000,7 @@ impl Conversion {
 /// use this rule. en_US and a few others use it to replace magic apostrophes "’" with regular
 /// ones. Others like french have quite a few rules to normalize similar looking and meaning
 /// unicode representations of letters, like "à" becoming "à".
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ConversionTable {
     inner: Box<[Conversion]>,
 }
@@ -1143,7 +1143,7 @@ impl CaseHandling {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct AffData {
     // checking options
     pub prefixes: PrefixIndex,
@@ -1168,7 +1168,7 @@ pub(crate) struct AffData {
     pub flag_aliases: Box<[FlagSet]>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct AffOptions {
     pub complex_prefixes: bool,
     pub fullstrip: bool,
