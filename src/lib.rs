@@ -630,4 +630,19 @@ mod test {
 
         assert!(dict.add("notallowed/😓").is_err());
     }
+
+    #[test]
+    fn clone() {
+        let aff = r#"
+        "#;
+        let dic = r#"1
+        hello
+        world
+        "#;
+        let mut dict = Dictionary::new(aff, dic).unwrap();
+        let copy = dict.clone();
+        dict.add("foo").unwrap();
+        assert!(dict.check("foo"));
+        assert!(!copy.check("foo"));
+    }
 }
