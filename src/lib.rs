@@ -69,7 +69,7 @@ pub(crate) type WordList<S> = HashBag<Box<str>, FlagSet, S>;
 /// To check whether a word is spelled correctly use [`check`]. Also see [`add`] to insert words
 /// into an existing dictionary - this can be useful for building a "personal dictionary" feature.
 ///
-/// ## Performance
+/// ## Performance considerations
 ///
 /// Note: Spellbook's repository contains benchmarking examples. Use `cargo run --release
 /// --example bench-api` to get an idea of how the API can perform on your system.
