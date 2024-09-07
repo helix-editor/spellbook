@@ -1,3 +1,17 @@
+/*
+Most basic example for the checker for quick debugging.
+
+## Usage
+
+```
+$ cargo run --example check hello
+Compiled the dictionary in 113ms
+"hello" is in the dictionary (checked in 3µs)
+$ cargo run --example check helol
+Compiled the dictionary in 110ms
+"helol" is NOT in the dictionary (checked in 21µs)
+```
+*/
 use std::time::Instant;
 
 use spellbook::Dictionary;

@@ -1,3 +1,12 @@
+/*
+A benchmark of the API.
+
+Run with `cargo run --release --example bench-api`.
+
+Re-running the benchmark will show the difference in measured performance since the last run.
+Random drift (around 5% in some cases) should be expected.
+*/
+
 use std::hint::black_box;
 
 use ahash::RandomState;

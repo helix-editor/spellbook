@@ -1,3 +1,14 @@
+/*
+An example that checks prose piped in via stdin.
+
+This is meant to get a rough idea of how performant and correct the checker is. The way this
+example tokenizes input is very basic.
+
+```
+cat "Grapes of Wrath.txt" | cargo run --release --example prose
+```
+*/
+
 use std::time::Instant;
 
 use spellbook::Dictionary;
