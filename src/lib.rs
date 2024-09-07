@@ -98,7 +98,6 @@ pub(crate) type WordList<S> = HashBag<Box<str>, FlagSet, S>;
 /// [`new_with_hasher`]: struct.Dictionary.html#method.new_with_hasher
 /// [`check`]: struct.Dictionary.html#method.check
 /// [`add`]: struct.Dictionary.html#method.add
-// TODO: impl a dumb Debug for Dictionary.
 // Allow passing down an Allocator too?
 #[derive(Clone)]
 pub struct Dictionary<S = DefaultHashBuilder> {
@@ -186,7 +185,7 @@ impl<S: BuildHasher> Dictionary<S> {
     /// Adds a word to the dictionary.
     ///
     /// This function parses the input string the same way that Spellbook parses a line from a
-    /// dictionary's `.dic` file. <!-- TODO: description of dic line parsing -->
+    /// dictionary's `.dic` file. TODO: describe how a `.dic` line is parsed.
     ///
     /// This function can be used to support for "personal" dictionaries. While clicking a
     /// misspelled word you might present a user with an option to add a misspelled word to the
@@ -228,6 +227,14 @@ impl<S: BuildHasher> Dictionary<S> {
         )?;
         self.words.insert(word, flagset);
         Ok(())
+    }
+}
+
+impl core::fmt::Debug for Dictionary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Dictionary")
+            .field("words", &self.words.len())
+            .finish_non_exhaustive()
     }
 }
 
@@ -635,7 +642,7 @@ mod test {
     fn clone() {
         let aff = r#"
         "#;
-        let dic = r#"1
+        let dic = r#"2
         hello
         world
         "#;
@@ -644,5 +651,17 @@ mod test {
         dict.add("foo").unwrap();
         assert!(dict.check("foo"));
         assert!(!copy.check("foo"));
+    }
+
+    #[test]
+    fn debug() {
+        let aff = r#"
+        "#;
+        let dic = r#"2
+        hello
+        world
+        "#;
+        let dict = Dictionary::new(aff, dic).unwrap();
+        assert_eq!(&alloc::format!("{dict:?}"), "Dictionary { words: 2, .. }");
     }
 }
