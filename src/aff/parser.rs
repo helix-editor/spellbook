@@ -176,7 +176,7 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
     while !lines.is_finished() {
         lines.advance_line();
 
-        let Some(line) = lines.line().map(|l| l.trim()) else {
+        let Some(line) = lines.line().map(|l| l.trim()).filter(|l| !l.is_empty()) else {
             // Empty lines are skipped.
             continue;
         };
