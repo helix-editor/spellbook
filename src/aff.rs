@@ -520,8 +520,8 @@ impl<C: AffixKind> AffixIndex<C> {
     }
 }
 
-/// An iterator over the affixes for the
-pub(crate) struct AffixesIter<'index, 'word, C: AffixKind + 'word> {
+/// An iterator over the prefixes/suffixes of a given word.
+pub(crate) struct AffixesIter<'index, 'word, C: AffixKind + 'static> {
     table: &'index [Affix<C>],
     first_char: &'index [char],
     prefix_idx_with_first_char: &'index [usize],
