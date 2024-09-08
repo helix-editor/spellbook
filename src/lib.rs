@@ -279,7 +279,7 @@ impl core::fmt::Debug for Dictionary {
 // checking an option. For example what we do now is basically
 // `flag.is_some_and(|flag| flagset.contains(flag))` but could be simply `flagset.contains(flag)`,
 // and we could optionally also modify `FlagSet::contains` to bail early if it sees 0u16.
-pub(crate) type Flag = core::num::NonZeroU16;
+type Flag = core::num::NonZeroU16;
 
 /// A collection of flags belonging to a word.
 ///
@@ -296,7 +296,7 @@ pub(crate) type Flag = core::num::NonZeroU16;
 /// unless the value needs to be mutated at some point. Once a dictionary is initialized it's
 /// immutable so we don't need a Vec.
 #[derive(Default, PartialEq, Eq, Clone)]
-pub(crate) struct FlagSet(Box<[Flag]>);
+struct FlagSet(Box<[Flag]>);
 
 impl From<Vec<Flag>> for FlagSet {
     fn from(mut flags: Vec<Flag>) -> Self {
@@ -436,16 +436,16 @@ impl fmt::Debug for FlagSet {
 }
 
 // Ideally these would be an enum but const generics do not yet support custom enums.
-pub(crate) type AffixingMode = u8;
-pub(crate) const FULL_WORD: AffixingMode = 0;
-pub(crate) const AT_COMPOUND_BEGIN: AffixingMode = 1;
-pub(crate) const AT_COMPOUND_MIDDLE: AffixingMode = 2;
-pub(crate) const AT_COMPOUND_END: AffixingMode = 3;
+type AffixingMode = u8;
+const FULL_WORD: AffixingMode = 0;
+const AT_COMPOUND_BEGIN: AffixingMode = 1;
+const AT_COMPOUND_MIDDLE: AffixingMode = 2;
+const AT_COMPOUND_END: AffixingMode = 3;
 
 /// The casing of a word.
 // Hunspell: <https://github.com/hunspell/hunspell/blob/8f9bb2957bfd74ca153fad96083a54488b518ca5/src/hunspell/csutil.hxx#L91-L96>
 // Nuspell: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/utils.hxx#L91-L104>
-pub(crate) enum Casing {
+enum Casing {
     /// All letters are lowercase. For example "foobar".
     ///
     /// Hunspell: `NOCAP`, Nuspell: `Casing::SMALL`
@@ -470,7 +470,7 @@ pub(crate) enum Casing {
     Pascal,
 }
 
-pub(crate) fn classify_casing(word: &str) -> Casing {
+fn classify_casing(word: &str) -> Casing {
     let mut upper = 0;
     let mut lower = 0;
 
@@ -501,7 +501,7 @@ pub(crate) fn classify_casing(word: &str) -> Casing {
     }
 }
 
-pub(crate) fn erase_chars<'a>(word: &'a str, ignore: &[char]) -> Cow<'a, str> {
+fn erase_chars<'a>(word: &'a str, ignore: &[char]) -> Cow<'a, str> {
     if ignore.is_empty() {
         Cow::Borrowed(word)
     } else {
