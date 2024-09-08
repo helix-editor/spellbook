@@ -48,9 +48,9 @@ impl<K, V, S> HashBag<K, V, S> {
     ///
     /// The ordering of the pairs returned by the iterator is undefined.
     pub fn iter(&self) -> Iter<'_, K, V> {
-        // Here we tie the lifetime of self to the iter.
         Iter {
             inner: unsafe { self.table.iter() },
+            // Here we tie the lifetime of self to the iter.
             marker: PhantomData,
         }
     }
@@ -95,9 +95,9 @@ where
         let hash = make_hash(&self.build_hasher, k);
 
         GetAllIter {
-            // Here we tie the lifetime of self to the iter.
             inner: unsafe { self.table.iter_hash(hash) },
             key: k,
+            // Here we tie the lifetime of self to the iter.
             marker: PhantomData,
         }
     }
@@ -112,34 +112,6 @@ where
         f.debug_map().entries(self.iter()).finish()
     }
 }
-
-// Unused but maybe useful in the future:
-/*
-impl<K, V, S> Default for HashMultiMap<K, V, S>
-where
-    K: Hash + Eq,
-    S: BuildHasher + Default,
-{
-    fn default() -> Self {
-        Self {
-            table: Default::default(),
-            build_hasher: Default::default(),
-        }
-    }
-}
-impl<K, V, S> HashMultiMap<K, V, S>
-where
-    K: Hash + Eq,
-    S: BuildHasher + Default,
-{
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            table: RawTable::with_capacity(capacity),
-            build_hasher: Default::default(),
-        }
-    }
-}
-*/
 
 // `make_hash`, `make_hasher`, and `Iter` are pulled from Hashbrown's `map` module
 // at `274c7bbd79398881e0225c0133e423ce60d7a8f1`.
