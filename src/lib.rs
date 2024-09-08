@@ -239,7 +239,7 @@ impl<S: BuildHasher> Dictionary<S> {
     }
 }
 
-impl core::fmt::Debug for Dictionary {
+impl fmt::Debug for Dictionary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Dictionary")
             .field("words", &self.words.len())
