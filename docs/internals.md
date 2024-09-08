@@ -31,7 +31,8 @@ By default, flags are encoded in a dictionary with the `UTF-8` flag type. For `e
 ### Word list
 
 ```rust
-type WordList<S> = HashBag<Box<str>, FlagSet, S>;
+type Stem = Box<str>,
+type WordList = HashBag<Stem, FlagSet>;
 ```
 
 The word list is one of the two central data structures. It's a lookup table for the pairs of `(stem, flag_set)` defined in a dictionary's `.dic` file. We need to look up whether a word is in the dictionary (and what flags it has) very quickly. A natural choice might be `HashMap<String, FlagSet>` or `BTreeSet<String, FlagSet>`. Unlike flag sets and boxed slices and strs mentioned above, it's ok for this type to be resizable. There's only one instance of it in a dictionary and the API can support adding words to the dictionary to enable building a personal dictionary feature. Instead the snag with this type is that there can be duplicate stems in the dictionary with different flag sets. Merging the flag sets together isn't correct: the combination of flags might allow one prefix/suffix to apply but not work in a compounds while another entry provides a different prefix/suffix which can compound.

@@ -52,12 +52,21 @@ pub type DefaultHashBuilder = core::hash::BuildHasherDefault<ahash::AHasher>;
 #[cfg(not(feature = "default-hasher"))]
 pub enum DefaultHashBuilder {}
 
+/// A stem specified in a line of a dictionary's `.dic` file.
+///
+/// For example `en_US.dic` contains a line `airlift/SGMD`. That means that the wordlist type
+/// defined below should have an entry for a stem "airlift" with a flagset `flagset!['S', 'G',
+/// 'M', 'D']`. There are very very many stems in each dictionary so a `Box<str>` saves a
+/// noticeable amount of memory. See `docs/internals.md`.
+type Stem = Box<str>;
+
 /// A collection of stems and their associated flagsets from a dictionary's `.dic` file.
 ///
-/// This is like a `HashMap<String, FlagSet>` but we use a `Box<str>` to save on space and we
-/// allow multiple entries of the same stem string. See the `HashBag` type for a more detailed
-/// description.
-pub(crate) type WordList<S> = HashBag<Box<str>, FlagSet, S>;
+/// This is a lot like a `HashMap<Stem, FlagSet>`. See the `HashBag` type for more details.
+/// Each line in a dictionary's `.dic` file is parsed and inserted into the hash bag. The word
+/// list is central to checking. In a nutshell the checking procedure is to try to find an edit of
+/// the input word's casing and prefixes/suffixes that produces a word in this hash table.
+type WordList<S> = HashBag<Stem, FlagSet, S>;
 
 /// A data structure allowing for fast lookup of words in a dictionary.
 ///

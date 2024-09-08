@@ -20,11 +20,10 @@ use hashbrown::HashMap;
 use crate::{
     aff::CompoundRuleModifier,
     alloc::{
-        boxed::Box,
         string::{String, ToString},
         vec::Vec,
     },
-    erase_chars, Casing, Flag, FlagSet, WordList,
+    erase_chars, Casing, Flag, FlagSet, Stem, WordList,
 };
 
 use super::{
@@ -1205,8 +1204,8 @@ pub(crate) fn parse_dic_line(
     flag_type: FlagType,
     aliases: &[FlagSet],
     ignore: &[char],
-) -> core::result::Result<(Box<str>, FlagSet), ParseFlagError> {
-    fn ignore_chars(s: &str, ignore: &[char]) -> Box<str> {
+) -> core::result::Result<(Stem, FlagSet), ParseFlagError> {
+    fn ignore_chars(s: &str, ignore: &[char]) -> Stem {
         if ignore.is_empty() {
             s.into()
         } else {
@@ -2009,7 +2008,7 @@ mod test {
 
     #[test]
     fn parse_dic_line_test() {
-        fn parse(input: &str) -> (Box<str>, FlagSet) {
+        fn parse(input: &str) -> (Stem, FlagSet) {
             parse_dic_line(input, FlagType::default(), &[], &[]).unwrap()
         }
 
