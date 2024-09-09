@@ -31,7 +31,7 @@ By default, flags are encoded in a dictionary with the `UTF-8` flag type. For `e
 ### Word list
 
 ```rust
-type Stem = Box<str>,
+type Stem = Box<str>;
 type WordList = HashBag<Stem, FlagSet>;
 ```
 
