@@ -2287,16 +2287,8 @@ impl<'aff> CompoundingResult<'aff> {
 
 #[cfg(test)]
 mod test {
-    use once_cell::sync::Lazy;
-
     use super::*;
-
-    const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
-    const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
-
-    // It's a little overkill to use a real dictionary for unit tests but it compiles so
-    // quickly that if we only compile it once it doesn't really slow down the test suite.
-    static EN_US: Lazy<Dictionary> = Lazy::new(|| Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap());
+    use crate::EN_US;
 
     #[test]
     fn are_three_chars_equal_test() {

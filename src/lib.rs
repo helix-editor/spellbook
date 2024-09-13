@@ -514,12 +514,18 @@ fn erase_chars<'a>(word: &'a str, ignore: &[char]) -> Cow<'a, str> {
 }
 
 #[cfg(test)]
+const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
+#[cfg(test)]
+const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
+// It's a little overkill to use a real dictionary for unit tests but it compiles so
+// quickly that if we only compile it once it doesn't slow down the test suite.
+#[cfg(test)]
+static EN_US: once_cell::sync::Lazy<Dictionary> =
+    once_cell::sync::Lazy::new(|| Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap());
+
+#[cfg(test)]
 mod test {
     use super::*;
-
-    const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
-    const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
-    // static EN_US: Lazy<Dictionary> = Lazy::new(|| Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap());
 
     macro_rules! flag {
         ( $x:expr ) => {{
