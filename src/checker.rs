@@ -6,12 +6,8 @@ use crate::{
     },
     alloc::{string::String, vec::Vec},
     classify_casing, erase_chars, AffixingMode, Casing, Dictionary, Flag, FlagSet, WordList,
-    AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD,
+    AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD, MAX_WORD_LEN,
 };
-
-// Nuspell limits the length of the input word:
-// <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/dictionary.cxx#L156>
-const MAX_WORD_LEN: usize = 360;
 
 macro_rules! has_flag {
     ( $flags:expr, $flag:expr ) => {{
@@ -29,8 +25,8 @@ macro_rules! flag {
 
 // TODO: expose type and add options to it?
 pub(crate) struct Checker<'a, S: BuildHasher> {
-    words: &'a WordList<S>,
-    aff: &'a AffData,
+    pub(crate) words: &'a WordList<S>,
+    pub(crate) aff: &'a AffData,
 }
 
 impl<'a, S: BuildHasher> Checker<'a, S> {
@@ -150,7 +146,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         }
     }
 
-    fn check_word(
+    pub(crate) fn check_word(
         &self,
         word: &str,
         allow_bad_forceucase: Forceucase,
@@ -1287,7 +1283,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
 
     // Compounding
 
-    fn check_compound<const MODE: AffixingMode>(
+    pub(crate) fn check_compound<const MODE: AffixingMode>(
         &self,
         word: &str,
         allow_bad_forceucase: Forceucase,

@@ -27,10 +27,12 @@ extern crate alloc;
 pub(crate) mod aff;
 pub(crate) mod checker;
 mod hash_bag;
+mod suggester;
 
 pub use aff::parser::{
     ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource, ParseFlagError,
 };
+use suggester::Suggester;
 
 use crate::alloc::{borrow::Cow, boxed::Box, slice, string::String, vec::Vec};
 use aff::AffData;
@@ -188,8 +190,10 @@ impl<S: BuildHasher> Dictionary<S> {
         Checker::new(self).check(word)
     }
 
-    // suggest(&self, word: &str) -> impl Iterator<Item = String> ?
-    // accept a &mut Vec instead?
+    /// Fills the given vec with possible corrections from the dictionary for the given word.
+    pub fn suggest(&self, word: &str, out: &mut Vec<String>) {
+        Suggester::new(Checker::new(self)).suggest(word, out)
+    }
 
     /// Adds a word to the dictionary.
     ///
@@ -441,6 +445,10 @@ const FULL_WORD: AffixingMode = 0;
 const AT_COMPOUND_BEGIN: AffixingMode = 1;
 const AT_COMPOUND_MIDDLE: AffixingMode = 2;
 const AT_COMPOUND_END: AffixingMode = 3;
+
+// Nuspell limits the length of the input word:
+// <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/dictionary.cxx#L156>
+const MAX_WORD_LEN: usize = 360;
 
 /// The casing of a word.
 // Hunspell: <https://github.com/hunspell/hunspell/blob/8f9bb2957bfd74ca153fad96083a54488b518ca5/src/hunspell/csutil.hxx#L91-L96>
