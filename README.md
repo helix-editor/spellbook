@@ -1,5 +1,8 @@
 # Spellbook
 
+[![Crates.io](https://img.shields.io/crates/v/spellbook.svg)](https://crates.io/crates/spellbook)
+[![Documentation](https://docs.rs/spellbook/badge.svg)](https://docs.rs/spellbook)
+
 Spellbook is a Rust spellchecking library compatible with the Hunspell dictionary format.
 
 ```rust
