@@ -68,6 +68,11 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // TODO: remove. Currently used to suppress an unused_variable lint.
         assert!(!hq_suggestions);
 
+        // Some suggestion methods can cause duplicates. For example in "adveenture",
+        // extra_char_suggest can eliminate either inner 'e' causing a duplicate "adventure"
+        // suggestion. Deduplicate the results while preserving order:
+        deduplicate(out);
+
         // OCONV
         for suggestion in out.iter_mut() {
             match self.checker.aff.output_conversions.convert(suggestion) {
@@ -138,6 +143,39 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     }
 }
 
+/// Removes all duplicate items in a vector while preserving order.
+///
+/// This works similarly to C++'s iterator `remove(begin, end, value)`: we swap duplicate elements
+/// to the end of the vector and then truncate the vector to eliminate the duplicates.
+fn deduplicate<T: Eq>(items: &mut Vec<T>) {
+    if items.is_empty() {
+        return;
+    }
+
+    let mut idx = 0;
+    let mut last = items.len();
+    while idx < last {
+        let Some(first) = items[idx + 1..last].iter().position(|i| i == &items[idx]) else {
+            idx += 1;
+            continue;
+        };
+        let mut first = first + idx + 1;
+        let mut result = first;
+        first += 1;
+        while first < last {
+            if items[first] != items[idx] {
+                items.swap(result, first);
+                result += 1;
+            }
+            first += 1;
+        }
+        idx += 1;
+        last = result;
+    }
+
+    items.truncate(last);
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -179,5 +217,21 @@ mod test {
     #[test]
     fn extra_char_suggest() {
         assert!(suggest("adveenture").contains(&"adventure".to_string()));
+    }
+
+    #[test]
+    fn deduplicate_test() {
+        fn deduplicate<T: Eq, I: Into<Vec<T>>>(items: I) -> Vec<T> {
+            let mut items = items.into();
+            super::deduplicate(&mut items);
+            items
+        }
+
+        assert_eq!(deduplicate([1, 1, 2, 2, 3, 3]), vec![1, 2, 3]);
+        assert_eq!(deduplicate([1, 2, 3, 3]), vec![1, 2, 3]);
+        assert_eq!(deduplicate([1, 2, 3, 2, 3, 1]), vec![1, 2, 3]);
+        assert_eq!(deduplicate([1, 1]), vec![1]);
+        assert_eq!(deduplicate([1]), vec![1]);
+        assert_eq!(deduplicate::<usize, _>([]), vec![]);
     }
 }
