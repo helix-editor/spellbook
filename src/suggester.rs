@@ -80,6 +80,19 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     fn suggest_low(&self, word: &str, out: &mut Vec<String>) -> bool {
         // let len = out.len();
         self.uppercase_suggest(word, out);
+        // rep_suggest
+        // map_suggest
+        // Then check if the word is correct, set `hq_suggestions` based on that.
+        // adjacent_swap_suggest
+        // distant_swap_suggest
+        // keyboard_suggest
+        self.extra_char_suggest(word, out);
+        // extra_char_suggest
+        // forgotten_char_suggest
+        // move_char_suggest
+        // bad_char_suggest
+        // doubled_two_chars_suggest
+        // two_words_suggest
 
         false
     }
@@ -111,6 +124,17 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     fn uppercase_suggest(&self, word: &str, out: &mut Vec<String>) {
         let upper = self.checker.aff.options.case_handling.uppercase(word);
         self.add_suggestion_if_correct(upper, out);
+    }
+
+    fn extra_char_suggest(&self, word: &str, out: &mut Vec<String>) {
+        // TODO: many suggestion strategies use a String buffer.
+        // Allocate it up front and reuse it for each of these checks?
+        for (idx, _ch) in word.char_indices() {
+            let mut buffer = String::from(word);
+            // TODO: drop assert_eq
+            buffer.remove(idx);
+            self.add_suggestion_if_correct(buffer, out);
+        }
     }
 }
 
@@ -149,6 +173,11 @@ mod test {
     #[test]
     fn uppercase_suggest() {
         // "ANSI" is correct in en_US and not "ansi".
-        assert_eq!(suggest("ansi"), vec!["ANSI".to_string()]);
+        assert!(suggest("ansi").contains(&"ANSI".to_string()));
+    }
+
+    #[test]
+    fn extra_char_suggest() {
+        assert!(suggest("adveenture").contains(&"adventure".to_string()));
     }
 }

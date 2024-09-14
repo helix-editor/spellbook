@@ -8,7 +8,7 @@ This example doesn't check whether the input word is in the dictionary first.
 ```
 $ cargo run --example suggest ansi
 Compiled the dictionary in 138ms
-Suggestions for "ansi": "ANSI" (checked in 6µs)
+Suggestions for "ansi": "ANSI", "ans" (checked in 23µs)
 ```
 */
 use std::time::Instant;
