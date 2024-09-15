@@ -230,7 +230,7 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
         compound_patterns: cx.compound_patterns.into(),
         ignore_chars: cx.ignore_chars.into(),
         keyboard_closeness: cx.keyboard_closeness.to_string(),
-        try_chars: cx.try_chars.to_string(),
+        try_chars: cx.try_chars.into(),
         options: cx.options,
         flag_type: cx.flag_type,
         flag_aliases: cx.flag_aliases.into(),

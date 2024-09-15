@@ -1161,7 +1161,7 @@ pub(crate) struct AffData {
     // phonetic_table: PhoneticTable,
     pub ignore_chars: Box<[char]>,
     pub keyboard_closeness: String,
-    pub try_chars: String,
+    pub try_chars: Box<str>,
     pub options: AffOptions,
     // Parsing options. These are preserved so that we can re-use them in `Dictionary::add`.
     pub flag_type: FlagType,
