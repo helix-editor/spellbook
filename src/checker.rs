@@ -1288,11 +1288,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         word: &str,
         allow_bad_forceucase: Forceucase,
     ) -> Option<CompoundingResult<'_>> {
-        if self.aff.options.compound_flag.is_some()
-            || self.aff.options.compound_begin_flag.is_some()
-            || self.aff.options.compound_middle_flag.is_some()
-            || self.aff.options.compound_end_flag.is_some()
-        {
+        if self.aff.options.allows_compounding() {
             // Note that Nuspell passes along basically a `&mut String`. We can avoid that by
             // subslicing the word `&str`. Also see `check_compound_with_rules`.
             if let Some(result) = self.check_compound_impl::<MODE>(word, 0, 0, allow_bad_forceucase)

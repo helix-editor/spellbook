@@ -285,12 +285,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         }
         cost = cost.clamp(250_000, 25_000_000_000);
         let mut attempts = 25_000_000_000 / cost;
-        let options = &self.checker.aff.options;
-        if options.compound_flag.is_some()
-            || options.compound_begin_flag.is_some()
-            || options.compound_middle_flag.is_some()
-            || options.compound_end_flag.is_some()
-        {
+        if self.checker.aff.options.allows_compounding() {
             attempts /= word.len() as u64;
         }
         attempts

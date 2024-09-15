@@ -1260,6 +1260,15 @@ impl Default for AffOptions {
     }
 }
 
+impl AffOptions {
+    pub fn allows_compounding(&self) -> bool {
+        self.compound_flag.is_some()
+            || self.compound_begin_flag.is_some()
+            || self.compound_middle_flag.is_some()
+            || self.compound_end_flag.is_some()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
