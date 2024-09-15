@@ -90,7 +90,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // Then check if the word is correct, set `hq_suggestions` based on that.
         // adjacent_swap_suggest
         // distant_swap_suggest
-        // keyboard_suggest
+        self.keyboard_suggest(word, out);
         self.extra_char_suggest(word, out);
         self.forgotten_char_suggest(word, out);
         // move_char_suggest
@@ -237,6 +237,51 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         }
 
         out.push(String::from(word));
+    }
+
+    /// Suggests replacing characters in the word with the keys around them on the keyboard.
+    ///
+    /// Also suggests uppercasing individual characters - this suggests that you meant to hit
+    /// shift while typing a character.
+    fn keyboard_suggest(&self, word: &str, out: &mut Vec<String>) {
+        let kb = &self.checker.aff.keyboard_closeness;
+        let mut buffer = String::from(word);
+
+        for (idx, word_ch) in word.char_indices() {
+            let mut uppercase = word_ch.to_uppercase();
+            if !(uppercase.len() == 1 && uppercase.next() == Some(word_ch)) {
+                // Are the indices correct here?
+                buffer.truncate(idx);
+                buffer.extend(word_ch.to_uppercase());
+                buffer.extend(word[idx..].chars().skip(1));
+                self.add_suggestion_if_correct(&buffer, out);
+                buffer.truncate(idx);
+                buffer.push_str(&word[idx..]);
+                debug_assert_eq!(word, &buffer);
+            }
+
+            for (match_idx, _) in kb.match_indices(word_ch) {
+                if let Some(prev_kb_ch) =
+                    kb[..match_idx].chars().next_back().filter(|ch| *ch != '|')
+                {
+                    buffer.remove(idx);
+                    buffer.insert(idx, prev_kb_ch);
+                    self.add_suggestion_if_correct(&buffer, out);
+                    buffer.remove(idx);
+                    buffer.insert(idx, word_ch);
+                    debug_assert_eq!(word, &buffer);
+                }
+
+                if let Some(next_kb_ch) = kb[..match_idx].chars().next().filter(|ch| *ch != '|') {
+                    buffer.remove(idx);
+                    buffer.insert(idx, next_kb_ch);
+                    self.add_suggestion_if_correct(&buffer, out);
+                    buffer.remove(idx);
+                    buffer.insert(idx, word_ch);
+                    debug_assert_eq!(word, &buffer);
+                }
+            }
+        }
     }
 
     /// Suggests edits to the word to drop any character.
@@ -432,5 +477,20 @@ mod test {
         //                               ^
         assert!(suggestions.contains(&"favor".to_string()));
         //                                ^
+    }
+
+    #[test]
+    fn keyboard_suggest() {
+        let aff = r#"
+        KEY qwertyuiop|asdfghjkl|zxcvbnm
+        "#;
+        let dic = r#"1
+        dream
+        "#;
+        let dict = Dictionary::new(aff, dic).unwrap();
+
+        assert!(suggest(&dict, "dteam").contains(&"dream".to_string()));
+        assert!(suggest(&dict, "dresm").contains(&"dream".to_string()));
+        assert!(!suggest(&dict, "dredm").contains(&"dream".to_string()));
     }
 }
