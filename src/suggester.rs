@@ -102,10 +102,23 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         false
     }
 
-    // TODO: what to take here... a &str? a String? a Cow<str>?
-    fn add_suggestion_if_correct(&self, word: String, out: &mut Vec<String>) -> bool {
+    /// Adds a suggestion to the suggestion vector if it belongs to the dictionary and is not
+    /// forbidden.
+    ///
+    /// About accepting `Into<Cow<str>>`: some callers have `String`s that need to be borrowed for
+    /// lookup but can be pushed to the output vector without cloning. Some callers are `&str`s
+    /// that need to be allocated to `String`s before being pushed. (We should do that conversion
+    /// lazily though as the word might be incorrect.) The `Cow` covers both. (Also note the
+    /// explicit lifetime but that's only because anonymous lifetimes are not allowed in this slot
+    /// as of the current Rust version.)
+    fn add_suggestion_if_correct<'w, W: Into<Cow<'w, str>>>(
+        &self,
+        word: W,
+        out: &mut Vec<String>,
+    ) -> bool {
+        let word = word.into();
         let Some(flags) = self.checker.check_word(
-            &word,
+            word.as_ref(),
             Forceucase::ForbidBadForceucase,
             HiddenHomonym::SkipHiddenHomonym,
         ) else {
@@ -122,7 +135,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             return false;
         }
 
-        out.push(word);
+        out.push(word.into_owned());
         true
     }
 
@@ -195,8 +208,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     }
 
     fn try_rep_suggestion(&self, word: &str, out: &mut Vec<String>) {
-        // TODO: figure out what to pass this function.
-        if self.add_suggestion_if_correct(String::from(word), out) {
+        if self.add_suggestion_if_correct(word, out) {
             return;
         }
 
