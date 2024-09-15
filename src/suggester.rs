@@ -85,7 +85,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     fn suggest_low(&self, word: &str, out: &mut Vec<String>) -> bool {
         // let len = out.len();
         self.uppercase_suggest(word, out);
-        // rep_suggest
+        self.rep_suggest(word, out);
         // map_suggest
         // Then check if the word is correct, set `hq_suggestions` based on that.
         // adjacent_swap_suggest
@@ -132,6 +132,100 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     fn uppercase_suggest(&self, word: &str, out: &mut Vec<String>) {
         let upper = self.checker.aff.options.case_handling.uppercase(word);
         self.add_suggestion_if_correct(upper, out);
+    }
+
+    /// Suggests edits to the word based on the replacement table (`REP`) defined in the `.aff`
+    /// file.
+    ///
+    /// REP is used by a dictionary to list common misspellings or similar sounding word parts.
+    /// For example in en_US "shun" has the same sound as "tion" which is typically the correct
+    /// word part.
+    fn rep_suggest(&self, word: &str, out: &mut Vec<String>) {
+        // See `Checker::is_rep_similar` for notes about the way this function is written and
+        // allocations
+        for (from, to) in self.checker.aff.replacements.whole_word_replacements() {
+            if word == from {
+                self.try_rep_suggestion(to, out);
+            }
+        }
+
+        if self
+            .checker
+            .aff
+            .replacements
+            .has_only_whole_word_replacements()
+        {
+            return;
+        }
+
+        let mut scratch = String::from(word);
+
+        for (from, to) in self.checker.aff.replacements.start_word_replacements() {
+            if word.starts_with(from) {
+                scratch.replace_range(..from.len(), to);
+                self.try_rep_suggestion(&scratch, out);
+                scratch.replace_range(..to.len(), from);
+            }
+        }
+
+        debug_assert_eq!(&scratch, word);
+
+        for (from, to) in self.checker.aff.replacements.end_word_replacements() {
+            let Some(idx) = word.len().checked_sub(from.len()) else {
+                continue;
+            };
+            if &word[idx..] == from {
+                scratch.replace_range(idx.., to);
+                self.try_rep_suggestion(&scratch, out);
+                scratch.replace_range(idx.., from);
+            }
+        }
+
+        debug_assert_eq!(&scratch, word);
+
+        for (from, to) in self.checker.aff.replacements.any_place_replacements() {
+            for (idx, _) in word.match_indices(from) {
+                scratch.replace_range(idx..idx + from.len(), to);
+                self.try_rep_suggestion(&scratch, out);
+                scratch.replace_range(idx..idx + to.len(), from);
+            }
+        }
+
+        debug_assert_eq!(&scratch, word);
+    }
+
+    fn try_rep_suggestion(&self, word: &str, out: &mut Vec<String>) {
+        // TODO: figure out what to pass this function.
+        if self.add_suggestion_if_correct(String::from(word), out) {
+            return;
+        }
+
+        // ?
+        let Some(mut j) = word.find(' ') else {
+            return;
+        };
+        let mut i = 0;
+        loop {
+            let part = &word[i..j - i];
+            if self
+                .checker
+                .check_word(
+                    part,
+                    Forceucase::ForbidBadForceucase,
+                    HiddenHomonym::SkipHiddenHomonym,
+                )
+                .is_none()
+            {
+                return;
+            }
+            i = j + 1;
+            let Some(idx) = word[i..].find(' ') else {
+                break;
+            };
+            j = idx + i;
+        }
+
+        out.push(String::from(word));
     }
 
     /// Suggests edits to the word to drop any character.
@@ -190,6 +284,22 @@ mod test {
         EN_US,
     };
 
+    #[test]
+    fn deduplicate_test() {
+        fn deduplicate<T: Eq, I: Into<Vec<T>>>(items: I) -> Vec<T> {
+            let mut items = items.into();
+            super::deduplicate(&mut items);
+            items
+        }
+
+        assert_eq!(deduplicate([1, 1, 2, 2, 3, 3]), vec![1, 2, 3]);
+        assert_eq!(deduplicate([1, 2, 3, 3]), vec![1, 2, 3]);
+        assert_eq!(deduplicate([1, 2, 3, 2, 3, 1]), vec![1, 2, 3]);
+        assert_eq!(deduplicate([1, 1]), vec![1]);
+        assert_eq!(deduplicate([1]), vec![1]);
+        assert_eq!(deduplicate::<usize, _>([]), vec![]);
+    }
+
     fn suggest(word: &str) -> Vec<String> {
         let mut suggestions = Vec::new();
         EN_US.suggest(word, &mut suggestions);
@@ -226,18 +336,8 @@ mod test {
     }
 
     #[test]
-    fn deduplicate_test() {
-        fn deduplicate<T: Eq, I: Into<Vec<T>>>(items: I) -> Vec<T> {
-            let mut items = items.into();
-            super::deduplicate(&mut items);
-            items
-        }
-
-        assert_eq!(deduplicate([1, 1, 2, 2, 3, 3]), vec![1, 2, 3]);
-        assert_eq!(deduplicate([1, 2, 3, 3]), vec![1, 2, 3]);
-        assert_eq!(deduplicate([1, 2, 3, 2, 3, 1]), vec![1, 2, 3]);
-        assert_eq!(deduplicate([1, 1]), vec![1]);
-        assert_eq!(deduplicate([1]), vec![1]);
-        assert_eq!(deduplicate::<usize, _>([]), vec![]);
+    fn rep_suggest() {
+        // Uses the en_US `REP size cise`. Sounds similar but "cise" is correct here.
+        assert!(suggest("exsize").contains(&"excise".to_string()));
     }
 }
