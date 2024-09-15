@@ -357,7 +357,7 @@ mod test {
     use super::*;
     use crate::{
         alloc::{string::ToString, vec},
-        EN_US,
+        Dictionary, EN_US,
     };
 
     #[test]
@@ -376,20 +376,20 @@ mod test {
         assert_eq!(deduplicate::<usize, _>([]), vec![]);
     }
 
-    fn suggest(word: &str) -> Vec<String> {
+    fn suggest(dict: &Dictionary, word: &str) -> Vec<String> {
         let mut suggestions = Vec::new();
-        EN_US.suggest(word, &mut suggestions);
+        dict.suggest(word, &mut suggestions);
         suggestions
     }
 
     #[test]
     fn empty_suggest() {
-        assert!(suggest("").is_empty());
+        assert!(suggest(&EN_US, "").is_empty());
     }
 
     #[test]
     fn huge_word_is_skipped() {
-        assert!(suggest(&"hello".repeat(MAX_WORD_LEN)).is_empty());
+        assert!(suggest(&EN_US, &"hello".repeat(MAX_WORD_LEN)).is_empty());
     }
 
     #[test]
@@ -403,29 +403,29 @@ mod test {
     #[test]
     fn uppercase_suggest() {
         // "ANSI" is correct in en_US and not "ansi".
-        assert!(suggest("ansi").contains(&"ANSI".to_string()));
+        assert!(suggest(&EN_US, "ansi").contains(&"ANSI".to_string()));
     }
 
     #[test]
     fn extra_char_suggest() {
-        assert!(suggest("adveenture").contains(&"adventure".to_string()));
+        assert!(suggest(&EN_US, "adveenture").contains(&"adventure".to_string()));
     }
 
     #[test]
     fn rep_suggest() {
         // Uses the en_US `REP size cise`. Sounds similar but "cise" is correct here.
-        assert!(suggest("exsize").contains(&"excise".to_string()));
+        assert!(suggest(&EN_US, "exsize").contains(&"excise".to_string()));
     }
 
     #[test]
     fn forgotten_char_suggest() {
-        assert!(suggest("helo").contains(&"hello".to_string()));
-        assert!(suggest("wrld").contains(&"world".to_string()));
+        assert!(suggest(&EN_US, "helo").contains(&"hello".to_string()));
+        assert!(suggest(&EN_US, "wrld").contains(&"world".to_string()));
     }
 
     #[test]
     fn wrong_char_suggest() {
-        let suggestions = suggest("faver");
+        let suggestions = suggest(&EN_US, "faver");
         assert!(suggestions.contains(&"fiver".to_string()));
         //                              ^
         assert!(suggestions.contains(&"faker".to_string()));
