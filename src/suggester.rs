@@ -126,11 +126,17 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         true
     }
 
+    /// Suggests the word, uppercased, if valid.
+    ///
+    /// For example you might type "ansi" and mean "ANSI".
     fn uppercase_suggest(&self, word: &str, out: &mut Vec<String>) {
         let upper = self.checker.aff.options.case_handling.uppercase(word);
         self.add_suggestion_if_correct(upper, out);
     }
 
+    /// Suggests edits to the word to drop any character.
+    ///
+    /// Intuitively you might double-tap a character key on your keyboard.
     fn extra_char_suggest(&self, word: &str, out: &mut Vec<String>) {
         // TODO: many suggestion strategies use a String buffer.
         // Allocate it up front and reuse it for each of these checks?
