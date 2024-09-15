@@ -92,7 +92,6 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // distant_swap_suggest
         // keyboard_suggest
         self.extra_char_suggest(word, out);
-        // extra_char_suggest
         // forgotten_char_suggest
         // move_char_suggest
         // bad_char_suggest
@@ -248,7 +247,6 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // Allocate it up front and reuse it for each of these checks?
         for (idx, _ch) in word.char_indices() {
             let mut buffer = String::from(word);
-            // TODO: drop assert_eq
             buffer.remove(idx);
             self.add_suggestion_if_correct(buffer, out);
         }
