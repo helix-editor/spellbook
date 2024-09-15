@@ -94,7 +94,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         self.extra_char_suggest(word, out);
         self.forgotten_char_suggest(word, out);
         // move_char_suggest
-        // bad_char_suggest
+        self.wrong_char_suggest(word, out);
         // doubled_two_chars_suggest
         // two_words_suggest
 
@@ -269,6 +269,31 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         }
     }
 
+    /// Suggests words with one "wrong" character swapped for another character from the TRY
+    /// alphabet.
+    ///
+    /// For example this suggests "world" for "warld".
+    fn wrong_char_suggest(&self, word: &str, out: &mut Vec<String>) {
+        let mut remaining_attempts = self.max_attempts_for_long_alogs(word);
+        let mut buffer = String::from(word);
+        for ch in self.checker.aff.try_chars.chars() {
+            for (idx, word_ch) in word.char_indices() {
+                if ch == word_ch {
+                    continue;
+                }
+                if remaining_attempts == 0 {
+                    return;
+                }
+                remaining_attempts -= 1;
+                buffer.remove(idx);
+                buffer.insert(idx, ch);
+                self.add_suggestion_if_correct(&buffer, out);
+                buffer.remove(idx);
+                buffer.insert(idx, word_ch);
+            }
+        }
+    }
+
     /// Determines a reasonable number of attempts to try at editing a word.
     ///
     /// This limits the impact of guessing edits for complicated dictionaries: whether a
@@ -396,5 +421,16 @@ mod test {
     fn forgotten_char_suggest() {
         assert!(suggest("helo").contains(&"hello".to_string()));
         assert!(suggest("wrld").contains(&"world".to_string()));
+    }
+
+    #[test]
+    fn wrong_char_suggest() {
+        let suggestions = suggest("faver");
+        assert!(suggestions.contains(&"fiver".to_string()));
+        //                              ^
+        assert!(suggestions.contains(&"faker".to_string()));
+        //                               ^
+        assert!(suggestions.contains(&"favor".to_string()));
+        //                                ^
     }
 }
