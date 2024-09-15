@@ -92,7 +92,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // distant_swap_suggest
         // keyboard_suggest
         self.extra_char_suggest(word, out);
-        // forgotten_char_suggest
+        self.forgotten_char_suggest(word, out);
         // move_char_suggest
         // bad_char_suggest
         // doubled_two_chars_suggest
@@ -251,6 +251,52 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             self.add_suggestion_if_correct(buffer, out);
         }
     }
+
+    /// Suggests edits to the word to add a missing character.
+    fn forgotten_char_suggest(&self, word: &str, out: &mut Vec<String>) {
+        let mut remaining_attempts = self.max_attempts_for_long_alogs(word);
+        let mut buffer = String::from(word);
+        for ch in self.checker.aff.try_chars.chars() {
+            for (idx, _) in word.char_indices() {
+                if remaining_attempts == 0 {
+                    return;
+                }
+                remaining_attempts -= 1;
+                buffer.insert(idx, ch);
+                self.add_suggestion_if_correct(&buffer, out);
+                buffer.remove(idx);
+            }
+        }
+    }
+
+    /// Determines a reasonable number of attempts to try at editing a word.
+    ///
+    /// This limits the impact of guessing edits for complicated dictionaries: whether a
+    /// dictionary allows compounding and how many prefixes/suffixes a dictionary uses.
+    /// (And whether it allows complex prefixes.)
+    fn max_attempts_for_long_alogs(&self, word: &str) -> usize {
+        let p = self.checker.aff.prefixes.len() as u64 / 20u64;
+        let s = self.checker.aff.suffixes.len() as u64 / 20u64;
+        let mut cost = 1 + p + s + p * s;
+        if self.checker.aff.options.complex_prefixes {
+            cost += p * p + 2 * s * p * p;
+        } else {
+            cost += s * s + 2 * p * s * s;
+        }
+        cost = cost.clamp(250_000, 25_000_000_000);
+        let mut attempts = 25_000_000_000 / cost;
+        let options = &self.checker.aff.options;
+        if options.compound_flag.is_some()
+            || options.compound_begin_flag.is_some()
+            || options.compound_middle_flag.is_some()
+            || options.compound_end_flag.is_some()
+        {
+            attempts /= word.len() as u64;
+        }
+        attempts
+            .try_into()
+            .expect("clamping and divisions should ensure this can fit into usize")
+    }
 }
 
 /// Removes all duplicate items in a vector while preserving order.
@@ -349,5 +395,11 @@ mod test {
     fn rep_suggest() {
         // Uses the en_US `REP size cise`. Sounds similar but "cise" is correct here.
         assert!(suggest("exsize").contains(&"excise".to_string()));
+    }
+
+    #[test]
+    fn forgotten_char_suggest() {
+        assert!(suggest("helo").contains(&"hello".to_string()));
+        assert!(suggest("wrld").contains(&"world".to_string()));
     }
 }

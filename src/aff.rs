@@ -518,6 +518,10 @@ impl<C: AffixKind> AffixIndex<C> {
             chars_matched: 0,
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.table.len()
+    }
 }
 
 /// An iterator over the prefixes/suffixes of a given word.
