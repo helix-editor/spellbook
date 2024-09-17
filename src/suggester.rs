@@ -88,7 +88,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         self.rep_suggest(word, out);
         // map_suggest
         // Then check if the word is correct, set `hq_suggestions` based on that.
-        // adjacent_swap_suggest
+        self.adjacent_swap_suggest(word, out);
         // distant_swap_suggest
         self.keyboard_suggest(word, out);
         self.extra_char_suggest(word, out);
@@ -237,6 +237,61 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         }
 
         out.push(String::from(word));
+    }
+
+    /// Suggests swapping two adjacent characters.
+    ///
+    /// Also suggests some extra swaps for words with exactly 4 or 5 characters.
+    fn adjacent_swap_suggest(&self, word: &str, out: &mut Vec<String>) {
+        // Nuspell early-returns on this condition but I don't think that's necessary.
+        debug_assert!(!word.is_empty());
+
+        let buffer = &mut String::from(word);
+        let mut chars = word.char_indices().peekable();
+        while let Some(((idx1, ch1), (_idx2, ch2))) = chars.next().zip(chars.peek()) {
+            swap_adjacent_chars(buffer, idx1, ch1, *ch2);
+            self.add_suggestion_if_correct(&*buffer, out);
+            swap_adjacent_chars(buffer, idx1, *ch2, ch1);
+            debug_assert_eq!(word, &*buffer);
+        }
+
+        // For words with exactly 4 or 5 characters try some additional swaps.
+        let mut chars = word.char_indices();
+        let Some((idx1, ch1)) = chars.next() else {
+            return;
+        };
+        let Some((idx2, ch2)) = chars.next() else {
+            return;
+        };
+        let Some((idx3, ch3)) = chars.next() else {
+            return;
+        };
+        let Some((idx4, ch4)) = chars.next() else {
+            return;
+        };
+        let Some((_idx5, ch5)) = chars.next() else {
+            // Word has 4 characters. Try a double swap: the first two and last two characters.
+            swap_adjacent_chars(buffer, idx1, ch1, ch2); // swap 1 & 2
+            swap_adjacent_chars(buffer, idx3, ch3, ch4); // swap 3 & 4
+            self.add_suggestion_if_correct(&*buffer, out);
+            swap_adjacent_chars(buffer, idx1, ch2, ch1); // undo 1 & 2
+            swap_adjacent_chars(buffer, idx3, ch4, ch3); // undo 3 & 4
+            debug_assert_eq!(word, &*buffer);
+            return;
+        };
+        if chars.next().is_none() {
+            // Word has 5 characters. Try two different double swaps: the first two and last two
+            // and then the second and third and last two.
+            swap_adjacent_chars(buffer, idx1, ch1, ch2); // swap 1 & 2
+            swap_adjacent_chars(buffer, idx4, ch4, ch5); // swap 4 & 5
+            self.add_suggestion_if_correct(&*buffer, out);
+            swap_adjacent_chars(buffer, idx1, ch2, ch1); // undo 1 & 2
+            swap_adjacent_chars(buffer, idx2, ch2, ch3); // swap 2 & 3
+            self.add_suggestion_if_correct(&*buffer, out);
+            swap_adjacent_chars(buffer, idx2, ch3, ch2); // undo 2 & 3
+            swap_adjacent_chars(buffer, idx4, ch5, ch4); // undo 4 & 5
+            debug_assert_eq!(word, &*buffer);
+        };
     }
 
     /// Suggests replacing characters in the word with the keys around them on the keyboard.
@@ -397,6 +452,29 @@ fn deduplicate<T: Eq>(items: &mut Vec<T>) {
     items.truncate(last);
 }
 
+/// Swaps the two given characters in the given string assuming that they are adjacent.
+///
+/// Adjacency is asserted in debug builds.
+fn swap_adjacent_chars(string: &mut str, idx1: usize, ch1: char, ch2: char) -> usize {
+    debug_assert_eq!(string[idx1..].chars().next(), Some(ch1));
+    debug_assert_eq!(string[idx1..].chars().nth(1), Some(ch2));
+
+    // Because the characters are adjacent we can simply rewrite the bytes: this will not mess up
+    // any other indices into the string. The index of the second character may change if the
+    // UTF-8 length of the characters is unequal so we return that index.
+    unsafe {
+        // PERF: would it be smarter to rotate the slice by whichever is shorter like in
+        // `swap_distant_chars`? On the other hand UTF-8 encoding looks very fast.
+        let bytes = string.as_bytes_mut();
+        // The byte index of the start of the second character after swapping:
+        let new_idx2 = idx1 + ch2.len_utf8();
+        let end = new_idx2 + ch1.len_utf8();
+        ch2.encode_utf8(&mut bytes[idx1..new_idx2]);
+        ch1.encode_utf8(&mut bytes[new_idx2..end]);
+        new_idx2
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -419,6 +497,21 @@ mod test {
         assert_eq!(deduplicate([1, 1]), vec![1]);
         assert_eq!(deduplicate([1]), vec![1]);
         assert_eq!(deduplicate::<usize, _>([]), vec![]);
+    }
+
+    #[test]
+    fn swap_adjacent_chars_test() {
+        fn swap_adjacent_chars(word: &str, idx: usize) -> String {
+            let mut buffer = String::from(word);
+            let mut chars = word[idx..].chars();
+            let ch1 = chars.next().unwrap();
+            let ch2 = chars.next().unwrap();
+            super::swap_adjacent_chars(buffer.as_mut_str(), idx, ch1, ch2);
+            buffer
+        }
+
+        assert_eq!(swap_adjacent_chars("exmaple", 2), "example".to_string());
+        assert_eq!(swap_adjacent_chars("épée", 2), "éépe".to_string());
     }
 
     fn suggest(dict: &Dictionary, word: &str) -> Vec<String> {
@@ -492,5 +585,19 @@ mod test {
         assert!(suggest(&dict, "dteam").contains(&"dream".to_string()));
         assert!(suggest(&dict, "dresm").contains(&"dream".to_string()));
         assert!(!suggest(&dict, "dredm").contains(&"dream".to_string()));
+    }
+
+    #[test]
+    fn adjacent_swap_suggest() {
+        // Main part of `adjacent_swap_suggest`: swap any two characters.
+        assert!(suggest(&EN_US, "exmaple").contains(&"example".to_string()));
+        assert!(suggest(&EN_US, "examlpe").contains(&"example".to_string()));
+        // The part at the end of the function: extra swaps for words with 4 or 5 characters.
+        // 4 characters double swap - first and last two characters:
+        assert!(suggest(&EN_US, "ende").contains(&"need".to_string()));
+        // 5 characters double swap - first and last two characters:
+        assert!(suggest(&EN_US, "rdema").contains(&"dream".to_string()));
+        // 5 characters double swap - second and third and last two characters:
+        assert!(suggest(&EN_US, "derma").contains(&"dream".to_string()));
     }
 }
