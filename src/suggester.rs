@@ -89,7 +89,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // map_suggest
         // Then check if the word is correct, set `hq_suggestions` based on that.
         self.adjacent_swap_suggest(word, out);
-        // distant_swap_suggest
+        self.distant_swap_suggest(word, out);
         self.keyboard_suggest(word, out);
         self.extra_char_suggest(word, out);
         self.forgotten_char_suggest(word, out);
@@ -294,6 +294,27 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         };
     }
 
+    fn distant_swap_suggest(&self, word: &str, out: &mut Vec<String>) {
+        debug_assert!(!word.is_empty());
+        let mut remaining_attempts = self.max_attempts_for_long_alogs(word);
+        let buffer = &mut String::from(word);
+
+        for (idx1, ch1) in word.char_indices() {
+            for (mut idx2, ch2) in word[idx1..].char_indices().skip(1) {
+                // Adjust idx2 so it's an absolute index into word.
+                idx2 += idx1;
+                if remaining_attempts == 0 {
+                    return;
+                }
+                remaining_attempts -= 1;
+                idx2 = swap_distant_chars(buffer, idx1, ch1, idx2, ch2);
+                self.add_suggestion_if_correct(&*buffer, out);
+                swap_distant_chars(buffer, idx1, ch2, idx2, ch1);
+                debug_assert_eq!(word, &*buffer);
+            }
+        }
+    }
+
     /// Suggests replacing characters in the word with the keys around them on the keyboard.
     ///
     /// Also suggests uppercasing individual characters - this suggests that you meant to hit
@@ -475,6 +496,69 @@ fn swap_adjacent_chars(string: &mut str, idx1: usize, ch1: char, ch2: char) -> u
     }
 }
 
+/// Swaps the given characters at their given byte indices, returning the second character's
+/// updated byte index.
+///
+/// This is more general than `swap_adjacent_chars` which can be done more simply. To accommodate
+/// swapping characters of different UTF-8 lengths we need to rotate the bytes which is
+/// unnecessary when swapping adjacent chars.
+///
+/// `idx1` must not equal `idx2`. To eliminate duplicate work the caller passes in the chars at
+/// `idx1` and `idx2` but these values must be equivalent to `string[idx..].chars().next()` for
+/// `idx1` and `idx2`. These requirements are asserted in debug builds.
+fn swap_distant_chars(string: &mut str, idx1: usize, ch1: char, idx2: usize, ch2: char) -> usize {
+    use core::cmp::Ordering::*;
+
+    debug_assert_ne!(idx1, idx2);
+
+    let len1 = ch1.len_utf8();
+    let len2 = ch2.len_utf8();
+    let end = idx2 + len2;
+    match len1.cmp(&len2) {
+        Equal => {
+            // If the two characters have the same length then we don't need to move any
+            // characters that come in between. Simply swap the values:
+            unsafe {
+                let ptr = string.as_mut_ptr();
+                // This is essentially `core::mem::swap` of the two subslices containing the
+                // character bytes. (In fact `mem::swap` is implemented in terms of
+                // `ptr::swap_nonoverlapping`.)
+                core::ptr::swap_nonoverlapping(ptr.add(idx1), ptr.add(idx2), len1);
+            }
+            // Since the characters have the same lengths the indices don't change:
+            idx2
+        }
+        // For `Less` and `Greater` branches we want to rotate right or left depending on which
+        // character takes more bytes in UTF-8. This shifts the bytes of the characters between
+        // the ones we are swapping. It messes up the bytes of the characters we're swapping but
+        // we don't care because we overwrite them with `char::encode_utf8` anyways.
+        Less => {
+            // Guaranteed to not underflow because `len1 < len2`.
+            let rotation = len2 - len1;
+            unsafe {
+                let bytes = string.as_bytes_mut();
+                bytes[idx1..end].rotate_right(rotation);
+                let new_idx2 = idx2 + rotation;
+                ch2.encode_utf8(&mut bytes[idx1..idx1 + len2]);
+                ch1.encode_utf8(&mut bytes[new_idx2..new_idx2 + len1]);
+                new_idx2
+            }
+        }
+        Greater => {
+            // Guaranteed to not underflow because `len1 > len2`.
+            let rotation = len1 - len2;
+            unsafe {
+                let bytes = string.as_bytes_mut();
+                bytes[idx1..end].rotate_left(rotation);
+                let new_idx2 = idx2 - rotation;
+                ch2.encode_utf8(&mut bytes[idx1..idx1 + len2]);
+                ch1.encode_utf8(&mut bytes[new_idx2..new_idx2 + len1]);
+                new_idx2
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -512,6 +596,22 @@ mod test {
 
         assert_eq!(swap_adjacent_chars("exmaple", 2), "example".to_string());
         assert_eq!(swap_adjacent_chars("épée", 2), "éépe".to_string());
+    }
+
+    #[test]
+    fn swap_distant_chars_test() {
+        fn swap_distant_chars(word: &str, idx1: usize, idx2: usize) -> String {
+            let mut buffer = String::from(word);
+            let ch1 = word[idx1..].chars().next().unwrap();
+            let ch2 = word[idx2..].chars().next().unwrap();
+            super::swap_distant_chars(buffer.as_mut_str(), idx1, ch1, idx2, ch2);
+            buffer
+        }
+
+        assert_eq!(swap_distant_chars("example", 1, 4), "epamxle".to_string());
+        assert_eq!(swap_distant_chars("iclaér", 0, 4), "éclair".to_string());
+        assert_eq!(swap_distant_chars("éclair", 0, 5), "iclaér".to_string());
+        assert_eq!(swap_distant_chars("épée", 0, 3), "épée".to_string());
     }
 
     fn suggest(dict: &Dictionary, word: &str) -> Vec<String> {
@@ -599,5 +699,10 @@ mod test {
         assert!(suggest(&EN_US, "rdema").contains(&"dream".to_string()));
         // 5 characters double swap - second and third and last two characters:
         assert!(suggest(&EN_US, "derma").contains(&"dream".to_string()));
+    }
+
+    #[test]
+    fn distant_swap_suggest() {
+        assert!(suggest(&EN_US, "epamxle").contains(&"example".to_string()));
     }
 }
