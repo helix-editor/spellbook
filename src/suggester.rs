@@ -95,7 +95,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         self.forgotten_char_suggest(word, out);
         // move_char_suggest
         self.wrong_char_suggest(word, out);
-        // doubled_two_chars_suggest
+        self.doubled_two_chars_suggest(word, out);
         // two_words_suggest
 
         false
@@ -294,6 +294,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         };
     }
 
+    /// Suggests swapping two non-adjacent characters in the word.
     fn distant_swap_suggest(&self, word: &str, out: &mut Vec<String>) {
         debug_assert!(!word.is_empty());
         let mut remaining_attempts = self.max_attempts_for_long_alogs(word);
@@ -412,6 +413,46 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 buffer.remove(idx);
                 buffer.insert(idx, word_ch);
             }
+        }
+    }
+
+    /// Suggests removing two duplicate characters in a pattern of interspersed characters.
+    ///
+    /// This suggestion method notices a pattern 'xyxyx' and suggests removing the trailing 'yx'.
+    /// ('x' and 'y' are placeholders here - it can be any two characters.)
+    fn doubled_two_chars_suggest(&self, word: &str, out: &mut Vec<String>) {
+        // To find the 'xyxyx' pattern we set up a sliding window of characters and their byte
+        // indices. We shift along the word comparing the elements in that window
+        let mut window = [(0, '0'); 5];
+        let mut n_chars = 0;
+        let mut chars = word.char_indices();
+        for (n, (idx, char)) in chars.by_ref().enumerate().take(5) {
+            window[n] = (idx, char);
+            n_chars = n;
+        }
+        if n_chars != 4 {
+            return;
+        }
+        for (next_idx, next_char) in chars {
+            if window[0].1 == window[2].1
+                && window[1].1 == window[3].1
+                && window[0].1 == window[4].1
+            {
+                // This condition is unlikely to be met and is unlikely to occur multiple times
+                // in one word. So we don't allocate preemptively outside the loop: allocate a
+                // fresh buffer here and don't bother restoring the buffer so it matches `word`.
+                // If we decide to pass a `&mut String` buffer for these suggester methods to
+                // share this might change.
+                let mut buffer = String::from(word);
+                buffer.drain(window[3].0..next_idx);
+                self.add_suggestion_if_correct(buffer, out);
+                // In case we decide to pass a buffer for all suggesters:
+                // buffer.insert_str(window[3].0, &word[window[1].0..window[3].0]);
+                // debug_assert_eq!(&buffer, word);
+            }
+            // Slide the window to the next character in the word, discarding the leftmost:
+            window.rotate_left(1);
+            window[4] = (next_idx, next_char);
         }
     }
 
@@ -704,5 +745,11 @@ mod test {
     #[test]
     fn distant_swap_suggest() {
         assert!(suggest(&EN_US, "epamxle").contains(&"example".to_string()));
+    }
+
+    #[test]
+    fn doubled_two_chars_suggest() {
+        assert!(suggest(&EN_US, "bananana").contains(&"banana".to_string()));
+        assert!(suggest(&EN_US, "exexecute").contains(&"execute".to_string()));
     }
 }
