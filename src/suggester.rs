@@ -96,7 +96,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // move_char_suggest
         self.wrong_char_suggest(word, out);
         self.doubled_two_chars_suggest(word, out);
-        // two_words_suggest
+        self.two_words_suggest(word, out);
 
         false
     }
@@ -456,6 +456,62 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         }
     }
 
+    /// Suggests that the input is two correct words from the dictionary mistakenly not separated
+    /// by a space or hyphen.
+    fn two_words_suggest(&self, word: &str, out: &mut Vec<String>) {
+        debug_assert!(!word.is_empty());
+
+        for (n, (idx, _)) in word.char_indices().enumerate() {
+            // Note Nuspell has a TODO to consider switching these to `check_word` which would
+            // also allow suggesting that either of these words is a compound.
+            let word1 = &word[..idx];
+            if self
+                .checker
+                .check_simple_word(word1, HiddenHomonym::SkipHiddenHomonym)
+                .is_none()
+            {
+                continue;
+            };
+            let word2 = &word[idx..];
+            if self
+                .checker
+                .check_simple_word(word2, HiddenHomonym::SkipHiddenHomonym)
+                .is_none()
+            {
+                continue;
+            };
+
+            // This is somewhat unlikely and we would need to clone the string anyways to reuse
+            // the buffer so we delay allocating until here (rather than reusing a buffer
+            // throughout the loop).
+            let mut space_suggestion = String::with_capacity(word1.len() + 1 + word2.len());
+            space_suggestion.push_str(word1);
+            space_suggestion.push(' ');
+            space_suggestion.push_str(word2);
+            // Nuspell: if (find(begin(out), end(out), word1) == end(out))
+            // is it necessary? we deduplicate at the end of the main suggest function
+            out.push(space_suggestion);
+
+            // If '-' is allowed by the TRY characters or if the TRY characters appear Latin and
+            // the words are long enough (both more than one char), also include the two words
+            // connected by a hyphen.
+            let word2_has_more_than_1_char = word2.chars().nth(1).is_some();
+            if n > 1
+                && word2_has_more_than_1_char
+                && self.checker.aff.try_chars.contains(['a', '-'])
+            {
+                let mut hyphen_suggestion = out.last().unwrap().clone();
+                unsafe {
+                    let bytes = hyphen_suggestion.as_bytes_mut();
+                    debug_assert_eq!(bytes[idx], b' ');
+                    bytes[idx] = b'-';
+                }
+                // Same here about deduplication and the if statement above:
+                out.push(hyphen_suggestion);
+            }
+        }
+    }
+
     /// Determines a reasonable number of attempts to try at editing a word.
     ///
     /// This limits the impact of guessing edits for complicated dictionaries: whether a
@@ -751,5 +807,11 @@ mod test {
     fn doubled_two_chars_suggest() {
         assert!(suggest(&EN_US, "bananana").contains(&"banana".to_string()));
         assert!(suggest(&EN_US, "exexecute").contains(&"execute".to_string()));
+    }
+
+    #[test]
+    fn two_words_suggest() {
+        assert!(suggest(&EN_US, "helloworld").contains(&"hello world".to_string()));
+        assert!(suggest(&EN_US, "helloworld").contains(&"hello-world".to_string()));
     }
 }

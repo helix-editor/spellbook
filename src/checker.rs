@@ -323,7 +323,11 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         Some(flags)
     }
 
-    fn check_simple_word(&self, word: &str, hidden_homonym: HiddenHomonym) -> Option<&FlagSet> {
+    pub(crate) fn check_simple_word(
+        &self,
+        word: &str,
+        hidden_homonym: HiddenHomonym,
+    ) -> Option<&FlagSet> {
         for (_stem, flags) in self.words.get(word) {
             if has_flag!(flags, self.aff.options.need_affix_flag) {
                 continue;
