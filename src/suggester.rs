@@ -93,7 +93,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         self.keyboard_suggest(word, out);
         self.extra_char_suggest(word, out);
         self.forgotten_char_suggest(word, out);
-        // move_char_suggest
+        self.move_char_suggest(word, out);
         self.wrong_char_suggest(word, out);
         self.doubled_two_chars_suggest(word, out);
         self.two_words_suggest(word, out);
@@ -389,6 +389,69 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 buffer.remove(idx);
             }
         }
+    }
+
+    /// Suggests moving any character in the word to any other position in the word.
+    fn move_char_suggest(&self, word: &str, out: &mut Vec<String>) {
+        debug_assert!(!word.is_empty());
+        let mut remaining_attempts = self.max_attempts_for_long_alogs(word);
+        let buffer = &mut String::from(word);
+
+        let mut chars = word.char_indices().peekable();
+        while let Some(((idx1, ch1), (idx2, ch2))) = chars.next().zip(chars.peek().copied()) {
+            let mut cursor = swap_adjacent_chars(buffer, idx1, ch1, ch2);
+
+            // Skip ch2.
+            for (swap_idx, swap_ch) in word[idx2..].char_indices().skip(1) {
+                if remaining_attempts == 0 {
+                    unsafe {
+                        let bytes = buffer.as_bytes_mut();
+                        bytes[idx1..swap_idx].rotate_right(ch1.len_utf8());
+                    }
+                    debug_assert_eq!(word, &*buffer);
+                    return;
+                }
+                remaining_attempts -= 1;
+
+                cursor = swap_adjacent_chars(buffer, cursor, ch1, swap_ch);
+                self.add_suggestion_if_correct(&*buffer, out);
+            }
+
+            // Rotate the character back to the beginning of the slice to restore the word.
+            unsafe {
+                let bytes = buffer.as_bytes_mut();
+                bytes[idx1..].rotate_right(ch1.len_utf8());
+            }
+            debug_assert_eq!(word, &*buffer);
+        }
+        debug_assert_eq!(word, &*buffer);
+
+        // This is the same as above but in reverse: suggest moving a character backwards in
+        // a word, for example suggesting "hello" for "ellho" by moving the 'h' to the beginning.
+        let mut chars = word.char_indices().rev().peekable();
+        while let Some(((idx1, ch1), (idx2, ch2))) = chars.next().zip(chars.peek().copied()) {
+            let end = idx1 + ch1.len_utf8();
+            swap_adjacent_chars(buffer, idx2, ch2, ch1);
+            for (swap_idx, swap_ch) in word[..idx2].char_indices().rev() {
+                if remaining_attempts == 0 {
+                    unsafe {
+                        let bytes = buffer.as_bytes_mut();
+                        bytes[swap_idx + swap_ch.len_utf8()..end].rotate_left(ch1.len_utf8());
+                    }
+                    debug_assert_eq!(word, &*buffer);
+                    return;
+                }
+                remaining_attempts -= 1;
+                swap_adjacent_chars(buffer, swap_idx, swap_ch, ch1);
+                self.add_suggestion_if_correct(&*buffer, out);
+            }
+            unsafe {
+                let bytes = buffer.as_bytes_mut();
+                bytes[..end].rotate_left(ch1.len_utf8());
+            }
+            debug_assert_eq!(word, &*buffer);
+        }
+        debug_assert_eq!(word, &*buffer);
     }
 
     /// Suggests words with one "wrong" character swapped for another character from the TRY
@@ -813,5 +876,33 @@ mod test {
     fn two_words_suggest() {
         assert!(suggest(&EN_US, "helloworld").contains(&"hello world".to_string()));
         assert!(suggest(&EN_US, "helloworld").contains(&"hello-world".to_string()));
+    }
+
+    #[test]
+    fn move_char_suggest() {
+        // Move the 'o' to the end
+        assert!(suggest(&EN_US, "hoell").contains(&"hello".to_string()));
+        // move the 'h' to the beginning
+        assert!(suggest(&EN_US, "ellho").contains(&"hello".to_string()));
+
+        let aff = r#""#;
+        // This word uses each possible UTF-8 length:
+        assert_eq!('+'.len_utf8(), 1); // 2b
+        assert_eq!('×'.len_utf8(), 2); // c3 97
+        assert_eq!('፠'.len_utf8(), 3); // e1 8d a0
+        assert_eq!('𝄎'.len_utf8(), 4); // f0 9d 84 8e
+        let dic = r#"1
+        +×፠𝄎
+        "#;
+        let dict = Dictionary::new(aff, dic).unwrap();
+
+        assert!(suggest(&dict, "+×፠𝄎").contains(&"+×፠𝄎".to_string()));
+        assert!(suggest(&dict, "×+፠𝄎").contains(&"+×፠𝄎".to_string()));
+        assert!(suggest(&dict, "×፠𝄎+").contains(&"+×፠𝄎".to_string()));
+        assert!(suggest(&dict, "+፠×𝄎").contains(&"+×፠𝄎".to_string()));
+        assert!(suggest(&dict, "+፠𝄎×").contains(&"+×፠𝄎".to_string()));
+        assert!(suggest(&dict, "+×𝄎፠").contains(&"+×፠𝄎".to_string()));
+        assert!(suggest(&dict, "+፠×𝄎").contains(&"+×፠𝄎".to_string()));
+        assert!(suggest(&dict, "፠+×𝄎").contains(&"+×፠𝄎".to_string()));
     }
 }
