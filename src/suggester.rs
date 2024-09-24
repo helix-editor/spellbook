@@ -86,7 +86,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // let len = out.len();
         self.uppercase_suggest(word, out);
         self.rep_suggest(word, out);
-        // map_suggest
+        self.map_suggest(word, out);
         // Then check if the word is correct, set `hq_suggestions` based on that.
         self.adjacent_swap_suggest(word, out);
         self.distant_swap_suggest(word, out);
@@ -237,6 +237,116 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         }
 
         out.push(String::from(word));
+    }
+
+    /// Suggests swapping out characters and substrings according to the `MAP` rule in the `.aff`
+    /// file.
+    ///
+    /// This is used to swap out diacritics, for example equating 'o' with 'ö'.
+    fn map_suggest(&self, word: &str, out: &mut Vec<String>) {
+        let remaining_attempts = self.max_attempts_for_long_alogs(word);
+        self.map_suggest_impl(word, out, 0, remaining_attempts);
+    }
+
+    fn map_suggest_impl(
+        &self,
+        word: &str,
+        out: &mut Vec<String>,
+        i: usize,
+        mut remaining_attempts: usize,
+    ) {
+        let buffer = &mut String::from(word);
+        for (mut idx, ch) in word[i..].char_indices() {
+            idx += i;
+            for similarity in self.checker.aff.similarities.iter() {
+                if similarity.chars.contains(ch) {
+                    for similar_ch in similarity.chars.chars() {
+                        if similar_ch == ch {
+                            continue;
+                        }
+                        if remaining_attempts == 0 {
+                            return;
+                        }
+                        remaining_attempts -= 1;
+
+                        replace_char_at(buffer, idx, ch, similar_ch);
+                        self.add_suggestion_if_correct(&*buffer, out);
+                        self.map_suggest_impl(
+                            buffer,
+                            out,
+                            idx + similar_ch.len_utf8(),
+                            remaining_attempts,
+                        );
+                        replace_char_at(buffer, idx, similar_ch, ch);
+                        debug_assert_eq!(&*buffer, word);
+                    }
+                    for similar_str in similarity.strings.iter() {
+                        if remaining_attempts == 0 {
+                            return;
+                        }
+                        remaining_attempts -= 1;
+
+                        buffer.replace_range(idx..idx + ch.len_utf8(), similar_str);
+                        self.add_suggestion_if_correct(&*buffer, out);
+                        self.map_suggest_impl(
+                            buffer,
+                            out,
+                            idx + similar_str.len(),
+                            remaining_attempts,
+                        );
+                        let mut ch_str = [0u8; 4];
+                        let ch_str = ch.encode_utf8(&mut ch_str);
+                        buffer.replace_range(idx..idx + similar_str.len(), ch_str);
+                        debug_assert_eq!(&*buffer, word);
+                    }
+                } else {
+                    for string in similarity.strings.iter() {
+                        let Some(idx) = word[idx..].find(&**string).map(|i| i + idx) else {
+                            continue;
+                        };
+                        for similar_ch in similarity.chars.chars() {
+                            if remaining_attempts == 0 {
+                                return;
+                            }
+                            remaining_attempts -= 1;
+
+                            let mut ch_str = [0u8; 4];
+                            let ch_str = similar_ch.encode_utf8(&mut ch_str);
+                            buffer.replace_range(idx..idx + string.len(), ch_str);
+                            self.add_suggestion_if_correct(&*buffer, out);
+                            self.map_suggest_impl(
+                                buffer,
+                                out,
+                                idx + ch_str.len(),
+                                remaining_attempts,
+                            );
+                            buffer.replace_range(idx..idx + ch_str.len(), string);
+                            debug_assert_eq!(&*buffer, word);
+                        }
+                        for similar_str in similarity.strings.iter() {
+                            if core::ptr::eq(string, similar_str) {
+                                continue;
+                            }
+                            if remaining_attempts == 0 {
+                                return;
+                            }
+                            remaining_attempts -= 1;
+
+                            buffer.replace_range(idx..idx + string.len(), similar_str);
+                            self.add_suggestion_if_correct(&*buffer, out);
+                            self.map_suggest_impl(
+                                buffer,
+                                out,
+                                idx + similar_str.len(),
+                                remaining_attempts,
+                            );
+                            buffer.replace_range(idx..idx + similar_str.len(), string);
+                            debug_assert_eq!(&*buffer, word);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Suggests swapping two adjacent characters.
@@ -719,6 +829,56 @@ fn swap_distant_chars(string: &mut str, idx1: usize, ch1: char, idx2: usize, ch2
     }
 }
 
+/// Replaces the given character in the given string with another `char`.
+///
+/// This function does not reallocate the string unless necessary.
+fn replace_char_at(string: &mut String, idx: usize, ch1: char, ch2: char) {
+    use core::cmp::Ordering::*;
+    debug_assert!(idx < string.len());
+    debug_assert_eq!(string[idx..].chars().next(), Some(ch1));
+
+    let len1 = ch1.len_utf8();
+    let len2 = ch2.len_utf8();
+    match len1.cmp(&len2) {
+        Equal => unsafe {
+            // If both characters take the same number of bytes, overwrite the bytes.
+            let bytes = string.as_bytes_mut();
+            ch2.encode_utf8(&mut bytes[idx..]);
+        },
+        Less => unsafe {
+            // The new character takes more bytes than the old.
+            let difference = len2 - len1;
+            let new_len = string.len() + difference;
+            let bytes = string.as_mut_vec();
+            // Allocate extra bytes to accommodate the extra bytes in the new char.
+            bytes.resize(new_len, 0);
+            // Make space for the new char by moving the later characters in the string even
+            // further back.
+            bytes[idx..].rotate_right(difference);
+            ch2.encode_utf8(&mut bytes[idx..]);
+            debug_assert!(String::from_utf8(bytes.to_vec()).is_ok());
+        },
+        Greater => unsafe {
+            // The new character takes fewer bytes than the old.
+            // Shift the later characters in the
+            // string by how many fewer bytes the new character takes and then write the new
+            // character's bytes.
+            let difference = len1 - len2;
+            let new_len = string.len() - difference;
+            let bytes = string.as_mut_vec();
+            // Move the later characters in the string back to fit the new length of the new
+            // character.
+            bytes[idx..].rotate_left(difference);
+            ch2.encode_utf8(&mut bytes[idx..]);
+            // Chop off the unused bytes at the end.
+            bytes.truncate(new_len);
+            debug_assert!(String::from_utf8(bytes.to_vec()).is_ok());
+        },
+    }
+
+    debug_assert_eq!(string[idx..].chars().next(), Some(ch2));
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -772,6 +932,20 @@ mod test {
         assert_eq!(swap_distant_chars("iclaér", 0, 4), "éclair".to_string());
         assert_eq!(swap_distant_chars("éclair", 0, 5), "iclaér".to_string());
         assert_eq!(swap_distant_chars("épée", 0, 3), "épée".to_string());
+    }
+
+    #[test]
+    fn replace_char_at_test() {
+        fn replace_char_at<S: ToString>(s: S, idx: usize, ch1: char, ch2: char) -> String {
+            let mut s = s.to_string();
+            super::replace_char_at(&mut s, idx, ch1, ch2);
+            s
+        }
+
+        assert_eq!(replace_char_at("bar", 2, 'r', 'z'), "baz".to_string());
+        assert_eq!(replace_char_at("hello", 1, 'e', 'é'), "héllo".to_string());
+        assert_eq!(replace_char_at("héllo", 1, 'é', 'e'), "hello".to_string());
+        assert_eq!(replace_char_at("épée", 0, 'é', 'e'), "epée".to_string());
     }
 
     fn suggest(dict: &Dictionary, word: &str) -> Vec<String> {
@@ -904,5 +1078,32 @@ mod test {
         assert!(suggest(&dict, "+×𝄎፠").contains(&"+×፠𝄎".to_string()));
         assert!(suggest(&dict, "+፠×𝄎").contains(&"+×፠𝄎".to_string()));
         assert!(suggest(&dict, "፠+×𝄎").contains(&"+×፠𝄎".to_string()));
+    }
+
+    #[test]
+    fn map_suggest() {
+        let aff = r#"
+        MAP 4
+        MAP uúü
+        MAP oóö
+        MAP ß(ss)
+        MAP (foo)(bar)
+        "#;
+        let dic = r#"6
+        hello
+        flüme
+        strauss
+        aßßa
+        foobar
+        barbar
+        "#;
+        let dict = Dictionary::new(aff, dic).unwrap();
+        assert!(suggest(&dict, "hellö").contains(&"hello".to_string()));
+        assert!(suggest(&dict, "helló").contains(&"hello".to_string()));
+        assert!(suggest(&dict, "flume").contains(&"flüme".to_string()));
+        assert!(suggest(&dict, "strauß").contains(&"strauss".to_string()));
+        assert!(suggest(&dict, "assssa").contains(&"aßßa".to_string()));
+        assert!(suggest(&dict, "foofoo").contains(&"foobar".to_string()));
+        assert!(suggest(&dict, "foofoo").contains(&"barbar".to_string()));
     }
 }
