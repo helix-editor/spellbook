@@ -1148,6 +1148,12 @@ impl CaseHandling {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct SimilarityGroup {
+    pub chars: Box<str>,
+    pub strings: Box<[Box<str>]>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct AffData {
     // checking options
     pub prefixes: PrefixIndex,
@@ -1161,7 +1167,7 @@ pub(crate) struct AffData {
     // locale TODO
     // suggestion options
     pub replacements: ReplacementTable,
-    // similarities: Vec<SimilarityGroup>,
+    pub similarities: Box<[SimilarityGroup]>,
     // phonetic_table: PhoneticTable,
     pub ignore_chars: Box<[char]>,
     pub keyboard_closeness: String,

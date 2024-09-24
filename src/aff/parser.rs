@@ -28,7 +28,7 @@ use crate::{
 
 use super::{
     AffData, AffOptions, BreakTable, CaseHandling, CompoundPattern, CompoundRule, Condition,
-    FlagType, Prefix, Suffix, HIDDEN_HOMONYM_FLAG,
+    FlagType, Prefix, SimilarityGroup, Suffix, HIDDEN_HOMONYM_FLAG,
 };
 
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
@@ -43,6 +43,7 @@ struct AffLineParser<'aff> {
     flag_aliases: Vec<FlagSet>,
     // wordchars: String, deprecated?
     replacements: Vec<(&'aff str, String)>,
+    similarities: Vec<SimilarityGroup>,
     input_conversions: Vec<(&'aff str, &'aff str)>,
     output_conversions: Vec<(&'aff str, &'aff str)>,
     break_patterns: Vec<&'aff str>,
@@ -65,6 +66,7 @@ impl<'aff> Default for AffLineParser<'aff> {
             flag_type: Default::default(),
             flag_aliases: Default::default(),
             replacements: Default::default(),
+            similarities: Default::default(),
             input_conversions: Default::default(),
             output_conversions: Default::default(),
             break_patterns: vec!["^-", "-", "-$"],
@@ -141,6 +143,7 @@ const AFF_PARSERS: &[(&str, Parser)] = &[
     ("SFX", parse_suffix_table),
     ("COMPOUNDRULE", parse_compound_rule_table),
     ("CHECKCOMPOUNDPATTERN", parse_compound_pattern_table),
+    ("MAP", parse_map),
 ];
 
 // TODO: encoding? Or just require all dictionaries to be UTF-8?
@@ -223,6 +226,7 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
         suffixes: cx.suffixes.into(),
         break_table: BreakTable::new(&cx.break_patterns),
         replacements: cx.replacements.into(),
+        similarities: cx.similarities.into(),
         input_conversions: cx.input_conversions.into(),
         output_conversions: cx.output_conversions.into(),
         compound_rules: cx.compound_rules.into(),
@@ -688,6 +692,52 @@ fn parse_compound_pattern_table(cx: &mut AffLineParser, lines: &mut Lines) -> Pa
     }
 
     Ok(())
+}
+
+impl From<&str> for SimilarityGroup {
+    fn from(s: &str) -> Self {
+        let mut chars = String::new();
+        let mut strings = Vec::new();
+        let mut i = 0;
+        loop {
+            let j = s[i..].find('(').map(|idx| idx + i);
+            chars.push_str(&s[i..j.unwrap_or(s.len())]);
+            let Some(j) = j else {
+                break;
+            };
+            i = j + 1;
+            let Some(j) = s[i..].find(')').map(|idx| idx + i) else {
+                break;
+            };
+            // NOTE: we diverge from Nuspell here since I think it's incorrect. Here it pushes
+            // to `chars` if `j - i == 1` but that makes `(o)` behave differently than `(ö)` for
+            // example since 'ö' is more than one byte long in UTF-8. Instead we count chars here
+            // and push to `strings` if it's more than one char.
+            let substr = &s[i..j];
+            let mut chs = substr.chars();
+            let has_no_chars = chs.next().is_none();
+            let has_exactly_one_char = chs.next().is_none();
+            if has_exactly_one_char {
+                // Note that this only pushes one character.
+                chars.push_str(substr);
+            } else if !has_no_chars {
+                strings.push(substr.into());
+            }
+            i = j + 1;
+        }
+
+        SimilarityGroup {
+            chars: chars.into(),
+            strings: strings.into(),
+        }
+    }
+}
+
+fn parse_map(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
+    lines.parse_table1("MAP", |s| {
+        cx.similarities.push(s.into());
+        Ok(())
+    })
 }
 
 /// A helper type that means "words on a line split by whitespace with comments
@@ -2109,5 +2159,20 @@ mod test {
         let aff = "BREAK 0";
         let (_words, aff_data) = parse(aff, dic, ahash::RandomState::new()).unwrap();
         assert_eq!(aff_data.break_table.table.len(), 0);
+    }
+
+    #[test]
+    fn similarity_group_parsing() {
+        let sg: SimilarityGroup = "uúü".into();
+        assert!(sg.strings.is_empty());
+        assert_eq!(sg.chars.as_ref(), "uúü");
+
+        let sg: SimilarityGroup = "ß(ss)".into();
+        assert_eq!(sg.chars.as_ref(), "ß");
+        assert_eq!(sg.strings.as_ref(), &["ss".into()]);
+
+        let sg: SimilarityGroup = "(o)(ö)".into();
+        assert_eq!(sg.chars.as_ref(), "oö");
+        assert!(sg.strings.is_empty());
     }
 }
