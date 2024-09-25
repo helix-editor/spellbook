@@ -83,11 +83,27 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     }
 
     fn suggest_low(&self, word: &str, out: &mut Vec<String>) -> bool {
-        // let len = out.len();
+        let old_len = out.len();
+
         self.uppercase_suggest(word, out);
         self.rep_suggest(word, out);
         self.map_suggest(word, out);
-        // Then check if the word is correct, set `hq_suggestions` based on that.
+
+        let hq_suggestions = out.len() != old_len
+            // Per Nuspell we recognize our suggestions so far as high quality if uppercase,
+            // rep or map suggestion methods produces a suggestion, or if the word is correct.
+            // In Hunspell the map_suggest equivalent would add `word` so the `out.len() !=
+            // old_len` check would be the same here.
+            || (!self.checker.aff.similarities.is_empty()
+                && self
+                    .checker
+                    .check_word(
+                        word,
+                        Forceucase::AllowBadForceucase,
+                        HiddenHomonym::SkipHiddenHomonym,
+                    )
+                    .is_some());
+
         self.adjacent_swap_suggest(word, out);
         self.distant_swap_suggest(word, out);
         self.keyboard_suggest(word, out);
@@ -98,7 +114,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         self.doubled_two_chars_suggest(word, out);
         self.two_words_suggest(word, out);
 
-        false
+        hq_suggestions
     }
 
     /// Adds a suggestion to the suggestion vector if it belongs to the dictionary and is not
