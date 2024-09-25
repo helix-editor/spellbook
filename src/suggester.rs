@@ -532,7 +532,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 if remaining_attempts == 0 {
                     unsafe {
                         let bytes = buffer.as_bytes_mut();
-                        bytes[idx1..swap_idx].rotate_right(ch1.len_utf8());
+                        bytes[idx1..swap_idx + idx2].rotate_right(ch1.len_utf8());
                     }
                     debug_assert_eq!(word, &*buffer);
                     return;
