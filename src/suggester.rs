@@ -62,7 +62,25 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 }
                 hq_suggestions |= self.suggest_low(&word, out);
             }
-            _ => todo!(),
+            Casing::Init => {
+                hq_suggestions |= self.suggest_low(&word, out);
+                let word = self.checker.aff.options.case_handling.lowercase(&word);
+                hq_suggestions |= self.suggest_low(&word, out);
+            }
+            Casing::All => {
+                let lower = self.checker.aff.options.case_handling.lowercase(&word);
+                if self.checker.aff.options.keep_case_flag.is_some() && self.checker.check(&lower) {
+                    out.insert(0, lower.clone());
+                }
+                hq_suggestions |= self.suggest_low(&lower, out);
+                let title = self.checker.aff.options.case_handling.titlecase(&lower);
+                hq_suggestions |= self.suggest_low(&title, out);
+                for suggestion in out.iter_mut() {
+                    let upper = self.checker.aff.options.case_handling.uppercase(suggestion);
+                    *suggestion = upper;
+                }
+            }
+            Casing::Camel | Casing::Pascal => todo!(),
         }
 
         if !hq_suggestions && self.checker.aff.options.max_ngram_suggestions != 0 {
