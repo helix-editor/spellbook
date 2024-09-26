@@ -65,8 +65,9 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             _ => todo!(),
         }
 
-        // TODO: remove. Currently used to suppress an unused_variable lint.
-        assert!(!hq_suggestions);
+        if !hq_suggestions && self.checker.aff.options.max_ngram_suggestions != 0 {
+            // TODO.
+        }
 
         // Some suggestion methods can cause duplicates. For example in "adveenture",
         // extra_char_suggest can eliminate either inner 'e' causing a duplicate "adventure"
