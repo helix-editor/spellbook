@@ -11,8 +11,8 @@ license = "MPL-2.0"
 rust-version = "1.70"
 
 [dependencies]
-# Used for HashMap and RawTable for a custom bag structure.
-hashbrown = { version = "0.14", default-features = false, features = ["raw"] }
+# Used for HashMap and HashTable for a custom bag structure.
+hashbrown = { version = "0.15", default-features = false  }
 # Used as the default BuildHasher when the `default-hasher` feature flag
 # is enabled (which it is by default).
 ahash = { version = "0.8", default-features = false, optional = true }

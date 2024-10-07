@@ -2,12 +2,9 @@ use core::{
     borrow::Borrow,
     fmt::Debug,
     hash::{BuildHasher, Hash},
-    marker::PhantomData,
 };
 
-// TODO: `use hashbrown::{hash_table, HashTable}` instead once `HashTable` supports `iter_hash`.
-// See the `hash-table` branch.
-use hashbrown::raw::{RawIter, RawIterHash, RawTable};
+use hashbrown::hash_table::{self, HashTable, IterHash};
 
 /// A collection of key-value pairs - similar to a HashMap - which allows for duplicate keys.
 ///
@@ -30,14 +27,14 @@ use hashbrown::raw::{RawIter, RawIterHash, RawTable};
 /// [Swiss Tables]: https://abseil.io/blog/20180927-swisstables
 #[derive(Clone)]
 pub struct HashBag<K, V, S> {
-    table: RawTable<(K, V)>,
+    table: HashTable<(K, V)>,
     build_hasher: S,
 }
 
 impl<K, V, S: BuildHasher + Default> HashBag<K, V, S> {
     pub fn new() -> Self {
         Self {
-            table: RawTable::new(),
+            table: HashTable::new(),
             build_hasher: S::default(),
         }
     }
@@ -49,9 +46,7 @@ impl<K, V, S> HashBag<K, V, S> {
     /// The ordering of the pairs returned by the iterator is undefined.
     pub fn iter(&self) -> Iter<'_, K, V> {
         Iter {
-            inner: unsafe { self.table.iter() },
-            // Here we tie the lifetime of self to the iter.
-            marker: PhantomData,
+            inner: self.table.iter(),
         }
     }
 
@@ -68,7 +63,7 @@ where
 {
     pub fn with_capacity_and_hasher(capacity: usize, build_hasher: S) -> Self {
         Self {
-            table: RawTable::with_capacity(capacity),
+            table: HashTable::with_capacity(capacity),
             build_hasher,
         }
     }
@@ -79,9 +74,8 @@ where
     pub fn insert(&mut self, k: K, v: V) {
         let hash = make_hash(&self.build_hasher, &k);
         let hasher = make_hasher(&self.build_hasher);
-        self.table.reserve(1, make_hasher(&self.build_hasher));
         // Insert without attempting to find an existing entry with this key.
-        self.table.insert(hash, (k, v), hasher);
+        self.table.insert_unique(hash, (k, v), hasher);
     }
 
     /// Gets all key-value pairs in the bag with the given key.
@@ -95,10 +89,8 @@ where
         let hash = make_hash(&self.build_hasher, k);
 
         GetAllIter {
-            inner: unsafe { self.table.iter_hash(hash) },
+            inner: self.table.iter_hash(hash),
             key: k,
-            // Here we tie the lifetime of self to the iter.
-            marker: PhantomData,
         }
     }
 }
@@ -135,23 +127,18 @@ where
     move |val| make_hash::<Q, S>(hash_builder, &val.0)
 }
 
+// This is a very thin wrapper around `hash_table::Iter` which rearranges the reference so that
+// we return `(&k, &v)` instead of `&(k, v)`.
 pub struct Iter<'a, K, V> {
-    inner: RawIter<(K, V)>,
-    marker: PhantomData<(&'a K, &'a V)>,
+    inner: hash_table::Iter<'a, (K, V)>,
 }
 
 impl<'a, K, V> Iterator for Iter<'a, K, V> {
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<(&'a K, &'a V)> {
-        // Avoid `Option::map` because it bloats LLVM IR.
-        match self.inner.next() {
-            Some(x) => unsafe {
-                let r = x.as_ref();
-                Some((&r.0, &r.1))
-            },
-            None => None,
-        }
+        let (k, v) = self.inner.next()?;
+        Some((k, v))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -170,9 +157,8 @@ where
     K: Borrow<Q>,
     Q: Hash + Eq,
 {
-    inner: RawIterHash<(K, V)>,
+    inner: IterHash<'bag, (K, V)>,
     key: &'key Q,
-    marker: PhantomData<(&'bag K, &'bag V)>,
 }
 
 impl<'bag, 'key, Q: ?Sized, K, V> Iterator for GetAllIter<'bag, 'key, Q, K, V>
@@ -185,13 +171,9 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.inner.next() {
-                Some(bucket) => {
-                    // SAFETY: the creator of the iterator (`get`) ensures that the reference
-                    // to the value outlives the RawTable. It also prevents concurrent
-                    // modifications to the table.
-                    let element = unsafe { bucket.as_ref() };
-                    if self.key.eq(element.0.borrow()) {
-                        return Some((&element.0, &element.1));
+                Some((k, v)) => {
+                    if self.key.eq(k.borrow()) {
+                        return Some((k, v));
                     }
                     continue;
                 }
