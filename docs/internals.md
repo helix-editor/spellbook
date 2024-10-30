@@ -16,7 +16,7 @@ struct FlagSet(Box<[Flag]>);
 
 Words in the dictionary are associated with any number of flags, like `adventure/DRSMZG` mentioned above. The order of the flags as written in the dictionary isn't important. We need a way to look up whether a flag exists in that set quickly. The right tool for the job might seem like a `HashSet<Flag>` or a `BTreeSet<Flag>`. Those are mutable though so they carry some extra overhead. A dictionary contains many many flag sets and the overhead adds up. So what we use instead is a sorted `Box<[Flag]>` and look up flags with `slice::binary_search`.
 
-Binary searching a small slice is a tiny bit slower than `slice::contains` but we prefer `slice::binary_search` for its consistent performance on outlier flag sets. See [`examples/bench-slice-contains.rs`](../examples/bench-slice-contains.rs) for more details.
+Binary searching a small slice is a tiny bit slower than `slice::contains` but we prefer `slice::binary_search` for its consistent performance on outlier flag sets. See [`benches/slice-contains.rs`](../benches/slice-contains.rs) for more details.
 
 ### Flags
 
