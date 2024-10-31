@@ -80,7 +80,8 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                     *suggestion = upper;
                 }
             }
-            Casing::Camel | Casing::Pascal => todo!(),
+            // TODO
+            Casing::Camel | Casing::Pascal => {}
         }
 
         if !hq_suggestions && self.checker.aff.options.max_ngram_suggestions != 0 {
