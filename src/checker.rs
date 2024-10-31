@@ -5,7 +5,7 @@ use crate::{
         AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG,
     },
     alloc::{string::String, vec::Vec},
-    classify_casing, erase_chars, AffixingMode, Casing, Dictionary, Flag, FlagSet, WordList,
+    classify_casing, erase_chars, AffixingMode, Casing, Dictionary, Flag, FlagSet, Stem, WordList,
     AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD, MAX_WORD_LEN,
 };
 
@@ -1542,7 +1542,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     part1_entry,
                 );
             }
-            let part2_word = part2_entry.stem;
+            let part2_word = part2_entry.stem.as_ref();
             // TODO: do we need a bounds check? Use starts_with on the subslice of `&word[i..]`
             // instead?
             if &word[i..i + part2_word.len()] == part2_word
@@ -1703,7 +1703,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 return None;
             }
 
-            let part2_word = part2_entry.stem;
+            let part2_word = part2_entry.stem.as_ref();
             // TODO: do we need a bounds check? Use starts_with on the subslice of `&word[i..]`
             // instead?
             if &word[i..i + part2_word.len()] == part2_word
@@ -2252,7 +2252,7 @@ impl HiddenHomonym {
 // Similar to Nuspell's AffixingResult
 #[derive(Debug)]
 pub(crate) struct AffixForm<'aff> {
-    stem: &'aff str,
+    stem: &'aff Stem,
     flags: &'aff FlagSet,
     // Up to 2 prefixes and/or 2 suffixes allowed.
     prefixes: [Option<&'aff Prefix>; 2],
@@ -2262,7 +2262,7 @@ pub(crate) struct AffixForm<'aff> {
 // TODO: docs.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct CompoundingResult<'aff> {
-    stem: &'aff str,
+    stem: &'aff Stem,
     flags: &'aff FlagSet,
     num_words_modifier: u16,
     num_syllable_modifier: i16,
@@ -2270,7 +2270,7 @@ pub(crate) struct CompoundingResult<'aff> {
 }
 
 impl<'aff> CompoundingResult<'aff> {
-    pub fn new(stem: &'aff str, flags: &'aff FlagSet) -> Self {
+    pub fn new(stem: &'aff Stem, flags: &'aff FlagSet) -> Self {
         Self {
             stem,
             flags,

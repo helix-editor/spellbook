@@ -195,7 +195,7 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
                 .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
         // Normalize out Pascal and Camel cases (and uppercase when there are no flags) by
         // converting them to titlecase and setting the hidden homonym flag.
-        let casing = crate::classify_casing(&word);
+        let casing = crate::classify_casing(word.as_ref());
         if (matches!(casing, Casing::Pascal | Casing::Camel)
             && !cx
                 .options
@@ -203,7 +203,7 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
                 .is_some_and(|flag| flagset.contains(&flag)))
             || (matches!(casing, Casing::All) && !flagset.is_empty())
         {
-            let word = cx.options.case_handling.titlecase(&word).into();
+            let word = cx.options.case_handling.titlecase(word.as_ref()).into();
             words.insert(word, flagset.with_flag(HIDDEN_HOMONYM_FLAG));
         }
         words.insert(word, flagset);
@@ -1262,7 +1262,7 @@ pub(crate) fn parse_dic_line(
             s.chars()
                 .filter(|ch| !ignore.contains(ch))
                 .collect::<String>()
-                .into_boxed_str()
+                .into()
         }
     }
 
