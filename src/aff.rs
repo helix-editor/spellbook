@@ -1286,7 +1286,7 @@ mod test {
     }
     macro_rules! flagset {
         () => {{
-            FlagSet::empty()
+            FlagSet::default()
         }};
         ( $( $x:expr ),* ) => {
             {

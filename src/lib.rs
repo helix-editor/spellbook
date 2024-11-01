@@ -311,10 +311,6 @@ impl From<Vec<Flag>> for FlagSet {
 }
 
 impl FlagSet {
-    pub fn empty() -> Self {
-        Self::default()
-    }
-
     #[inline]
     pub fn as_slice(&self) -> &[Flag] {
         &self.0
@@ -542,7 +538,7 @@ mod test {
     }
     macro_rules! flagset {
         () => {{
-            FlagSet::empty()
+            FlagSet::default()
         }};
         ( $( $x:expr ),* ) => {
             {

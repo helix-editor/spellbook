@@ -1273,7 +1273,7 @@ pub(crate) fn parse_dic_line(
     else {
         // A fast-lane for words without flagsets.
         let word = ignore_chars(input, ignore);
-        return Ok((word, FlagSet::empty()));
+        return Ok((word, FlagSet::default()));
     };
 
     // Note: ignore '/' at the start of the line. Not sure why this is correct but it's in the
@@ -1294,7 +1294,7 @@ pub(crate) fn parse_dic_line(
     // Fastlane to treat '\t' as the EOL.
     if byte == b'\t' {
         let word = ignore_chars(&input[..idx], ignore);
-        return Ok((word, FlagSet::empty()));
+        return Ok((word, FlagSet::default()));
     }
 
     // Worst-case scenario the word contains a space or uses backslash to escape the separator
@@ -1326,7 +1326,7 @@ pub(crate) fn parse_dic_line(
             '\t' => {
                 // Treat tabs as the end-of-line.
                 let word = ignore_chars(&word, ignore);
-                return Ok((word, FlagSet::empty()));
+                return Ok((word, FlagSet::default()));
             }
             ' ' => {
                 // Detect and ignore morphological fields. Scan ahead three characters into the
@@ -1349,7 +1349,7 @@ pub(crate) fn parse_dic_line(
 
                 if separates_morphological_field {
                     let word = ignore_chars(&word, ignore);
-                    return Ok((word, FlagSet::empty()));
+                    return Ok((word, FlagSet::default()));
                 } else {
                     word.push(ch);
                 }
@@ -1808,7 +1808,7 @@ mod test {
     }
     macro_rules! flagset {
         () => {{
-            FlagSet::empty()
+            FlagSet::default()
         }};
         ( $( $x:expr ),* ) => {
             {
