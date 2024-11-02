@@ -35,7 +35,7 @@ pub use aff::parser::{
 };
 use suggester::Suggester;
 
-use crate::alloc::{borrow::Cow, boxed::Box, slice, string::String, vec::Vec};
+use crate::alloc::{borrow::Cow, slice, string::String, vec::Vec};
 use aff::AffData;
 use checker::Checker;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
@@ -301,25 +301,26 @@ type Flag = core::num::NonZeroU16;
 /// unless the value needs to be mutated at some point. Once a dictionary is initialized it's
 /// immutable so we don't need a Vec.
 #[derive(Default, PartialEq, Eq, Clone)]
-struct FlagSet(Box<[Flag]>);
+struct FlagSet(umbra_slice::FlagSlice);
 
 impl From<Vec<Flag>> for FlagSet {
     fn from(mut flags: Vec<Flag>) -> Self {
         flags.sort_unstable();
         flags.dedup();
-        Self(flags.into_boxed_slice())
+        assert!(flags.len() <= u16::MAX as usize);
+        Self(umbra_slice::UmbraSlice::try_from(flags.as_slice()).unwrap())
     }
 }
 
 impl FlagSet {
     #[inline]
     pub fn as_slice(&self) -> &[Flag] {
-        &self.0
+        self.0.as_slice()
     }
 
     #[inline]
     pub fn iter(&self) -> slice::Iter<'_, Flag> {
-        self.0.iter()
+        self.as_slice().iter()
     }
 
     #[inline]
@@ -329,7 +330,7 @@ impl FlagSet {
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.0.is_empty()
     }
 
     /// Returns `true` if both sets have at least one element in common.
@@ -374,7 +375,7 @@ impl FlagSet {
             }
         }
 
-        Self(intersection.into_boxed_slice())
+        Self(intersection.as_slice().try_into().unwrap())
     }
 
     pub fn union(&self, other: &Self) -> Self {
@@ -411,20 +412,19 @@ impl FlagSet {
             }
         }
 
-        Self(union.into_boxed_slice())
+        Self(union.as_slice().try_into().unwrap())
     }
 
     /// Checks whether the given flag is contained in the flagset.
     #[inline]
     pub fn contains(&self, flag: &Flag) -> bool {
-        // See the docs for `slice::binary_search`: it's preferable to `slice::contains` since
-        // it runs in logarithmic time rather than linear w.r.t. slice length. It requires that
-        // the slice is sorted (true for flagsets, see `new`).
-        self.0.binary_search(flag).is_ok()
+        // In the From (TODO: TryFrom) impl for `FlagSet` we sort the flags so this method can
+        // be used:
+        self.0.sorted_contains(flag)
     }
 
     pub fn with_flag(&self, flag: Flag) -> Self {
-        let mut flagset = Vec::from(self.0.clone());
+        let mut flagset = Vec::from(self.0.as_slice());
         flagset.push(flag);
         flagset.into()
     }
@@ -432,7 +432,7 @@ impl FlagSet {
 
 impl fmt::Debug for FlagSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("flagset!{:?}", self.0))
+        f.write_fmt(format_args!("flagset!{:?}", self.0.as_slice()))
     }
 }
 

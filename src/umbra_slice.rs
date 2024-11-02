@@ -80,6 +80,12 @@ use core::{
 
 use crate::alloc::{alloc, string::String};
 
+// NOTE: ideally this type would be defined in `src/lib.rs` but that would mean leaking out the
+// `prefix_len`/`suffix_len` `const fn`s below. As noted below the type, those should ideally
+// not exist anyways.
+use crate::Flag;
+pub type FlagSlice = UmbraSlice<Flag, { prefix_len::<Flag>() }, { suffix_len::<Flag>() }>;
+
 // NOTE: this module would be miles cleaner if the `generic_const_exprs` Rust feature were
 // implemented. Without it we need to pass in the prefix and suffix lengths as const type
 // parameters which is quite verbose. Don't fear, though the generics make my eyes bleed, it's
