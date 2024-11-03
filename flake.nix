@@ -34,6 +34,7 @@
             rust-analyzer
             cargo-flamegraph
             cargo-llvm-cov
+            valgrind
           ];
           RUST_BACKTRACE = "1";
         }
