@@ -28,6 +28,7 @@ pub(crate) mod aff;
 pub(crate) mod checker;
 mod hash_bag;
 mod suggester;
+mod umbra_slice;
 
 pub use aff::parser::{
     ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource, ParseFlagError,
@@ -58,9 +59,9 @@ pub enum DefaultHashBuilder {}
 ///
 /// For example `en_US.dic` contains a line `airlift/SGMD`. That means that the wordlist type
 /// defined below should have an entry for a stem "airlift" with a flagset `flagset!['S', 'G',
-/// 'M', 'D']`. There are very very many stems in each dictionary so a `Box<str>` saves a
-/// noticeable amount of memory. See `docs/internals.md`.
-type Stem = Box<str>;
+/// 'M', 'D']`. There are very many stems in each dictionary so we use a space optimized type:
+/// a "German string." See `src/umbra_slice.rs` for details.
+type Stem = umbra_slice::UmbraString;
 
 /// A collection of stems and their associated flagsets from a dictionary's `.dic` file.
 ///
