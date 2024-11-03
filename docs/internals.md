@@ -4,17 +4,23 @@ There are a few key data structures that power Spellbook and make lookup fast an
 
 ### Boxed slices
 
-By default Spellbook prefers boxed slices (`Box<[T]>`) and boxed strs (`Box<str>`) rather than their resizable counterparts `Vec<T>` and `String`. Boxed slices can be used as drop-in replacements for the most part. For example you can index into a boxed slice and iterate on the elements. The difference is that boxed slices have a fixed size once created: you can push to a `Vec` but not a `Box<[T]>`. They also discard any excess capacity and don't need to track length and capacity separately, saving a very small amount of memory per instance. That memory adds up though across all of the words in the dictionary.
+By default Spellbook prefers boxed slices (`Box<[T]>`) and boxed strs (`Box<str>`) rather than their resizable counterparts `Vec<T>` and `String`. Boxed slices can be used as drop-in replacements for the most part. For example you can index into a boxed slice and iterate on the elements. The difference is that boxed slices have a fixed size once created: you can push to a `Vec` but not a `Box<[T]>`. They also discard any excess capacity and don't need to track length and capacity separately, saving a very small amount of memory per instance.
 
-For some quick napkin math, this saves at least 784,928 bytes for the word list in `en_US` on a 64 bit target: 8 bytes for the stem's capacity field and another 8 bytes for the flag set's capacity field for each of the 49,058 stems in `en_US.dic`. In practice we can measure the difference with Valgrind's [DHAT](https://valgrind.org/docs/manual/dh-manual.html) tool - a heap profiler. If we switch Spellbook's `WordList` type to store `String`s and `Vec<Flag>`s instead of `Box<str>`s and `Box<[Flag]>`s, I see the total heap bytes allocated in a run of `valgrind --tool=dhat ./target/debug/examples/check hello` rise from around 3MB to around 4MB.
+```rust
+type Stem = UmbraString;
+```
+
+`Box<str>` was the representation for stems in the dictionary but this type has been changed to an even further optimized structure based on a "German string." A deep dive into the optimization can be found [here](https://the-mikedavis.github.io/posts/german-string-optimizations-in-spellbook/).
 
 ### Flag sets
 
 ```rust
-struct FlagSet(Box<[Flag]>);
+struct FlagSet(UmbraSlice<Flag>);
 ```
 
-Words in the dictionary are associated with any number of flags, like `adventure/DRSMZG` mentioned above. The order of the flags as written in the dictionary isn't important. We need a way to look up whether a flag exists in that set quickly. The right tool for the job might seem like a `HashSet<Flag>` or a `BTreeSet<Flag>`. Those are mutable though so they carry some extra overhead. A dictionary contains many many flag sets and the overhead adds up. So what we use instead is a sorted `Box<[Flag]>` and look up flags with `slice::binary_search`.
+As mentioned above, `FlagSet` uses a "German string" inspired optimization to store small sets inline. You can imagine this type as basically `Box<[Flag]>` though. Further discussion of the `FlagSet` optimization in particular can be found [here](https://the-mikedavis.github.io/posts/german-string-optimizations-in-spellbook/#bonus-points-the-flagset-can-also-be-german).
+
+Words in the dictionary are associated with any number of flags, like `adventure/DRSMZG` mentioned above. The order of the flags as written in the dictionary isn't important. We need a way to look up whether a flag exists in that set quickly. The right tool for the job might seem like a `HashSet<Flag>` or a `BTreeSet<Flag>`. Those are mutable though so they carry some extra overhead. A dictionary contains many many flag sets and the overhead adds up. So what we use instead is an optimized version of a sorted `Box<[Flag]>` and look up flags with `slice::contains` or `slice::binary_search` depending on length.
 
 Binary searching a small slice is a tiny bit slower than `slice::contains` but we prefer `slice::binary_search` for its consistent performance on outlier flag sets. See [`benches/slice-contains.rs`](../benches/slice-contains.rs) for more details.
 
@@ -31,7 +37,6 @@ By default, flags are encoded in a dictionary with the `UTF-8` flag type. For `e
 ### Word list
 
 ```rust
-type Stem = Box<str>;
 type WordList = HashBag<Stem, FlagSet>;
 ```
 
