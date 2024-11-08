@@ -67,6 +67,8 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 let word = self.checker.aff.options.case_handling.lowercase(&word);
                 hq_suggestions |= self.suggest_low(&word, out);
             }
+            // TODO
+            Casing::Camel | Casing::Pascal => {}
             Casing::All => {
                 let lower = self.checker.aff.options.case_handling.lowercase(&word);
                 if self.checker.aff.options.keep_case_flag.is_some() && self.checker.check(&lower) {
@@ -80,12 +82,106 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                     *suggestion = upper;
                 }
             }
-            // TODO
-            Casing::Camel | Casing::Pascal => {}
         }
 
         if !hq_suggestions && self.checker.aff.options.max_ngram_suggestions != 0 {
-            // TODO.
+            let buffer = if matches!(casing, Casing::None) {
+                Cow::Borrowed(word.as_ref())
+            } else {
+                Cow::Owned(self.checker.aff.options.case_handling.lowercase(&word))
+            };
+            let old_len = out.len();
+
+            self.ngram_suggest(&buffer, out);
+
+            if matches!(casing, Casing::All) {
+                for suggestion in &mut out[..old_len] {
+                    let upper = self.checker.aff.options.case_handling.uppercase(suggestion);
+                    *suggestion = upper;
+                }
+            }
+        }
+
+        // For words with dashes, if there isn't already a suggestion with dashes, try replacing
+        // each of the subwords by running the subword through the suggester.
+        let has_dash = word.contains('-');
+        let has_dash_sug = has_dash && out.iter().any(|s| s.contains('-'));
+        if has_dash && !has_dash_sug {
+            // TODO: move this out into its own function?
+            let mut suggestions_tmp = Vec::new();
+            let mut i = 0;
+            loop {
+                let j = word[i..].find('-');
+                let part = match j {
+                    Some(j) => &word[i..i + j],
+                    None => &word[i..],
+                };
+                if !self.checker.check(part) {
+                    suggestions_tmp.clear();
+                    self.suggest_impl(part, &mut suggestions_tmp);
+                    let mut buffer = String::with_capacity(word.len());
+                    for s in &suggestions_tmp {
+                        buffer.clear();
+                        buffer.push_str(&word[..i]);
+                        buffer.push_str(s);
+                        if let Some(j) = j {
+                            buffer.push_str(&word[j..]);
+                        }
+                        if self
+                            .checker
+                            .check_word(&buffer, Forceucase::default(), HiddenHomonym::default())
+                            .is_some_and(|flags| {
+                                has_flag!(flags, self.checker.aff.options.forbidden_word_flag)
+                            })
+                        {
+                            out.push(buffer.clone());
+                        }
+                    }
+                }
+
+                match j {
+                    Some(j) => i = j + 1,
+                    None => break,
+                }
+            }
+        }
+
+        if matches!(casing, Casing::Init | Casing::Pascal) {
+            for suggestion in out.iter_mut() {
+                let titlecased = self.checker.aff.options.case_handling.titlecase(suggestion);
+                *suggestion = titlecased;
+            }
+        }
+
+        // Nuspell:
+        // > Suggest with dots can go here but nobody uses it so no point in
+        // > implementing it.
+
+        if matches!(casing, Casing::Init | Casing::All)
+            && (self.checker.aff.options.keep_case_flag.is_some()
+                || self.checker.aff.options.forbidden_word_flag.is_some())
+        {
+            // Happily this is cleaner in Rust because of `retain_mut`. Nuspell inlines
+            // `remove_if(it, last, is_not_ok)` because it needs to modify the suggestions.
+            out.retain_mut(|suggestion| {
+                if suggestion.contains(' ') {
+                    return true;
+                }
+                if self.checker.check(suggestion) {
+                    return true;
+                }
+                let lower = self.checker.aff.options.case_handling.lowercase(suggestion);
+                if self.checker.check(&lower) {
+                    *suggestion = lower;
+                    return true;
+                }
+                let title = self.checker.aff.options.case_handling.titlecase(suggestion);
+                if self.checker.check(&title) {
+                    *suggestion = title;
+                    return true;
+                }
+                false
+            });
         }
 
         // Some suggestion methods can cause duplicates. For example in "adveenture",
@@ -743,6 +839,11 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         attempts
             .try_into()
             .expect("clamping and divisions should ensure this can fit into usize")
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn ngram_suggest(&self, _word: &str, _out: &mut Vec<String>) {
+        // TODO this is a lot.
     }
 }
 
