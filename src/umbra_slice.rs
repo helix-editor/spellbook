@@ -68,6 +68,9 @@
 //!
 //! For further reading: <https://the-mikedavis.github.io/posts/german-string-optimizations-in-spellbook/>.
 //!
+//! The `UmbraSlice` and `UmbraString` types have also been extracted to a crate should you wish
+//! to use them: [`umbra_slice`](https://crates.io/crates/umbra_slice).
+//!
 //! [Umbra strings]: https://cedardb.com/blog/german_strings/
 
 use core::{
