@@ -182,9 +182,9 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             let mut suggestions_tmp = Vec::new();
             let mut i = 0;
             loop {
-                let j = word[i..].find('-');
+                let j = word[i..].find('-').map(|idx| idx + i);
                 let part = match j {
-                    Some(j) => &word[i..i + j],
+                    Some(j) => &word[i..j],
                     None => &word[i..],
                 };
                 if !self.checker.check(part) {
