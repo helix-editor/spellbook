@@ -135,7 +135,9 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                         .upper_char_at(suggestion, after_space_idx);
                     out[i] = titled;
                     // Rotate this suggestion to the front. (I think? TODO)
-                    out[..i].rotate_right(1);
+                    if i > 0 {
+                        out[..i].rotate_right(1);
+                    }
                 }
             }
             Casing::All => {
