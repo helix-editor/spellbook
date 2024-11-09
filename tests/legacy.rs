@@ -23,8 +23,6 @@ use std::{
 
 use spellbook::Dictionary;
 
-// Once the suggest API is in place we can add a `suggest` equivalent.
-
 macro_rules! check {
     ($case:ident) => {
         #[allow(non_snake_case)]
@@ -187,6 +185,91 @@ check!(check_utf8_nonbmp);
 check!(check_utfcompound);
 check!(check_warn);
 check!(check_zeroaffix);
+
+macro_rules! suggest {
+    ($case:ident) => {
+        #[allow(non_snake_case)]
+        #[test]
+        fn $case() {
+            let case = stringify!($case).strip_prefix("suggest_").unwrap();
+            do_suggest_case(case);
+        }
+    };
+}
+
+fn do_suggest_case(case: &str) {
+    let manifest_path = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let path = manifest_path.join("tests/legacy").join(case);
+    let aff = read_to_string(path.with_extension("aff")).unwrap();
+    let dic = read_to_string(path.with_extension("dic")).unwrap();
+    let dict = Dictionary::new(&aff, &dic).unwrap();
+
+    let mut list_sugs = Vec::new();
+    let mut sugs = Vec::new();
+    for word in fs::read_to_string(path.with_extension("wrong"))
+        .iter()
+        .flat_map(|text| text.lines())
+    {
+        assert!(
+            !dict.check(word),
+            "word {word:?} was in the .wrong file but was actually correct"
+        );
+
+        dict.suggest(word, &mut sugs);
+
+        if !sugs.is_empty() {
+            list_sugs.push(std::mem::take(&mut sugs));
+        }
+    }
+
+    let mut expected_list_sugs = Vec::new();
+    for line in fs::read_to_string(path.with_extension("sug"))
+        .iter()
+        .flat_map(|text| text.lines())
+    {
+        let sugs: Vec<_> = line.split(", ").map(ToOwned::to_owned).collect();
+        if !sugs.is_empty() {
+            expected_list_sugs.push(sugs);
+        }
+    }
+
+    assert_eq!(list_sugs, expected_list_sugs);
+}
+
+// TODO: fix and uncomment the broken tests.
+
+// suggest!(suggest_1463589);
+// suggest!(suggest_1463589_utf);
+suggest!(suggest_1695964);
+// suggest!(suggest_IJ);
+// suggest!(suggest_allcaps);
+// suggest!(suggest_allcaps_utf);
+suggest!(suggest_allcaps2);
+// suggest!(suggest_base);
+// suggest!(suggest_base_utf);
+// suggest!(suggest_breakdefault);
+// suggest!(suggest_checksharps);
+// suggest!(suggest_checksharpsutf);
+suggest!(suggest_forceucase);
+// suggest!(suggest_i35725);
+// suggest!(suggest_i54633);
+// suggest!(suggest_i58202);
+// suggest!(suggest_keepcase);
+suggest!(suggest_map);
+suggest!(suggest_maputf);
+suggest!(suggest_ngram_utf_fix);
+// suggest!(suggest_nosuggest);
+// suggest!(suggest_oconv);
+suggest!(suggest_onlyincompound);
+suggest!(suggest_opentaal_forbiddenword1);
+suggest!(suggest_opentaal_forbiddenword2);
+// suggest!(suggest_opentaal_keepcase);
+// suggest!(suggest_phone);
+suggest!(suggest_rep);
+suggest!(suggest_reputf);
+// suggest!(suggest_sug);
+// suggest!(suggest_sugutf);
+// suggest!(suggest_utf8_nonbmp);
 
 /// Reads the contents of a file into a String, handling detecting and decoding of non-UTF-8
 /// contents.
