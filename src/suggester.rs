@@ -420,7 +420,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         };
         let mut i = 0;
         loop {
-            let part = &word[i..j - i];
+            let part = &word[i..j];
             if self
                 .checker
                 .check_word(
@@ -433,10 +433,10 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 return;
             }
             i = j + 1;
-            let Some(idx) = word[i..].find(' ') else {
-                break;
-            };
-            j = idx + i;
+            match word[i..].find(' ') {
+                Some(idx) => j = i + idx,
+                None => break,
+            }
         }
 
         out.push(String::from(word));
