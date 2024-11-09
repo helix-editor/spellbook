@@ -36,7 +36,23 @@ Spellbook should be considered to be in _alpha_. Part of the Hunspell test corpu
 
 ### Feature flags
 
-The only feature flag currently is `default-hasher` which pulls in [`ahash`] and is enabled by default like the equivalent flag from [`hashbrown`]. A non-cryptographic hash significantly improves the time it takes to initialize a dictionary and check a word.
+The only feature flag currently is `default-hasher` which pulls in [`ahash`] and is enabled by default similar to the equivalent flag from [`hashbrown`].
+
+A non-cryptographic hash significantly improves the time it takes to initialize a dictionary and check and suggest words. Denial-of-service attacks are not usually relevant for this use-case since you would usually not take dictionary files as arbitrary inputs, so a non-cryptographic hash is probably ok. (I am not a cryptologist.) Note that Hashbrown v0.15 and above use [`foldhash`](https://github.com/orlp/foldhash) instead of aHash. In my runs of the Spellbook benchmarks `foldhash` doesn't make a perceptible difference.
+
+You can easily drop this default feature:
+
+```toml
+[dependencies]
+spellbook = { version = "1.0", default-features = false }
+```
+
+and specify a hasher of your choosing instead:
+
+```rust
+use std::hash::BuildHasherDefault;
+type Dictionary = spellbook::Dictionary<BuildHasherDefault<ahash::AHasher>>;
+```
 
 ### How does it work?
 
