@@ -1145,6 +1145,37 @@ impl CaseHandling {
         }
         output
     }
+
+    pub fn lower_first_char(&self, word: &str) -> String {
+        let mut output = String::with_capacity(word.len());
+        let mut chars = word.char_indices();
+        let (_, first) = chars.next().expect("non-empty input");
+        match self {
+            Self::Turkic if first == 'I' => output.push('ı'),
+            Self::Turkic if first == 'İ' => output.push('i'),
+            _ => output.extend(first.to_lowercase()),
+        }
+        if let Some((idx, _)) = chars.next() {
+            output.push_str(&word[idx..]);
+        }
+        output
+    }
+
+    pub fn upper_char_at(&self, word: &str, idx: usize) -> String {
+        let mut output = String::with_capacity(word.len());
+        output.push_str(&word[..idx]);
+        let mut chars = word[idx..].char_indices();
+        let (_, ch) = chars.next().expect("a char at the given index");
+        match self {
+            Self::Turkic if ch == 'ı' => output.push('I'),
+            Self::Turkic if ch == 'i' => output.push('İ'),
+            _ => output.extend(ch.to_uppercase()),
+        }
+        if let Some((next_idx, _)) = chars.next() {
+            output.push_str(&word[idx + next_idx..]);
+        }
+        output
+    }
 }
 
 #[derive(Debug, Clone)]

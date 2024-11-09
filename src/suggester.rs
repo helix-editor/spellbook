@@ -67,8 +67,77 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 let word = self.checker.aff.options.case_handling.lowercase(&word);
                 hq_suggestions |= self.suggest_low(&word, out);
             }
-            // TODO
-            Casing::Camel | Casing::Pascal => {}
+            Casing::Camel | Casing::Pascal => {
+                hq_suggestions |= self.suggest_low(&word, out);
+
+                if let Some(dot_idx) = word.find('.') {
+                    let after_dot = &word[dot_idx + 1..];
+                    let casing_after_dot = classify_casing(after_dot);
+                    if matches!(casing_after_dot, Casing::Init) {
+                        let mut buffer = String::from(word.as_ref());
+                        unsafe {
+                            // SAFETY: '.' and ' ' are both one byte so we can swap the characters
+                            // without invalidating the UTF-8.
+                            buffer.as_bytes_mut()[dot_idx] = b' ';
+                        }
+                        // Nuspell inserts suggestions at the beginning of the list in this block.
+                        // `insert_sug_first(word, out)`
+                        out.insert(0, buffer);
+                    }
+                }
+
+                // Note: for these next few blocks we `suggest_low` and then insert the suggestion
+                // at the beginning of `out` if it checks. This has the opposite ordering as
+                // Nuspell and we swap the ordering for borrowing reasons.
+                if matches!(casing, Casing::Pascal) {
+                    let lowered = self
+                        .checker
+                        .aff
+                        .options
+                        .case_handling
+                        .lower_first_char(&word);
+
+                    hq_suggestions |= self.suggest_low(&lowered, out);
+                    if self.checker.check(&lowered) {
+                        out.insert(0, lowered);
+                    }
+                }
+                let lowercase = self.checker.aff.options.case_handling.lowercase(&word);
+                hq_suggestions |= self.suggest_low(&lowercase, out);
+                if self.checker.check(&lowercase) {
+                    out.insert(0, lowercase);
+                }
+                if matches!(casing, Casing::Pascal) {
+                    let titlecase = self.checker.aff.options.case_handling.titlecase(&word);
+                    hq_suggestions |= self.suggest_low(&titlecase, out);
+                    if self.checker.check(&titlecase) {
+                        out.insert(0, titlecase);
+                    }
+                }
+
+                for i in 0..out.len() {
+                    let suggestion = &mut out[i];
+                    let Some(after_space_idx) = suggestion.find(' ').map(|idx| idx + 1) else {
+                        continue;
+                    };
+                    let len = suggestion.len() - after_space_idx;
+                    if len > word.len() {
+                        continue;
+                    }
+                    if suggestion[after_space_idx..] == word[..word.len() - len] {
+                        continue;
+                    }
+                    let titled = self
+                        .checker
+                        .aff
+                        .options
+                        .case_handling
+                        .upper_char_at(suggestion, after_space_idx);
+                    out[i] = titled;
+                    // Rotate this suggestion to the front. (I think? TODO)
+                    out[..i].rotate_right(1);
+                }
+            }
             Casing::All => {
                 let lower = self.checker.aff.options.case_handling.lowercase(&word);
                 if self.checker.aff.options.keep_case_flag.is_some() && self.checker.check(&lower) {
