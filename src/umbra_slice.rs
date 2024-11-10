@@ -386,11 +386,15 @@ impl UmbraString {
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_slice()
     }
+
+    pub fn as_str(&self) -> &str {
+        unsafe { core::str::from_utf8_unchecked(self.as_bytes()) }
+    }
 }
 
 impl AsRef<str> for UmbraString {
     fn as_ref(&self) -> &str {
-        unsafe { core::str::from_utf8_unchecked(self.as_bytes()) }
+        self.as_str()
     }
 }
 

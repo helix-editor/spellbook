@@ -209,6 +209,7 @@ fn do_suggest_case(case: &str) {
     for word in fs::read_to_string(path.with_extension("wrong"))
         .iter()
         .flat_map(|text| text.lines())
+        .filter(|line| !line.is_empty())
     {
         assert!(
             !dict.check(word),
@@ -226,6 +227,7 @@ fn do_suggest_case(case: &str) {
     for line in fs::read_to_string(path.with_extension("sug"))
         .iter()
         .flat_map(|text| text.lines())
+        .filter(|line| !line.is_empty())
     {
         let sugs: Vec<_> = line.split(", ").map(ToOwned::to_owned).collect();
         if !sugs.is_empty() {
@@ -233,42 +235,45 @@ fn do_suggest_case(case: &str) {
         }
     }
 
-    assert_eq!(list_sugs, expected_list_sugs);
+    assert_eq!(
+        expected_list_sugs, list_sugs,
+        "(left: expected, right: actual)"
+    );
 }
 
-// TODO: fix and uncomment the broken tests.
-
-// suggest!(suggest_1463589);
-// suggest!(suggest_1463589_utf);
+suggest!(suggest_1463589);
+suggest!(suggest_1463589_utf);
 suggest!(suggest_1695964);
-// suggest!(suggest_IJ);
-// suggest!(suggest_allcaps);
-// suggest!(suggest_allcaps_utf);
+suggest!(suggest_IJ);
+suggest!(suggest_allcaps);
+suggest!(suggest_allcaps_utf);
 suggest!(suggest_allcaps2);
-// suggest!(suggest_base);
-// suggest!(suggest_base_utf);
-// suggest!(suggest_breakdefault);
-// suggest!(suggest_checksharps);
-// suggest!(suggest_checksharpsutf);
+suggest!(suggest_base);
+suggest!(suggest_base_utf);
+suggest!(suggest_breakdefault);
 suggest!(suggest_forceucase);
-// suggest!(suggest_i35725);
-// suggest!(suggest_i54633);
-// suggest!(suggest_i58202);
-// suggest!(suggest_keepcase);
+suggest!(suggest_i35725);
+suggest!(suggest_i54633);
+suggest!(suggest_i58202);
+suggest!(suggest_keepcase);
 suggest!(suggest_map);
 suggest!(suggest_maputf);
 suggest!(suggest_ngram_utf_fix);
-// suggest!(suggest_nosuggest);
-// suggest!(suggest_oconv);
+suggest!(suggest_oconv);
 suggest!(suggest_onlyincompound);
 suggest!(suggest_opentaal_forbiddenword1);
 suggest!(suggest_opentaal_forbiddenword2);
-// suggest!(suggest_opentaal_keepcase);
-// suggest!(suggest_phone);
+suggest!(suggest_opentaal_keepcase);
 suggest!(suggest_rep);
 suggest!(suggest_reputf);
-// suggest!(suggest_sug);
-// suggest!(suggest_sugutf);
+suggest!(suggest_sug);
+suggest!(suggest_sugutf);
+
+// These are marked as failing in Nuspell:
+// suggest!(suggest_checksharps);
+// suggest!(suggest_checksharpsutf);
+// suggest!(suggest_nosuggest);
+// suggest!(suggest_phone);
 // suggest!(suggest_utf8_nonbmp);
 
 /// Reads the contents of a file into a String, handling detecting and decoding of non-UTF-8

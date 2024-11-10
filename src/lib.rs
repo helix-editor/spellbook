@@ -33,7 +33,7 @@ mod umbra_slice;
 pub use aff::parser::{
     ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource, ParseFlagError,
 };
-use suggester::Suggester;
+pub use suggester::Suggester;
 
 use crate::alloc::{borrow::Cow, slice, string::String, vec::Vec};
 use aff::AffData;
@@ -192,8 +192,18 @@ impl<S: BuildHasher> Dictionary<S> {
     }
 
     /// Fills the given vec with possible corrections from the dictionary for the given word.
+    ///
+    /// This is the same as [Suggester::suggest] but uses the default Suggester behavior.
     pub fn suggest(&self, word: &str, out: &mut Vec<String>) {
-        Suggester::new(Checker::new(self)).suggest(word, out)
+        self.suggester().suggest(word, out)
+    }
+
+    /// Creates a Suggester that borrows this dictionary.
+    ///
+    /// The [Suggester] type can be used to customize the suggestion behavior (for example to
+    /// disable ngram suggestions). See the [Suggester] docs.
+    pub fn suggester(&self) -> Suggester<S> {
+        Suggester::new(Checker::new(self))
     }
 
     /// Adds a word to the dictionary.
@@ -450,6 +460,7 @@ const MAX_WORD_LEN: usize = 360;
 /// The casing of a word.
 // Hunspell: <https://github.com/hunspell/hunspell/blob/8f9bb2957bfd74ca153fad96083a54488b518ca5/src/hunspell/csutil.hxx#L91-L96>
 // Nuspell: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/utils.hxx#L91-L104>
+#[derive(Debug, Clone, Copy)]
 enum Casing {
     /// All letters are lowercase. For example "foobar".
     ///

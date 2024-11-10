@@ -1,3 +1,6 @@
+mod ngram;
+
+use core::fmt;
 use core::hash::BuildHasher;
 
 use crate::{
@@ -15,15 +18,44 @@ macro_rules! has_flag {
     }};
 }
 
-pub(crate) struct Suggester<'a, S: BuildHasher> {
+/// A wrapper struct for a dictionary that allows customizing suggestion behavior.
+///
+/// Currently only [ngram suggestions](Suggester::with_ngram_suggestions) may be configured.
+pub struct Suggester<'a, S: BuildHasher> {
     checker: Checker<'a, S>,
+    ngram_suggest: bool,
+}
+
+impl<'a, S: BuildHasher> fmt::Debug for Suggester<'a, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Suggester")
+            .field("ngram_suggest", &self.ngram_suggest)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a, S: BuildHasher> Suggester<'a, S> {
-    pub fn new(checker: Checker<'a, S>) -> Self {
-        Self { checker }
+    pub(crate) fn new(checker: Checker<'a, S>) -> Self {
+        Self {
+            checker,
+            ngram_suggest: true,
+        }
     }
 
+    /// Enables or disables the suggester from finding suggestions based on "ngram similarity."
+    ///
+    /// Ngram similarity is a bespoke string similarity metric used by the suggester to find
+    /// suggestions when string edits don't produce any likely candidates. Finding a suggestion
+    /// with ngram similarity involves iterating through the dictionary's wordlist and therefore
+    /// ngram suggestion can be very slow depending on the dictionary size.
+    ///
+    /// Ngram suggestion is enabled by default.
+    pub fn with_ngram_suggestions(mut self, ngram_suggest: bool) -> Self {
+        self.ngram_suggest = ngram_suggest;
+        self
+    }
+
+    /// Fills the given vec with possible corrections from the dictionary for the given word.
     pub fn suggest(&self, word: &str, out: &mut Vec<String>) {
         out.clear();
         if word.len() >= MAX_WORD_LEN {
@@ -76,9 +108,10 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                     if matches!(casing_after_dot, Casing::Init) {
                         let mut buffer = String::from(word.as_ref());
                         unsafe {
-                            // SAFETY: '.' and ' ' are both one byte so we can swap the characters
+                            // SAFETY: b' ' is ASCII and therefore a valid UTF-8 character, so
+                            // we can safely assume it after the '.' character's right boundary
                             // without invalidating the UTF-8.
-                            buffer.as_bytes_mut()[dot_idx] = b' ';
+                            buffer.as_mut_vec().insert(dot_idx + 1, b' ');
                         }
                         // Nuspell inserts suggestions at the beginning of the list in this block.
                         // `insert_sug_first(word, out)`
@@ -102,11 +135,13 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                         out.insert(0, lowered);
                     }
                 }
+
                 let lowercase = self.checker.aff.options.case_handling.lowercase(&word);
                 hq_suggestions |= self.suggest_low(&lowercase, out);
                 if self.checker.check(&lowercase) {
                     out.insert(0, lowercase);
                 }
+
                 if matches!(casing, Casing::Pascal) {
                     let titlecase = self.checker.aff.options.case_handling.titlecase(&word);
                     hq_suggestions |= self.suggest_low(&titlecase, out);
@@ -124,7 +159,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                     if len > word.len() {
                         continue;
                     }
-                    if suggestion[after_space_idx..] == word[..word.len() - len] {
+                    if suggestion[after_space_idx..] == word[word.len() - len..] {
                         continue;
                     }
                     let titled = self
@@ -134,9 +169,9 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                         .case_handling
                         .upper_char_at(suggestion, after_space_idx);
                     out[i] = titled;
-                    // Rotate this suggestion to the front. (I think? TODO)
+                    // Rotate this suggestion to the front.
                     if i > 0 {
-                        out[..i].rotate_right(1);
+                        out[..=i].rotate_right(1);
                     }
                 }
             }
@@ -155,7 +190,10 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             }
         }
 
-        if !hq_suggestions && self.checker.aff.options.max_ngram_suggestions != 0 {
+        if self.ngram_suggest
+            && !hq_suggestions
+            && self.checker.aff.options.max_ngram_suggestions != 0
+        {
             let buffer = if matches!(casing, Casing::None) {
                 Cow::Borrowed(word.as_ref())
             } else {
@@ -166,7 +204,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             self.ngram_suggest(&buffer, out);
 
             if matches!(casing, Casing::All) {
-                for suggestion in &mut out[..old_len] {
+                for suggestion in &mut out[old_len..] {
                     let upper = self.checker.aff.options.case_handling.uppercase(suggestion);
                     *suggestion = upper;
                 }
@@ -188,17 +226,16 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                     None => &word[i..],
                 };
                 if !self.checker.check(part) {
-                    suggestions_tmp.clear();
                     self.suggest_impl(part, &mut suggestions_tmp);
                     let mut buffer = String::with_capacity(word.len());
-                    for s in &suggestions_tmp {
+                    for s in suggestions_tmp.drain(..) {
                         buffer.clear();
                         buffer.push_str(&word[..i]);
-                        buffer.push_str(s);
+                        buffer.push_str(&s);
                         if let Some(j) = j {
                             buffer.push_str(&word[j..]);
                         }
-                        if self
+                        if !self
                             .checker
                             .check_word(&buffer, Forceucase::default(), HiddenHomonym::default())
                             .is_some_and(|flags| {
@@ -219,8 +256,13 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
 
         if matches!(casing, Casing::Init | Casing::Pascal) {
             for suggestion in out.iter_mut() {
-                let titlecased = self.checker.aff.options.case_handling.titlecase(suggestion);
-                *suggestion = titlecased;
+                let uppered = self
+                    .checker
+                    .aff
+                    .options
+                    .case_handling
+                    .upper_char_at(suggestion, 0);
+                *suggestion = uppered;
             }
         }
 
@@ -911,11 +953,6 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             .try_into()
             .expect("clamping and divisions should ensure this can fit into usize")
     }
-
-    #[allow(clippy::ptr_arg)]
-    fn ngram_suggest(&self, _word: &str, _out: &mut Vec<String>) {
-        // TODO this is a lot.
-    }
 }
 
 /// Removes all duplicate items in a vector while preserving order.
@@ -1158,7 +1195,8 @@ mod test {
 
     fn suggest(dict: &Dictionary, word: &str) -> Vec<String> {
         let mut suggestions = Vec::new();
-        dict.suggest(word, &mut suggestions);
+        let suggester = dict.suggester().with_ngram_suggestions(false);
+        suggester.suggest(word, &mut suggestions);
         suggestions
     }
 

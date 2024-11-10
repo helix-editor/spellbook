@@ -124,7 +124,7 @@ pub(crate) struct Affix<K> {
     /// a prefix and a suffix, both the prefix and suffix should have `crossproduct: true`.
     pub crossproduct: bool,
     /// What is stripped from the stem when the affix is applied.
-    strip: Option<String>,
+    pub strip: Option<String>,
     /// What should be added when the affix is applied.
     pub add: String,
     /// Condition that the stem should be checked against to query if the affix is relevant.
@@ -521,6 +521,10 @@ impl<C: AffixKind> AffixIndex<C> {
 
     pub fn len(&self) -> usize {
         self.table.len()
+    }
+
+    pub fn iter(&self) -> core::slice::Iter<Affix<C>> {
+        self.table.iter()
     }
 }
 
@@ -1120,6 +1124,21 @@ impl CaseHandling {
         }
     }
 
+    pub fn lowercase_into_utf32(&self, word: &str, out: &mut Vec<char>) {
+        out.extend(
+            word.chars()
+                .map(match self {
+                    Self::Turkic => |ch| match ch {
+                        'I' => 'ı',
+                        'İ' => 'i',
+                        _ => ch,
+                    },
+                    Self::Standard => |ch| ch,
+                })
+                .flat_map(|ch| ch.to_lowercase()),
+        )
+    }
+
     pub fn uppercase(&self, word: &str) -> String {
         match self {
             Self::Turkic => word.replace('i', "İ").replace('ı', "I").to_uppercase(),
@@ -1175,6 +1194,22 @@ impl CaseHandling {
             output.push_str(&word[idx + next_idx..]);
         }
         output
+    }
+
+    /// Checks whether `left` is equal to `right` when `right` is lowercase.
+    pub fn is_char_eq_lowercase(&self, left: char, right: char) -> bool {
+        match (self, left, right) {
+            (Self::Turkic, 'ı', 'I') => return true,
+            (Self::Turkic, 'i', 'İ') => return true,
+            _ => (),
+        }
+
+        let mut lower_iter = right.to_lowercase();
+        if lower_iter.len() != 1 {
+            return false;
+        }
+        let lower = lower_iter.next().unwrap();
+        left == lower
     }
 }
 

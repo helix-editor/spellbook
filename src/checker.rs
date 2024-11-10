@@ -511,7 +511,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     }
 
     // Reversed form of Nuspell's `outer_affix_NOT_valid`
-    fn is_outer_affix_valid<K: AffixKind, const MODE: AffixingMode>(
+    pub(crate) fn is_outer_affix_valid<K: AffixKind, const MODE: AffixingMode>(
         &self,
         affix: &Affix<K>,
     ) -> bool {
@@ -526,7 +526,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         true
     }
 
-    fn is_circumfix<K: AffixKind>(&self, affix: &Affix<K>) -> bool {
+    pub(crate) fn is_circumfix<K: AffixKind>(&self, affix: &Affix<K>) -> bool {
         has_flag!(affix.flags, self.aff.options.circumfix_flag)
     }
 
