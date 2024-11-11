@@ -30,9 +30,11 @@ Spellbook is `no_std` and only requires [`hashbrown`] as a dependency. (Note tha
 
 Spellbook is a work in progress and might see breaking changes to any part of the API as well as updates to the MSRV and dependencies.
 
-Currently the `check` API works well for `en_US` - a relatively simple dictionary - though it should work reasonably well for most other dictionaries. Some dictionaries which use complex compounding directives may work less well. The `suggest` API is a work in progress.
+Currently the `check` API works well for `en_US` - a relatively simple dictionary - though it should work reasonably well for most other dictionaries. Some dictionaries which use complex compounding directives may work less well.
 
-Spellbook should be considered to be in _alpha_. Part of the Hunspell test corpus has been successfully ported and there are a healthy number of unit tests, but there are certainly bugs to be found.
+The `suggest` API was added in v0.2.0 and should behave the same as Nuspell's `suggest`. (Meaning that phonetic suggestions are not implemented.)
+
+Spellbook should be considered to be in _alpha_. Almost all of the Hunspell test corpus tested by Nuspell is passing.
 
 ### Feature flags
 
