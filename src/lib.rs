@@ -18,8 +18,6 @@
 //! [`hashbrown`]: https://github.com/rust-lang/hashbrown
 // TODO: more.
 
-// TODO: remove.
-#![allow(dead_code)]
 #![no_std]
 
 extern crate alloc;
@@ -334,11 +332,6 @@ impl FlagSet {
     }
 
     #[inline]
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    #[inline]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -362,67 +355,6 @@ impl FlagSet {
                 _ => return false,
             }
         }
-    }
-
-    pub fn intersection(&self, other: &Self) -> Self {
-        let mut intersection = Vec::new();
-        let mut xs = self.iter().peekable();
-        let mut ys = other.iter().peekable();
-
-        while let Some((x, y)) = xs.peek().zip(ys.peek()) {
-            match x.cmp(y) {
-                Ordering::Equal => {
-                    intersection.push(**x);
-                    xs.next();
-                    ys.next();
-                }
-                Ordering::Greater => {
-                    ys.next();
-                }
-                Ordering::Less => {
-                    xs.next();
-                }
-            }
-        }
-
-        Self(intersection.as_slice().try_into().unwrap())
-    }
-
-    pub fn union(&self, other: &Self) -> Self {
-        let mut union = Vec::new();
-        let mut xs = self.iter().peekable();
-        let mut ys = other.iter().peekable();
-
-        loop {
-            match (xs.peek(), ys.peek()) {
-                (Some(x), Some(y)) => match x.cmp(y) {
-                    Ordering::Equal => {
-                        union.push(**x);
-                        xs.next();
-                        ys.next();
-                    }
-                    Ordering::Greater => {
-                        union.push(**y);
-                        ys.next();
-                    }
-                    Ordering::Less => {
-                        union.push(**x);
-                        xs.next();
-                    }
-                },
-                (Some(_), None) => {
-                    union.extend(xs.copied());
-                    break;
-                }
-                (None, Some(_)) => {
-                    union.extend(ys.copied());
-                    break;
-                }
-                (None, None) => break,
-            }
-        }
-
-        Self(union.as_slice().try_into().unwrap())
     }
 
     /// Checks whether the given flag is contained in the flagset.
@@ -586,33 +518,6 @@ mod test {
         assert!(!flagset![1, 3, 5].has_intersection(&flagset![2, 4, 6]));
 
         assert!(!flagset![].has_intersection(&flagset![]));
-    }
-
-    #[test]
-    fn flagset_intersection() {
-        assert_eq!(flagset![], flagset![].intersection(&flagset![]));
-        assert_eq!(flagset![], flagset![1, 3].intersection(&flagset![2]));
-        assert_eq!(flagset![], flagset![2].intersection(&flagset![1, 3]));
-        assert_eq!(flagset![2], flagset![1, 2, 3].intersection(&flagset![2]));
-        assert_eq!(
-            flagset![1, 3],
-            flagset![1, 2, 3].intersection(&flagset![1, 3])
-        );
-        assert_eq!(
-            flagset![1, 2, 3],
-            flagset![1, 2, 3].intersection(&flagset![1, 2, 3])
-        );
-    }
-
-    #[test]
-    fn flagset_union() {
-        assert_eq!(flagset![], flagset![].union(&flagset![]));
-        assert_eq!(flagset![1, 2, 3], flagset![1, 3].union(&flagset![2]));
-        assert_eq!(flagset![1, 2, 3], flagset![2].union(&flagset![1, 3]));
-        assert_eq!(
-            flagset![1, 2, 3],
-            flagset![1, 2, 3].union(&flagset![1, 2, 3])
-        );
     }
 
     #[test]

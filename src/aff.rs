@@ -949,16 +949,6 @@ impl StrPair {
     }
 
     #[inline]
-    pub fn left(&self) -> &str {
-        &self.inner[..self.partition]
-    }
-
-    #[inline]
-    pub fn right(&self) -> &str {
-        &self.inner[self.partition..]
-    }
-
-    #[inline]
     pub fn full_str(&self) -> &str {
         &self.inner
     }
@@ -972,6 +962,8 @@ impl StrPair {
 #[derive(Debug, Clone)]
 pub(crate) struct CompoundPattern {
     pub begin_end_chars: StrPair,
+    // TODO: unimplemented. See Checker::check_compound_with_pattern_replacements.
+    #[allow(dead_code)]
     pub replacement: Option<Box<str>>,
     pub first_word_flag: Option<Flag>,
     pub second_word_flag: Option<Flag>,
@@ -1456,12 +1448,10 @@ mod test {
     #[test]
     fn string_pair() {
         let pair = StrPair::new("foo", "bar");
-        assert_eq!(pair.left(), "foo");
-        assert_eq!(pair.right(), "bar");
+        assert_eq!(pair.full_str(), "foobar");
 
         let pair = StrPair::new("", "");
-        assert_eq!(pair.left(), "");
-        assert_eq!(pair.right(), "");
+        assert_eq!(pair.full_str(), "")
     }
 
     #[test]

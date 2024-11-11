@@ -31,15 +31,6 @@ pub struct HashBag<K, V, S> {
     build_hasher: S,
 }
 
-impl<K, V, S: BuildHasher + Default> HashBag<K, V, S> {
-    pub fn new() -> Self {
-        Self {
-            table: HashTable::new(),
-            build_hasher: S::default(),
-        }
-    }
-}
-
 impl<K, V, S> HashBag<K, V, S> {
     /// Returns an iterator over the key-value pairs in the bag.
     ///
@@ -185,8 +176,19 @@ where
 
 #[cfg(test)]
 mod test {
+    use core::hash::BuildHasher;
+
     use crate::alloc::{string::ToString, vec::Vec};
     use crate::DefaultHashBuilder;
+
+    impl<K, V, S: BuildHasher + Default> super::HashBag<K, V, S> {
+        pub fn new() -> Self {
+            Self {
+                table: super::HashTable::new(),
+                build_hasher: S::default(),
+            }
+        }
+    }
 
     type HashBag<K, V> = super::HashBag<K, V, DefaultHashBuilder>;
 
