@@ -359,14 +359,14 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             if suffix
                 .strip
                 .as_ref()
-                .is_some_and(|suf| !stem.as_str().ends_with(suf))
+                .is_some_and(|suf| !stem.as_str().ends_with(&**suf))
             {
                 continue;
             }
             if !suffix.condition_matches(stem.as_str()) {
                 continue;
             }
-            if !suffix.add.is_empty() && !word.ends_with(&suffix.add) {
+            if !suffix.add.is_empty() && !word.ends_with(&*suffix.add) {
                 continue;
             }
 
@@ -398,14 +398,14 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 if prefix
                     .strip
                     .as_ref()
-                    .is_some_and(|pre| !suffixed_stem.starts_with(pre))
+                    .is_some_and(|pre| !suffixed_stem.starts_with(&**pre))
                 {
                     continue;
                 }
                 if !prefix.condition_matches(suffixed_stem) {
                     continue;
                 }
-                if !prefix.add.is_empty() && !word.starts_with(&prefix.add) {
+                if !prefix.add.is_empty() && !word.starts_with(&*prefix.add) {
                     continue;
                 }
 
@@ -430,14 +430,14 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             if prefix
                 .strip
                 .as_ref()
-                .is_some_and(|pre| !stem.as_str().starts_with(pre))
+                .is_some_and(|pre| !stem.as_str().starts_with(&**pre))
             {
                 continue;
             }
             if !prefix.condition_matches(stem.as_str()) {
                 continue;
             }
-            if !prefix.add.is_empty() && !word.starts_with(&prefix.add) {
+            if !prefix.add.is_empty() && !word.starts_with(&*prefix.add) {
                 continue;
             }
 

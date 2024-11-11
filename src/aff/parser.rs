@@ -212,11 +212,11 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
     if !cx.ignore_chars.is_empty() {
         for prefix in cx.prefixes.iter_mut() {
             let add = erase_chars(&prefix.add, &cx.ignore_chars);
-            prefix.add = add.into_owned();
+            prefix.add = add.into();
         }
         for suffix in cx.suffixes.iter_mut() {
             let add = erase_chars(&suffix.add, &cx.ignore_chars);
-            suffix.add = add.into_owned();
+            suffix.add = add.into();
         }
     }
 
@@ -230,10 +230,10 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
         input_conversions: cx.input_conversions.into(),
         output_conversions: cx.output_conversions.into(),
         compound_rules: cx.compound_rules.into(),
-        compound_syllable_vowels: cx.compound_syllable_vowels.to_string(),
+        compound_syllable_vowels: cx.compound_syllable_vowels.into(),
         compound_patterns: cx.compound_patterns.into(),
         ignore_chars: cx.ignore_chars.into(),
-        keyboard_closeness: cx.keyboard_closeness.to_string(),
+        keyboard_closeness: cx.keyboard_closeness.into(),
         try_chars: cx.try_chars.into(),
         options: cx.options,
         flag_type: cx.flag_type,
@@ -1791,7 +1791,7 @@ impl FromStr for Condition {
         }
 
         Ok(Self {
-            pattern: String::from(s),
+            pattern: s.into(),
             chars,
         })
     }
@@ -1897,28 +1897,28 @@ mod test {
         );
         assert_eq!(
             Ok(Condition {
-                pattern: "foo".to_string(),
+                pattern: "foo".into(),
                 chars: 3
             }),
             "foo".parse()
         );
         assert_eq!(
             Ok(Condition {
-                pattern: "foo[bar]".to_string(),
+                pattern: "foo[bar]".into(),
                 chars: 4
             }),
             "foo[bar]".parse()
         );
         assert_eq!(
             Ok(Condition {
-                pattern: "[foo]bar".to_string(),
+                pattern: "[foo]bar".into(),
                 chars: 4
             }),
             "[foo]bar".parse()
         );
         assert_eq!(
             Ok(Condition {
-                pattern: "foo[bar]baz".to_string(),
+                pattern: "foo[bar]baz".into(),
                 chars: 7
             }),
             "foo[bar]baz".parse()

@@ -57,8 +57,7 @@ pub(crate) struct Condition {
     /// over it directly to attempt to match the pattern.
     ///
     /// This string is non-empty.
-    // TODO: Box<str>?
-    pattern: String,
+    pattern: Box<str>,
     /// The number of `char`s that the pattern describes.
     ///
     /// `Condition` is such a small subset of regex that we can tell only from a linear scan of
@@ -124,9 +123,9 @@ pub(crate) struct Affix<K> {
     /// a prefix and a suffix, both the prefix and suffix should have `crossproduct: true`.
     pub crossproduct: bool,
     /// What is stripped from the stem when the affix is applied.
-    pub strip: Option<String>,
+    pub strip: Option<Box<str>>,
     /// What should be added when the affix is applied.
-    pub add: String,
+    pub add: Box<str>,
     /// Condition that the stem should be checked against to query if the affix is relevant.
     ///
     /// This is optional in Spellbook. Hunspell and Nuspell represent what we say is `None` as
@@ -155,8 +154,8 @@ impl<K: AffixKind> Affix<K> {
         Ok(Self {
             flag,
             crossproduct,
-            strip: strip.map(|str| str.to_string()),
-            add: add.to_string(),
+            strip: strip.map(|str| str.into()),
+            add: add.into(),
             flags,
             condition,
             phantom_data: PhantomData,
@@ -263,7 +262,7 @@ impl Prefix {
     /// This function `expect`s that the `Prefix`'s `add` is a prefix of the input `word`.
     pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
         let stripped = word
-            .strip_prefix(&self.add)
+            .strip_prefix(&*self.add)
             .expect("to_stem should only be called when the `add` is a prefix of the word");
 
         match &self.strip {
@@ -290,11 +289,11 @@ impl Prefix {
     pub fn to_derived(&self, word: &str) -> String {
         let stripped = match &self.strip {
             Some(strip) => word
-                .strip_prefix(strip)
+                .strip_prefix(&**strip)
                 .expect("to_derived should only be called when `strip` is a prefix of the word"),
             None => word,
         };
-        let mut stem = self.add.clone();
+        let mut stem = self.add.to_string();
         stem.push_str(stripped);
         stem
     }
@@ -326,7 +325,7 @@ impl Suffix {
     /// This function `expect`s that the `Suffix`'s `add` is a suffix of the input `word`.
     pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
         let stripped = word
-            .strip_suffix(&self.add)
+            .strip_suffix(&*self.add)
             .expect("to_stem should only be called when the `add` is a suffix of the word");
 
         match self.strip.as_deref() {
@@ -353,7 +352,7 @@ impl Suffix {
     pub fn to_derived(&self, word: &str) -> String {
         let mut stem = match &self.strip {
             Some(strip) => word
-                .strip_suffix(strip)
+                .strip_suffix(&**strip)
                 .expect("to_derived should only be called when `strip` is a prefix of the word"),
             None => word,
         }
@@ -1218,7 +1217,7 @@ pub(crate) struct AffData {
     pub suffixes: SuffixIndex,
     pub break_table: BreakTable,
     pub compound_rules: CompoundRuleTable,
-    pub compound_syllable_vowels: String,
+    pub compound_syllable_vowels: Box<str>,
     pub compound_patterns: Box<[CompoundPattern]>,
     pub input_conversions: ConversionTable,
     pub output_conversions: ConversionTable,
@@ -1228,7 +1227,7 @@ pub(crate) struct AffData {
     pub similarities: Box<[SimilarityGroup]>,
     // phonetic_table: PhoneticTable,
     pub ignore_chars: Box<[char]>,
-    pub keyboard_closeness: String,
+    pub keyboard_closeness: Box<str>,
     pub try_chars: Box<str>,
     pub options: AffOptions,
     // Parsing options. These are preserved so that we can re-use them in `Dictionary::add`.
@@ -1511,7 +1510,7 @@ mod test {
 
         let prefixes: Vec<_> = index
             .affixes_of("asdfg")
-            .map(|prefix| prefix.add.as_str())
+            .map(|prefix| prefix.add.as_ref())
             .collect();
 
         assert_eq!(&["", "", "a", "as", "as", "asdf"], prefixes.as_slice());
@@ -1533,7 +1532,7 @@ mod test {
 
         let suffixes: Vec<_> = index
             .affixes_of("ahahuub")
-            .map(|suffix| suffix.add.as_str())
+            .map(|suffix| suffix.add.as_ref())
             .collect();
 
         assert_eq!(
