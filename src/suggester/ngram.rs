@@ -20,34 +20,23 @@
 // suggestions are implemented for compatibility with Nuspell/Hunspell but we could consider
 // adding other strategies as well, for example looking at the Aspell code.
 
+// # Implementation note
+//
+// There's a theme in this module of reusing `Vec<T>` allocations rather than having functions
+// return new `Vec<T>`s. This is slightly awkward but is necessary for performance. The
+// `ngram_suggest` function in this module has a very hot loop iterating over every stem in the
+// word list, so individual allocations add up and the performance boost from reusing allocations
+// becomes noticeable.
+
 use core::hash::BuildHasher;
+use core::slice;
 
 use crate::alloc::{collections::BinaryHeap, string::String, vec::Vec};
 
 use crate::aff::{CaseHandling, HIDDEN_HOMONYM_FLAG, MAX_SUGGESTIONS};
-use crate::{FlagSet, Stem, FULL_WORD};
+use crate::{FlagSet, FULL_WORD};
 
 use super::Suggester;
-
-// For ngram suggestions we'll be switching to UTF-32. UTF-32 uses 32-bit integers to represent
-// every char.
-//
-// Compare to UTF-8 - the representation of `String` and `str` - in which a character could be
-// represented by one through four bytes.
-//
-// UTF-32 is handy because indices are intuitive. `utf32_str[3]` is the third character. The same
-// isn't true of UTF-8 - you index into the bytes so `utf8_str[3]` could be right in the middle of
-// the bytes used to represent a character.
-//
-// `String` is a newtype wrapper around a `Vec<u8>` which is asserted to contain valid UTF-8. In
-// contrast we won't use a newtype wrapper for our Utf32String below since any sequence of
-// `char`s is valid UTF-32.
-//
-// This is getting off-topic but UTF-8 is generally preferred because it has good compression -
-// for ASCII (which very common) you only need a byte to represent a character. UTF-32 strings
-// take a constant 4 bytes per character which is relatively expensive.
-type Utf32String = Vec<char>;
-type Utf32Str = [char];
 
 macro_rules! has_flag {
     ( $flags:expr, $flag:expr ) => {{
@@ -80,14 +69,16 @@ impl<T: PartialEq + Eq> PartialOrd<Self> for MinScored<T> {
 }
 
 impl<'a, S: BuildHasher> Suggester<'a, S> {
-    pub(super) fn ngram_suggest(&self, word: &str, out: &mut Vec<String>) {
+    pub(super) fn ngram_suggest(&self, word_str: &str, out: &mut Vec<String>) {
         // First step: find 100 stems in the word list with the best ngram score.
 
-        let wrong_word: Utf32String = word.chars().collect();
-        let mut wide_buf = Vec::new();
+        let mut word_buf = Vec::with_capacity(word_str.len());
+        let word = CharsStr::new(word_str, &mut word_buf);
+        // Overallocate so we probably don't need to reallocate in the loop:
+        let mut stem_buf = Vec::with_capacity(word.len_chars() * 2);
+        let mut lowercase_stem_buf = Vec::with_capacity(stem_buf.len());
         let mut roots = BinaryHeap::with_capacity(100);
-        let mut stem_utf32 = Vec::new();
-        for (stem_utf8, flagset) in self.checker.words.iter() {
+        for entry @ (stem, flagset) in self.checker.words.iter() {
             if has_flag!(flagset, self.checker.aff.options.forbidden_word_flag)
                 || has_flag!(flagset, self.checker.aff.options.no_suggest_flag)
                 || has_flag!(flagset, self.checker.aff.options.only_in_compound_flag)
@@ -95,26 +86,25 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             {
                 continue;
             }
-            // Convert the dictionary stem to UTF-32.
-            stem_utf32.clear();
-            stem_utf32.extend(stem_utf8.as_ref().chars());
-            let mut score = left_common_substring_length(
-                &self.checker.aff.options.case_handling,
-                &wrong_word,
-                &stem_utf32,
-            ) as isize;
+            let stem = CharsStr::new(stem.as_str(), &mut stem_buf);
+            let mut score =
+                left_common_substring_length(&self.checker.aff.options.case_handling, word, stem)
+                    as isize;
 
-            wide_buf.clear();
-            self.checker
+            // TODO: lowercase into buf so we can reuse this allocation? It would mean copying a
+            // lot of code from the standard library unfortunately.
+            let lowercase_stem = self
+                .checker
                 .aff
                 .options
                 .case_handling
-                .lowercase_into_utf32(stem_utf8.as_ref(), &mut wide_buf);
-            score += ngram_similarity_longer_worse(3, &wrong_word, &wide_buf);
+                .lowercase(stem.as_str());
+            let lowercase_stem = CharsStr::new(lowercase_stem.as_str(), &mut lowercase_stem_buf);
+            score += ngram_similarity_longer_worse(3, word, lowercase_stem);
 
             let root = MinScored {
                 score,
-                inner: (stem_utf8, flagset),
+                inner: entry,
             };
             if roots.len() != 100 {
                 roots.push(root);
@@ -128,17 +118,20 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
 
         // Calculate a somewhat low threshold score so that we can ignore bad suggestions in the
         // next steps.
+        let mut mangled_word = String::new();
         let mut threshold = 0isize;
-        for k in 1..=3 {
-            let mangled_word = &mut wide_buf;
+        for k_byte_idx in word.char_indices().skip(1).take(3) {
+            let k_byte_idx = *k_byte_idx as usize;
             mangled_word.clear();
-            mangled_word.extend_from_slice(&wrong_word);
-            let mut i = k;
-            while i < mangled_word.len() {
-                mangled_word[i] = '*';
-                i += 4;
-            }
-            threshold += ngram_similarity_any_mismatch(wrong_word.len(), &wrong_word, mangled_word);
+            mangled_word.push_str(&word_str[..k_byte_idx]);
+            mangled_word.extend(word_str[k_byte_idx..].chars().enumerate().map(|(i, ch)| {
+                if i % 4 == 0 {
+                    '*'
+                } else {
+                    ch
+                }
+            }));
+            threshold += ngram_similarity_any_mismatch(word.len_chars(), word, &mangled_word);
         }
 
         threshold /= 3;
@@ -148,7 +141,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
 
         let mut expanded_list = Vec::new();
         let mut expanded_cross_affix = Vec::new();
-        let mut expanded_word_utf32 = Vec::new();
+        let mut expanded_word_buf = Vec::with_capacity(word.len_chars() * 2);
         let mut guess_words = BinaryHeap::new();
 
         for MinScored {
@@ -158,45 +151,35 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         {
             expanded_cross_affix.clear();
             self.expand_stem_for_ngram(
-                stem,
+                stem.as_str(),
                 flags,
-                word,
+                word_str,
                 &mut expanded_list,
                 &mut expanded_cross_affix,
             );
-            for expanded_word_utf8 in expanded_list.drain(..) {
-                expanded_word_utf32.clear();
-                expanded_word_utf32.extend(expanded_word_utf8.chars());
-
+            for expanded_word in expanded_list.drain(..) {
                 let mut score = left_common_substring_length(
                     &self.checker.aff.options.case_handling,
-                    &wrong_word,
-                    &expanded_word_utf32,
+                    word,
+                    CharsStr::new(&expanded_word, &mut expanded_word_buf),
                 ) as isize;
 
-                let lower_expanded_word = &mut wide_buf;
-                lower_expanded_word.clear();
-                self.checker
+                let lower_expanded_word = self
+                    .checker
                     .aff
                     .options
                     .case_handling
-                    .lowercase_into_utf32(&expanded_word_utf8, lower_expanded_word);
-                score += ngram_similarity_any_mismatch(
-                    wrong_word.len(),
-                    &wrong_word,
-                    lower_expanded_word,
-                );
+                    .lowercase(&expanded_word);
+                score +=
+                    ngram_similarity_any_mismatch(word.len_chars(), word, &lower_expanded_word);
 
                 if score < threshold {
                     continue;
                 }
 
-                // Nuspell stores the UTF-32 word in `guess_words`, but then later converts from
-                // UTF-32 into UTF-8 when pushing into `out`. For our sake it's easier to store
-                // the UTF-8 instead and avoid the conversion later.
                 let guess_word = MinScored {
                     score,
-                    inner: expanded_word_utf8,
+                    inner: expanded_word,
                 };
                 if guess_words.len() != 200 {
                     guess_words.push(guess_word);
@@ -216,43 +199,41 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // Nuspell questions whether or not the heap needs to be sorted before iterating.
         // For now, they sort the heap. I think Nuspell is correct to do so because the `break`
         // below could cause a different end behavior based on whether we're iterating on a sorted
-        // or unsorted vec.
+        // or unsorted vec. Note that we are sorting in descending order here. In my manual
+        // testing, using `BinaryHeap::into_vec` instead produces no noticeable difference.
         let mut guess_words = guess_words.into_sorted_vec();
+        let mut lower_guess_word_buf = Vec::with_capacity(word.len_chars());
+        // `iter_mut` because this loop modifies the `score`.
         for MinScored {
             score,
             inner: guess_word,
         } in guess_words.iter_mut()
         {
-            let lower_guess_word = &mut wide_buf;
-            lower_guess_word.clear();
-            self.checker
-                .aff
-                .options
-                .case_handling
-                .lowercase_into_utf32(guess_word, lower_guess_word);
+            let lower_guess_word = self.checker.aff.options.case_handling.lowercase(guess_word);
+            let lower_guess_word = CharsStr::new(&lower_guess_word, &mut lower_guess_word_buf);
 
-            let lcs =
-                longest_common_subsequence_length(&wrong_word, lower_guess_word, &mut lcs_state);
+            let lcs = longest_common_subsequence_length(word, lower_guess_word, &mut lcs_state);
 
-            if wrong_word.len() == lower_guess_word.len() && wrong_word.len() == lcs {
+            if word.len_chars() == lower_guess_word.len_chars() && word.len_chars() == lcs {
                 *score += 2000;
                 break;
             }
 
-            let mut ngram2 =
-                ngram_similarity_any_mismatch_weighted(2, &wrong_word, lower_guess_word);
-            ngram2 += ngram_similarity_any_mismatch_weighted(2, lower_guess_word, &wrong_word);
-            let ngram4 = ngram_similarity_any_mismatch(4, &wrong_word, lower_guess_word);
+            let mut ngram2 = ngram_similarity_any_mismatch_weighted(2, word, lower_guess_word);
+            ngram2 += ngram_similarity_any_mismatch_weighted(2, lower_guess_word, word);
+            let ngram4 = ngram_similarity_any_mismatch(4, word, lower_guess_word.as_str());
+
             let left_common = left_common_substring_length(
                 &self.checker.aff.options.case_handling,
-                &wrong_word,
+                word,
                 lower_guess_word,
             );
+
             let (num_eq_chars_same_pos, eq_char_is_swapped) =
-                count_eq_at_same_pos(&wrong_word, lower_guess_word);
+                count_eq_at_same_pos(word, lower_guess_word);
 
             *score = 2 * lcs as isize;
-            *score -= (wrong_word.len() as isize - lower_guess_word.len() as isize).abs();
+            *score -= (word.len_chars() as isize - lower_guess_word.len_chars() as isize).abs();
             *score += left_common as isize + ngram2 + ngram4;
             if num_eq_chars_same_pos != 0 {
                 *score += 1;
@@ -262,7 +243,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             }
 
             if 5 * ngram2
-                < ((wrong_word.len() + lower_guess_word.len())
+                < ((word.len_chars() + lower_guess_word.len_chars())
                     * (10 - self.checker.aff.options.max_diff_factor as usize))
                     as isize
             {
@@ -298,15 +279,8 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             {
                 break;
             }
-            // Nuspell is converting back to UTF-8 but we store the `guess_word` in UTF-8 form.
-            // I think Nuspell only carries UTF-32 because of templates allowing easy conversion
-            // to lowercase. In Spellbook's case we need an explicit function for this and we
-            // already have one for UTF-8, so it's easier to carry UTF-8. It's nearly always less
-            // memory plus we save a conversion to UTF-8 right here:
-            if out
-                .iter()
-                .any(|sug| contains_subslice(guess_word.as_bytes(), sug.as_bytes()))
-            {
+            // Nuspell converts back to UTF-8 here but we've been working with UTF-8 all along.
+            if out.iter().any(|sug| guess_word.contains(sug)) {
                 if score < -100 {
                     break;
                 } else {
@@ -319,7 +293,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
 
     fn expand_stem_for_ngram(
         &self,
-        stem: &Stem,
+        stem: &str,
         flags: &FlagSet,
         word: &str,
         expanded_list: &mut Vec<String>,
@@ -329,7 +303,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         cross_affix.clear();
 
         if !has_flag!(flags, self.checker.aff.options.need_affix_flag) {
-            expanded_list.push(String::from(stem.as_ref()));
+            expanded_list.push(String::from(stem));
             cross_affix.push(false);
         }
 
@@ -359,18 +333,18 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             if suffix
                 .strip
                 .as_ref()
-                .is_some_and(|suf| !stem.as_str().ends_with(&**suf))
+                .is_some_and(|suf| !stem.ends_with(&**suf))
             {
                 continue;
             }
-            if !suffix.condition_matches(stem.as_str()) {
+            if !suffix.condition_matches(stem) {
                 continue;
             }
             if !suffix.add.is_empty() && !word.ends_with(&*suffix.add) {
                 continue;
             }
 
-            let expanded = suffix.to_derived(stem.as_str());
+            let expanded = suffix.to_derived(stem);
             expanded_list.push(expanded);
             cross_affix.push(suffix.crossproduct);
         }
@@ -409,7 +383,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                     continue;
                 }
 
-                let expanded = prefix.to_derived(stem.as_str());
+                let expanded = prefix.to_derived(stem);
                 expanded_list.push(expanded);
             }
         }
@@ -430,56 +404,201 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             if prefix
                 .strip
                 .as_ref()
-                .is_some_and(|pre| !stem.as_str().starts_with(&**pre))
+                .is_some_and(|pre| !stem.starts_with(&**pre))
             {
                 continue;
             }
-            if !prefix.condition_matches(stem.as_str()) {
+            if !prefix.condition_matches(stem) {
                 continue;
             }
             if !prefix.add.is_empty() && !word.starts_with(&*prefix.add) {
                 continue;
             }
 
-            let expanded = prefix.to_derived(stem.as_str());
+            let expanded = prefix.to_derived(stem);
             expanded_list.push(expanded);
         }
     }
 }
 
+/// A borrowed string (`&str`) wrapper which eagerly computes `core::str::char_indices`.
+///
+/// With this type it is cheap both to ask for the number of Unicode characters in the string
+/// (`len_chars`) and to subslice the string by _character index_.
+///
+/// Compare with a regular `&str`: the number of characters can be counted with
+/// `string.chars().count()` - a linear operation w.r.t. the length of the string. Subslicing
+/// by character indices can't be done directly on a `&str`.
+///
+/// # Some discussion on UTF-8 vs. UTF-32
+///
+/// Nuspell uses UTF-32 for the ngram similarity section of the suggester because you can iterate
+/// and index on characters easily. (In UTF-32 every index is a character because in Unicode you
+/// need at most 32 bits to represent any character. (Note: not the same as a grapheme cluster
+/// like 🏴‍☠️).) The C++ standard library seems to be better optimized for UTF-32 operations (I
+/// believe a `std::u32_string` and equivalent string views), specifically
+/// std::basic_string_view<char32_t>`'s `find` which is central to `ngram_similarity`. We now
+/// use `str::contains(kgram)` equivalently and it performs much better than
+/// `&[char]::starts_with` plus indexing.
+///
+/// Rust's UTF-8 methods are well optimized. Specifically, taking advantage of `memchr` and SIMD
+/// to search `str`s. We retain a performance advantage by staying in UTF-8 and avoiding the more
+/// generically (read: dumbly) implemented `Eq for &[T]` or `&[T: Eq]::starts_with`.
+///
+/// In Spellbook's history this module was first implemented to work with UTF-32. Switching to
+/// UTF-8 yielded an impressive 25% speed up for suggesting wrong words like "exmaple" which end
+/// up in the `ngram_similarity` loop.
+///
+/// <details><summary>What's curious about "exmaple" specifically?...</summary>
+///
+/// "ngram similarity" is a kind of 'layer cake' when it comes to performance. The more similar
+/// the input strings, the more you have to compare. First you start at `k=1` and check how many
+/// times each character in `left` appears in `right`. If that happens more than twice for any
+/// character you check how many times any two-character (`k=2`) combo in `left` appears in
+/// `right`. If that happens more than twice then you move onto layer 3 (`k=3`).
+///
+/// This means that when `left` contains two or more of a common letter for the language - like
+/// "e" is in English - then the `ngram_similarity` function does much more work.
+///
+/// `ngram_similarity` relies on finding sub-`&str`s in `right`, so the faster that you can
+/// determine whether a kgram of `left` appears in `right`, the faster `ngram_similarity` will be.
+///
+/// </details>
+///
+/// The original implementation eagerly collected `&str`s into `&[char]` once - paying the cost
+/// of converting to UTF-32 once. This type is similar - we only run a character iterator over
+/// the string once. But we can take advantage of optimized UTF-8 comparison tools in the standard
+/// library.
+///
+/// # Lifetimes
+///
+/// For performance reasons this struct borrows a slab of memory from a `Vec<u16>` which is
+/// hopefully instantiated many fewer times than this struct. See `CharsStr::new` docs.
+#[derive(Clone, Copy)]
+struct CharsStr<'s, 'i> {
+    inner: &'s str,
+    char_indices: &'i [u16],
+}
+
+impl<'s, 'i> CharsStr<'s, 'i> {
+    /// Creates a `CharsStr`, borrowing the input `&str` and `slab`'s allocation.
+    ///
+    /// Taking in `slab` here is weird - it's not a nice API. We do it because otherwise we'd need
+    /// to allocate a new, short-lived `Vec<u16>` for every stem in the WordList. Short lived
+    /// allocations are bad for performance - `alloc`/`dealloc` from the Rust standard library
+    /// (and their implementations way down to the kernel) are usually slow compared to
+    /// stack-based operations. It's usually better to reuse a (probably overallocated) "block" /
+    /// "slab" of memory, and, intuitively, the savings get better the more you reuse.
+    ///
+    /// Above in `ngram_suggest`, the vector used as `slab` is reused across iterations of
+    /// stems in the wordlist for example. In fact we allocate a vector just for the stem's
+    /// `CharsStr`s. Instead of allocating per iteration of that loop we allocate once and
+    /// probably reallocate very rarely.
+    fn new(s: &'s str, slab: &'i mut Vec<u16>) -> Self {
+        let len_bytes = s.len();
+        // Note: number of bytes is greater than or equal to number of chars, so all `as u16`
+        // conversions are safe after this assertion. (Equal when the string is ASCII only.)
+        assert!(len_bytes <= u16::MAX as usize);
+        slab.clear();
+        slab.extend(s.char_indices().map(|(i, _ch)| i as u16));
+        // Push the length so that we can make exclusive ranges out of the windows of the
+        // `char_indices` slice.
+        slab.push(len_bytes as u16);
+
+        Self {
+            inner: s,
+            char_indices: slab.as_slice(),
+        }
+    }
+
+    const fn len_chars(&self) -> usize {
+        // We push an extra element for the total `self.inner.len()`.
+        self.char_indices.len() - 1
+    }
+
+    const fn is_empty(&self) -> bool {
+        // As above, we pushed the extra element. So when `self.inner` is empty,
+        // `self.char_indices` should be `&[0u16]`.
+        self.char_indices.len() == 1
+    }
+
+    const fn as_str(&self) -> &str {
+        self.inner
+    }
+
+    /// Returns a `&str` subslice containing all of the characters in the given _character_ range.
+    ///
+    /// Note that this method takes character indices and not byte indices.
+    fn char_slice(&self, char_range: core::ops::Range<usize>) -> &str {
+        let start_byte = self.char_indices[char_range.start] as usize;
+        let end_byte = self.char_indices[char_range.end] as usize;
+        // SAFETY: the caller is in charge of providing char indices that are in bounds of the
+        // `self.char_indices` array. (Those accesses are bounds checked.) All byte indices in
+        // `self.char_indices` are valid.
+        // Unfortunately the bounds checks cost a noticeable amount on a flamegraph, so we prefer
+        // the unsafe version to `&self.inner[start_byte..end_byte]`.
+        unsafe { self.inner.get_unchecked(start_byte..end_byte) }
+    }
+
+    fn char_at(&self, char_idx: usize) -> &str {
+        let start_byte = self.char_indices[char_idx] as usize;
+        let end_byte = self.char_indices[char_idx + 1] as usize;
+
+        // SAFETY: Same as above. All byte indices in `self.char_indices` are valid and the above
+        // accesses are checked.
+        unsafe { self.inner.get_unchecked(start_byte..end_byte) }
+    }
+
+    fn char_iter(&self) -> impl Iterator<Item = &'s str> + '_ {
+        // SAFETY: as above, all byte indices in `self.char_indices` are valid. `slice::windows`
+        // always produces valid indices into the slice, so all of these accesses can be done
+        // unchecked safely.
+        self.char_indices.windows(2).map(|idxs| unsafe {
+            let start = *idxs.get_unchecked(0) as usize;
+            let end = *idxs.get_unchecked(1) as usize;
+            self.inner.get_unchecked(start..end)
+        })
+    }
+
+    fn char_indices(&self) -> slice::Iter<'_, u16> {
+        self.char_indices.iter()
+    }
+}
+
 fn left_common_substring_length(
     case_handling: &CaseHandling,
-    left: &Utf32Str,
-    right: &Utf32Str,
+    left: CharsStr,
+    right: CharsStr,
 ) -> usize {
-    if left.is_empty() || right.is_empty() {
+    let mut left_chars = left.as_str().chars();
+    let mut right_chars = right.as_str().chars();
+
+    let Some((l, r)) = left_chars.next().zip(right_chars.next()) else {
+        return 0;
+    };
+
+    if l != r && !case_handling.is_char_eq_lowercase(l, r) {
         return 0;
     }
 
-    if left[0] != right[0] && !case_handling.is_char_eq_lowercase(left[0], right[0]) {
-        return 0;
-    }
-
-    index_of_mismatch(&left[1..], &right[1..])
+    index_of_mismatch(left_chars, right_chars)
         .map(|idx| idx + 1)
-        .unwrap_or(left.len())
+        .unwrap_or(left.len_chars())
 }
 
-fn index_of_mismatch<T: Eq>(left: &[T], right: &[T]) -> Option<usize> {
-    left.iter()
-        .enumerate()
-        .find_map(|(idx, l)| match right.get(idx) {
-            Some(r) if r == l => None,
-            _ => Some(idx),
-        })
+fn index_of_mismatch<T: Eq, I: Iterator<Item = T>>(left: I, mut right: I) -> Option<usize> {
+    left.enumerate().find_map(|(idx, l)| match right.next() {
+        Some(r) if r == l => None,
+        _ => Some(idx),
+    })
 }
 
-fn ngram_similarity_longer_worse(n: usize, left: &Utf32Str, right: &Utf32Str) -> isize {
+fn ngram_similarity_longer_worse(n: usize, left: CharsStr, right: CharsStr) -> isize {
     if right.is_empty() {
         return 0;
     }
-    let mut score = ngram_similarity(n, left, right);
-    let d = (left.len() as isize - right.len() as isize) - 2;
+    let mut score = ngram_similarity(n, left, right.as_str());
+    let d = (right.len_chars() as isize - left.len_chars() as isize) - 2;
     if d > 0 {
         score -= d;
     }
@@ -487,15 +606,15 @@ fn ngram_similarity_longer_worse(n: usize, left: &Utf32Str, right: &Utf32Str) ->
 }
 
 // Nuspell calls this `ngram_similarity_low_level`.
-fn ngram_similarity(n: usize, left: &Utf32Str, right: &Utf32Str) -> isize {
-    let n = n.min(left.len());
+fn ngram_similarity(n: usize, left: CharsStr, right: &str) -> isize {
+    let n = n.min(left.len_chars());
     let mut score = 0;
 
     for k in 1..=n {
         let mut k_score = 0;
-        for i in 0..=left.len() - k {
-            let kgram = &left[i..i + k];
-            if contains_subslice(right, kgram) {
+        for i in 0..=left.len_chars() - k {
+            let kgram = left.char_slice(i..i + k);
+            if right.contains(kgram) {
                 k_score += 1;
             }
         }
@@ -508,27 +627,12 @@ fn ngram_similarity(n: usize, left: &Utf32Str, right: &Utf32Str) -> isize {
     score
 }
 
-fn contains_subslice<T: Eq>(slice: &[T], subslice: &[T]) -> bool {
-    if subslice.len() > slice.len() {
-        return false;
-    }
-
-    let window = slice.len() - subslice.len();
-    for i in 0..=window {
-        if slice[i..].starts_with(subslice) {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn ngram_similarity_any_mismatch(n: usize, left: &Utf32Str, right: &Utf32Str) -> isize {
+fn ngram_similarity_any_mismatch(n: usize, left: CharsStr, right: &str) -> isize {
     if right.is_empty() {
         return 0;
     }
     let mut score = ngram_similarity(n, left, right);
-    let d = (right.len() as isize - left.len() as isize).abs() - 2;
+    let d = (right.chars().count() as isize - left.len_chars() as isize).abs() - 2;
     if d > 0 {
         score -= d;
     }
@@ -536,22 +640,21 @@ fn ngram_similarity_any_mismatch(n: usize, left: &Utf32Str, right: &Utf32Str) ->
 }
 
 // Nuspell returns an isize.
-fn longest_common_subsequence_length<T: Eq>(
-    left: &[T],
-    right: &[T],
+fn longest_common_subsequence_length(
+    left: CharsStr,
+    right: CharsStr,
     state_buffer: &mut Vec<usize>,
 ) -> usize {
     state_buffer.clear();
-    state_buffer.resize(right.len(), 0);
+    state_buffer.resize(right.len_chars(), 0);
 
     let mut row1_prev = 0;
-    for l in left.iter() {
+    for l in left.char_iter() {
         row1_prev = 0;
         let mut row2_prev = 0;
-        for j in 0..right.len() {
-            let row1_current = state_buffer[j];
-            let row2_current = &mut state_buffer[j];
-            *row2_current = if *l == right[j] {
+        for (j, row2_current) in state_buffer.iter_mut().enumerate().take(right.len_chars()) {
+            let row1_current = *row2_current;
+            *row2_current = if l == right.char_at(j) {
                 row1_prev + 1
             } else {
                 row1_current.max(row2_prev)
@@ -565,31 +668,31 @@ fn longest_common_subsequence_length<T: Eq>(
     row1_prev
 }
 
-fn ngram_similarity_any_mismatch_weighted(n: usize, left: &Utf32Str, right: &Utf32Str) -> isize {
+fn ngram_similarity_any_mismatch_weighted(n: usize, left: CharsStr, right: CharsStr) -> isize {
     if right.is_empty() {
         return 0;
     }
-    let mut score = ngram_similarity_weighted(n, left, right);
-    let d = (right.len() as isize - left.len() as isize).abs() - 2;
+    let mut score = ngram_similarity_weighted(n, left, right.as_str());
+    let d = (right.len_chars() as isize - left.len_chars() as isize).abs() - 2;
     if d > 0 {
         score -= d;
     }
     score
 }
 
-fn ngram_similarity_weighted(n: usize, left: &Utf32Str, right: &Utf32Str) -> isize {
-    let n = n.min(left.len());
+fn ngram_similarity_weighted(n: usize, left: CharsStr, right: &str) -> isize {
+    let n = n.min(left.len_chars());
     let mut score = 0;
 
     for k in 1..=n {
         let mut k_score = 0;
-        for i in 0..=left.len() - k {
-            let kgram = &left[i..i + k];
-            if contains_subslice(right, kgram) {
+        for i in 0..=left.len_chars() - k {
+            let kgram = left.char_slice(i..i + k);
+            if right.contains(kgram) {
                 k_score += 1;
             } else {
                 k_score -= 1;
-                if i == 0 || i == left.len() - k {
+                if i == 0 || i == left.len_chars() - k {
                     k_score -= 1;
                 }
             }
@@ -600,19 +703,19 @@ fn ngram_similarity_weighted(n: usize, left: &Utf32Str, right: &Utf32Str) -> isi
     score
 }
 
-fn count_eq_at_same_pos<T: Eq + Copy>(left: &[T], right: &[T]) -> (usize, bool) {
-    let n = left.len().min(right.len());
+fn count_eq_at_same_pos(left: CharsStr, right: CharsStr) -> (usize, bool) {
+    let n = left.len_chars().min(right.len_chars());
     let count = left
-        .iter()
-        .zip(right.iter())
+        .char_iter()
+        .zip(right.char_iter())
         .filter(|(l, r)| l == r)
         .count();
 
     let mut is_swap = false;
     // Only two characters are not equal. Check if they were swapped.
-    if left.len() == right.len() && n - count == 2 {
+    if left.len_chars() == right.len_chars() && n - count == 2 {
         let mut first_mismatch = None;
-        for (l, r) in left.iter().zip(right.iter()) {
+        for (l, r) in left.char_iter().zip(right.char_iter()) {
             if l != r {
                 if let Some((l1, r1)) = first_mismatch {
                     is_swap = l1 == r && r1 == l;
@@ -632,18 +735,10 @@ mod test {
 
     #[test]
     fn index_of_mismatch_test() {
-        assert_eq!(index_of_mismatch(b"abcd", b"abcd"), None);
-        assert_eq!(index_of_mismatch(b"abcd", b"abxy"), Some(2));
-        assert_eq!(index_of_mismatch(b"abcd", b"abc"), Some(3));
-        assert_eq!(index_of_mismatch(b"abc", b"abcd"), None);
-    }
-
-    #[test]
-    fn contains_subslice_test() {
-        assert!(contains_subslice(b"abcd", b"abcd"));
-        assert!(contains_subslice(b"abcd", b"abc"));
-        assert!(contains_subslice(b"abcd", b"bcd"));
-        assert!(contains_subslice(b"abcd", b"b"));
+        assert_eq!(index_of_mismatch(b"abcd".iter(), b"abcd".iter()), None);
+        assert_eq!(index_of_mismatch(b"abcd".iter(), b"abxy".iter()), Some(2));
+        assert_eq!(index_of_mismatch(b"abcd".iter(), b"abc".iter()), Some(3));
+        assert_eq!(index_of_mismatch(b"abc".iter(), b"abcd".iter()), None);
     }
 
     #[test]
@@ -651,27 +746,51 @@ mod test {
         // Rebuilding the Spellchecker:
         // > ngram(3, 'actually', 'akchualy')
         // > 11 = a, c, u, a, l, l, y, ua, al, ly, ual
-        let left: Utf32String = "actually".chars().collect();
-        let right: Utf32String = "akchualy".chars().collect();
-        assert_eq!(ngram_similarity(3, &left, &right), 11);
+        let mut left_buf = Vec::new();
+        let left = CharsStr::new("actually", &mut left_buf);
+        assert_eq!(ngram_similarity(3, left, "akchualy"), 11);
     }
 
     #[test]
     fn longest_common_subsequence_length_test() {
+        let mut left_buffer = Vec::new();
+        let mut right_buffer = Vec::new();
         let mut state_buffer = Vec::new();
         assert_eq!(
-            longest_common_subsequence_length(b"aaa", b"aaa", &mut state_buffer),
+            longest_common_subsequence_length(
+                CharsStr::new("aaa", &mut left_buffer),
+                CharsStr::new("aaa", &mut right_buffer),
+                &mut state_buffer
+            ),
             3
         );
         assert_eq!(
-            longest_common_subsequence_length(b"aaaaa", b"bbbaa", &mut state_buffer),
+            longest_common_subsequence_length(
+                CharsStr::new("aaaaa", &mut left_buffer),
+                CharsStr::new("bbbaa", &mut right_buffer),
+                &mut state_buffer
+            ),
             2
         );
     }
 
     #[test]
     fn count_eq_at_same_pos_test() {
-        assert_eq!(count_eq_at_same_pos(b"abcd", b"abcd"), (4, false));
-        assert_eq!(count_eq_at_same_pos(b"abcd", b"acbd"), (2, true));
+        let mut left_buffer = Vec::new();
+        let mut right_buffer = Vec::new();
+        assert_eq!(
+            count_eq_at_same_pos(
+                CharsStr::new("abcd", &mut left_buffer),
+                CharsStr::new("abcd", &mut right_buffer),
+            ),
+            (4, false)
+        );
+        assert_eq!(
+            count_eq_at_same_pos(
+                CharsStr::new("abcd", &mut left_buffer),
+                CharsStr::new("acbd", &mut right_buffer),
+            ),
+            (2, true)
+        );
     }
 }

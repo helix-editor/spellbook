@@ -1115,21 +1115,6 @@ impl CaseHandling {
         }
     }
 
-    pub fn lowercase_into_utf32(&self, word: &str, out: &mut Vec<char>) {
-        out.extend(
-            word.chars()
-                .map(match self {
-                    Self::Turkic => |ch| match ch {
-                        'I' => 'ı',
-                        'İ' => 'i',
-                        _ => ch,
-                    },
-                    Self::Standard => |ch| ch,
-                })
-                .flat_map(|ch| ch.to_lowercase()),
-        )
-    }
-
     pub fn uppercase(&self, word: &str) -> String {
         match self {
             Self::Turkic => word.replace('i', "İ").replace('ı', "I").to_uppercase(),
