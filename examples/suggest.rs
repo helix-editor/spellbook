@@ -30,14 +30,14 @@ fn main() {
 
     let now = Instant::now();
     let dict = Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap();
-    println!("Compiled the dictionary in {}ms", now.elapsed().as_millis());
+    println!("Compiled the dictionary in {:?}", now.elapsed());
 
     let mut suggestions = Vec::with_capacity(5);
     let now = Instant::now();
     dict.suggest(&word, &mut suggestions);
-    let time = now.elapsed().as_micros();
+    let time = now.elapsed();
     if suggestions.is_empty() {
-        println!("No suggestions found for \"{word}\" (checked in {time}µs)");
+        println!("No suggestions found for \"{word}\" (checked in {time:?})");
     } else {
         let suggestions = suggestions
             .into_iter()
@@ -50,6 +50,6 @@ fn main() {
                 s.push('"');
                 s
             });
-        println!("Suggestions for \"{word}\": {suggestions} (checked in {time}µs)");
+        println!("Suggestions for \"{word}\": {suggestions} (checked in {time:?})");
     }
 }
