@@ -96,13 +96,13 @@ COMPOUNDRULE n*mp
 ### Other docs
 
 * An overview of [internals](./docs/internals.md)
+* [Comparisons](./docs/compare.md) to other spellcheckers
 * [Development and contributing notes](./docs/CONTRIBUTING.md)
 
 ### Credits
 
 * [`@zverok`]'s [blog series on rebuilding Hunspell][zverok-blog] was an invaluable resource during early prototypes. The old [`spylls`](https://github.com/zverok/spylls)-like prototype can be found on the `spylls` branch.
 * Ultimately [Nuspell](https://github.com/nuspell/nuspell)'s codebase became the reference for Spellbook though as C++ idioms mesh better with Rust than Python's. Nuspell's code is in great shape and is much more readable than Hunspell so for now Spellbook is essentially a Rust rewrite of Nuspell (though we may diverge in the future).
-    * There are a few ways Spellbook diverges from Nuspell. Mostly this relates to data structures like using [`hashbrown`] instead of a custom hash table implementation or German strings for stems and flagsets (see the internal doc). Another difference is that Spellbook uses UTF-8 when calculating ngram suggestions rather than UTF-32; the results are the same but this performs better given the Rust standard library's optimizations for UTF-8.
 * The parser for `.dic` and `.aff` files is loosely based on [ZSpell](https://github.com/pluots/zspell).
 
 [`hashbrown`]: https://github.com/rust-lang/hashbrown
