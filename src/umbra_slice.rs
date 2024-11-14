@@ -257,7 +257,7 @@ impl<T: Copy, const PREFIX_LEN: usize, const SUFFIX_LEN: usize> TryFrom<&[T]>
         // unstable function (`MaybeUninit::slice_assume_init_mut`).
         fn copy_to_slice<U: Copy>(this: &mut [MaybeUninit<U>], src: &[U]) {
             // SAFETY: &[U] and &[MaybeUninit<U>] have the same layout.
-            let uninit_src: &[MaybeUninit<U>] = unsafe { mem::transmute(src) };
+            let uninit_src = unsafe { mem::transmute::<&[U], &[MaybeUninit<U>]>(src) };
             this.copy_from_slice(uninit_src);
         }
 
