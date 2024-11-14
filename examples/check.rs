@@ -31,18 +31,18 @@ fn main() {
 
     let now = Instant::now();
     let dict = Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap();
-    println!("Compiled the dictionary in {}ms", now.elapsed().as_millis());
+    println!("Compiled the dictionary in {:?}", now.elapsed());
 
     let now = Instant::now();
     if dict.check(&word) {
         println!(
-            "\"{word}\" is in the dictionary (checked in {}µs)",
-            now.elapsed().as_micros()
+            "\"{word}\" is in the dictionary (checked in {:?})",
+            now.elapsed()
         );
     } else {
         eprintln!(
-            "\"{word}\" is NOT in the dictionary (checked in {}µs)",
-            now.elapsed().as_micros()
+            "\"{word}\" is NOT in the dictionary (checked in {:?})",
+            now.elapsed()
         );
         std::process::exit(1);
     }
