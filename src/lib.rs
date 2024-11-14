@@ -300,14 +300,9 @@ type Flag = core::num::NonZeroU16;
 /// representation for flags). Hunspell uses a sorted `unsigned short*` and searches it via
 /// `std::binary_search`.
 ///
-/// We represent this in Spellbook with a sorted boxed slice of flags. We use a boxed slice to cut
-/// down on the storage space required - a `Vec` has an extra capacity field that takes up some
-/// extra bytes. Using a boxed slice reduces `size_of::<FlagSet>()` on my machine from 24 to 16.
-/// This sounds insignificant but a dictionary might have very very many flagsets, so the savings
-/// are potentially noticeable. Boxed slices also remove extra allocated capacity. Generally
-/// there's no need to use a Vec, String or other similar owned types over a boxed equivalent
-/// unless the value needs to be mutated at some point. Once a dictionary is initialized it's
-/// immutable so we don't need a Vec.
+/// In Spellbook we use a sorted `UmbraSlice<Flag>` - a 16 byte type with a short-slice
+/// optimization enabling storing up to 7 flags inline. (Otherwise this type is basically a
+/// sorted `Box<[Flag]>`.)
 #[derive(Default, PartialEq, Eq, Clone)]
 struct FlagSet(umbra_slice::FlagSlice);
 
