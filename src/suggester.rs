@@ -107,12 +107,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                     let casing_after_dot = classify_casing(after_dot);
                     if matches!(casing_after_dot, Casing::Init) {
                         let mut buffer = String::from(word.as_ref());
-                        unsafe {
-                            // SAFETY: b' ' is ASCII and therefore a valid UTF-8 character, so
-                            // we can safely assume it after the '.' character's right boundary
-                            // without invalidating the UTF-8.
-                            buffer.as_mut_vec().insert(dot_idx + 1, b' ');
-                        }
+                        buffer.insert(dot_idx + 1, ' ');
                         // Nuspell inserts suggestions at the beginning of the list in this block.
                         // `insert_sug_first(word, out)`
                         out.insert(0, buffer);
