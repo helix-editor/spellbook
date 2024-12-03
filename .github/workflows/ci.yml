@@ -4,14 +4,15 @@ on:
   push:
     branches:
       - master
-
+env:
+  MSRV: "1.70"
 jobs:
-  check-msrv:
+  check:
     name: Check
     strategy:
       matrix:
         toolchain:
-          - "1.70"
+          - MSRV
           - stable
     runs-on: ubuntu-latest
     steps:
@@ -27,7 +28,7 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ matrix.toolchain}}
+          toolchain: ${{ matrix.toolchain == 'MSRV' && env.MSRV || 'stable' }}
 
       - uses: Swatinem/rust-cache@v2
 
@@ -46,8 +47,10 @@ jobs:
       - name: Remove the rust-toolchain.toml
         run: rm rust-toolchain.toml
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install MSRV toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "${{ env.MSRV }}"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -67,9 +70,10 @@ jobs:
       - name: Remove the rust-toolchain.toml
         run: rm rust-toolchain.toml
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install MSRV toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "${{ env.MSRV }}"
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
