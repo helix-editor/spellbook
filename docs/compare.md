@@ -69,7 +69,7 @@ When it comes to memory, Spellbook is optimized to save memory by cutting out un
 
 [`pluots/zspell`](https://github.com/pluots/zspell) is an interesting alternative to the Hunspell-like spellcheckers mentioned above. ZSpell also takes the `.dic` and `.aff` Hunspell-style dictionary files. At time of writing ZSpell doesn't support suggestions. The interesting part of ZSpell is how it checks words instead.
 
-ZSpell expands affixes during instantiation of a dictionary. (See the `README.md` doc in this repository for a basic intro on affixes.) The "classic" spellcheckers mentioned above contain a subset of the possible dictionary words in a main lookup table. For example Spellbook's table includes "adventure" but not some of its conjugations made possible by prefixes/suffixes like "adventurer" or "adventured". In contrast, ZSpell expands each stem so that its tables include "adventure", "adventures", "adventurer", "adventure", "adventuring" and more. When checking a word, ZSpell performs a lookup into (up to) a handful of hash maps.
+ZSpell expands affixes during instantiation of a dictionary. (See the `README.md` doc in this repository for a basic intro on affixes.) The "classic" spellcheckers mentioned above contain a subset of the possible dictionary words in a main lookup table. For example Spellbook's table includes "adventure" but not some of its conjugations made possible by prefixes/suffixes like "adventurer" or "adventured". In contrast, ZSpell expands each stem so that its tables include "adventure", "adventures", "adventurer", "adventured", "adventuring" and more. When checking a word, ZSpell performs a lookup into a handful of hash maps, short-circuiting if a word is found.
 
 The benefit is a basically constant-time `Dictionary::check_word` performance:
 
@@ -96,9 +96,13 @@ Reads:     130,487,585 bytes
 Writes:    69,845,862 bytes
 ```
 
-So the tradeoff is much more memory usage. There's also a correctness issue with compounds: "20000th" from the benchmark fails to check. Checking compounds involves slicing up the input word and checking the components to see if they are compound components, which is not implemented by ZSpell. For `en_US` specifically you might take this tradeoff. It's more memory but the check time is nearly constant - if you have a lot to check and don't care much for memory and can skip over numbers then it's not a bad tradeoff.
+So the tradeoff is much more memory usage. There's also a correctness issue with compounds: "20000th" from the benchmark fails to check. Checking compounds involves slicing up the input word and checking the components to see if they are compound components laid out in a pattern declared by the `.aff` file. This part of Hunspell/Nuspell is not implemented by ZSpell.
 
-The other shoe drops with other Hunspell dictionaries. `en_US` is quite slim and simple with 50,000 stems, 7 prefixes and 16 suffixes. Brazilian Portuguese (`pt_BR`) is a far more complicated real-world dictionary weighing in at over 312,000 stems, 47 prefixes and 57 suffixes. Even with Spellbook this dictionary takes a hefty 100ms to initialize but with ZSpell, initialization runs for more than six minutes and consumes more than 100GB of memory before I kill it.
+For `en_US` specifically you might accept these tradeoffs. It's more memory but the check time is nearly constant. `en_US` only uses compounds for numbers, for example "7th", "21st" or "20000th" from the benchmark. If you have a large corpus to check, don't care much for memory and can skip compounds then it's not a bad tradeoff.
+
+The approach of expanding affixes is not scalable however and the tradeoff becomes worse with other Hunspell dictionaries. `en_US` is quite slim and simple with 50,000 stems, 7 prefixes and 16 suffixes. Brazilian Portuguese (`pt_BR`) is a far more complicated real-world dictionary weighing in at over 312,000 stems, 47 prefixes and 57 suffixes. Even with Spellbook this dictionary takes a hefty 100ms to initialize but with ZSpell, initialization runs for more than six minutes and consumes more than 100GB of memory before I kill it.
+
+The reason I mention ZSpell specifically in the comparison is it's a good example of the strategy taken by other implementations that consume Hunspell dictionary files. [Harper](https://github.com/elijah-potter/harper) and [Vale](https://github.com/errata-ai/vale) are two other projects in the wild that expand affixes in their checkers.
 
 [`hashbrown`]: https://github.com/rust-lang/hashbrown
 [internals]: ./internals.md
