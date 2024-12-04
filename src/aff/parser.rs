@@ -57,7 +57,7 @@ struct AffLineParser<'aff> {
     compound_patterns: Vec<CompoundPattern>,
 }
 
-impl<'aff> Default for AffLineParser<'aff> {
+impl Default for AffLineParser<'_> {
     fn default() -> Self {
         use crate::alloc::vec;
 

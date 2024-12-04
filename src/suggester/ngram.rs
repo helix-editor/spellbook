@@ -68,7 +68,7 @@ impl<T: PartialEq + Eq> PartialOrd<Self> for MinScored<T> {
     }
 }
 
-impl<'a, S: BuildHasher> Suggester<'a, S> {
+impl<S: BuildHasher> Suggester<'_, S> {
     pub(super) fn ngram_suggest(&self, word_str: &str, out: &mut Vec<String>) {
         // First step: find 100 stems in the word list with the best ngram score.
 

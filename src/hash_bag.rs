@@ -152,7 +152,7 @@ where
     key: &'key Q,
 }
 
-impl<'bag, 'key, Q: ?Sized, K, V> Iterator for GetAllIter<'bag, 'key, Q, K, V>
+impl<'bag, Q: ?Sized, K, V> Iterator for GetAllIter<'bag, '_, Q, K, V>
 where
     K: Borrow<Q>,
     Q: Hash + Eq,

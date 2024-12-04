@@ -26,7 +26,7 @@ pub struct Suggester<'a, S: BuildHasher> {
     ngram_suggest: bool,
 }
 
-impl<'a, S: BuildHasher> fmt::Debug for Suggester<'a, S> {
+impl<S: BuildHasher> fmt::Debug for Suggester<'_, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Suggester")
             .field("ngram_suggest", &self.ngram_suggest)

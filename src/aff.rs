@@ -536,7 +536,7 @@ pub(crate) struct AffixesIter<'index, 'word, C: AffixKind + 'static> {
     chars_matched: usize,
 }
 
-impl<'index, 'word, C: AffixKind> Iterator for AffixesIter<'index, 'word, C> {
+impl<'index, C: AffixKind> Iterator for AffixesIter<'index, '_, C> {
     type Item = &'index Affix<C>;
 
     fn next(&mut self) -> Option<Self::Item> {
