@@ -176,7 +176,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         if let Some(mut idx) = word.find('\'').filter(|idx| *idx != word.len() - 1) {
             // `find` returns the index of the found character. We want to include that apostrophe
             // in `part1` so move the index after the apostrophe.
-            debug_assert_eq!("'".as_bytes().len(), 1);
+            debug_assert_eq!("'".len(), 1);
             idx += 1;
             // Slice up the word into two parts: part1 has the apostrophe and part2 is the rest.
             let part1 = &word[..idx];
