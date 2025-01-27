@@ -261,9 +261,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             // byte index of the first 's'.
             let idx = position + idx;
 
-            // SAFETY: This is a little bit hacky but avoids any extra allocations (other than
-            // the new String above). "ss" and "ß" are both two bytes so we update the bytes
-            // in-place.
+            // SAFETY: "ss" and "ß" are both two bytes long in UTF-8, so overwriting the bytes
+            // cannot produce invalid UTF-8.
             unsafe {
                 // Replace the "ss" with "ß".
                 let bytes = word.as_mut_vec();
@@ -274,6 +273,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             if let Some(flags) = self.do_spell_sharps(word, idx + 2, depth + 1, replacements + 1) {
                 return Some(flags);
             }
+            // SAFETY: This is the opposite as above. They're both the same length so the bytes
+            // can be overwritten without producing invalid UTF-8.
             unsafe {
                 // Replace the "ß" with "ss" and continue the recursion to try another
                 // permutation.

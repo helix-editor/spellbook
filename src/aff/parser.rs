@@ -1310,13 +1310,14 @@ pub(crate) fn parse_dic_line(
     for (idx, ch) in chars.by_ref() {
         match ch {
             '/' if escaped => {
-                // Replace the backslash with the slash. This is safe as both characters are the
-                // same size.
+                // Replace the backslash with the slash.
                 debug_assert!(!word.is_empty());
                 // Note: guaranteed to not underflow because we must have at least one character
                 // pushed in order for `escaped` to be true.
                 let last_idx = word.len() - 1;
                 debug_assert_eq!(word.as_bytes()[last_idx], b'\\');
+                // SAFETY: both characters have a UTF-8 length of 1, so overwriting the byte
+                // cannot result in invalid UTF-8.
                 unsafe {
                     word.as_bytes_mut()[last_idx] = b'/';
                 }
