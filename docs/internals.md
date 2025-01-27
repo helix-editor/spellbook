@@ -1,6 +1,6 @@
 # Internals
 
-There are a few key data structures that power Spellbook and make lookup fast and memory efficient.
+## Data structures
 
 ### Boxed slices
 
@@ -61,5 +61,21 @@ PFX E   0     dis         .
 Which might apply to a stem in the dictionary like `pose/CAKEGDS` to allow words "depose" and "dispose". When checking "depose" we look up in the set of prefixes to find any where the input word starts with the "add" part (for example `"depose".starts_with("de")`).
 
 A [prefix tree](https://en.wikipedia.org/wiki/Trie) would allow very quick lookup. Trees and graph-like structures are not the most straightforward things to write in Rust though. Luckily Nuspell has a trick for this type which works well in Rust. Instead of a tree, we collect the set of prefixes into a `Box<[Prefix]>` table sorted by the "add" part of a prefix/suffix ("de" or "dis" above, for example). We can then binary search based on whether a prefix matches (`str::starts_with`). There are some additional optimizations like an extra lookup table that maps the first character in a prefix to the starting index in the `Box<[Prefix]>` table so that we can jump to the right region of the table quickly.
+
+## Unsafe code
+
+Spellbook uses `unsafe` in three ways:
+
+1. Small-string/slice optimizations. The `umbra_slice` module uses `unsafe` to interpret itself as either an inline or allocated string/slice.
+2. UTF-8 manipulation. Spellbook manipulates UTF-8 encoded strings as bytes in some cases for performance reasons. For example when checking German sharps, Spellbook might replace "ss" with "ß". These two strings have the same UTF-8 length (2) so the bytes can be overwritten directly. This kind of edit can't be done as efficiently in safe Rust.
+3. A `CharsStr` type in the ngram suggester (`src/suggester/ngram.rs`) indexes into its underlying `str` without bounds checks for performance reasons.
+
+These uses of `unsafe` could theoretically be eliminated:
+
+1. The `Stem` and `FlagSlice` types could switch from `umbra_slice` types to `Box<str>` and `Box<[Flag]>` respectively with the tradeoff of significantly higher total dictionary memory size (around 25% more for `en_US`).
+2. String edits could be done using safe methods only for an unknown performance hit to the checker and likely a larger hit to the suggester.
+3. `CharsStr` could use checked lookups into its underlying `str` for a small performance hit.
+
+But eliminating `unsafe` is not really interesting to me. The uses rely on solid assumptions are typically documented with "SAFETY" comments.
 
 [`hashbrown`]: https://github.com/rust-lang/hashbrown
