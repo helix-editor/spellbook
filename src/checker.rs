@@ -28,12 +28,17 @@ macro_rules! flag {
 pub struct Checker<'a, S: BuildHasher> {
     pub(crate) words: &'a WordList<S>,
     pub(crate) aff: &'a AffData,
+
+    check_lower_as_title: bool,
+    check_lower_as_upper: bool,
 }
 
 impl<S: BuildHasher> fmt::Debug for Checker<'_, S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Checker")
             .field("words", &self.words.len())
+            .field("check_lower_as_title", &self.check_lower_as_title)
+            .field("check_lower_as_upper", &self.check_lower_as_upper)
             .finish_non_exhaustive()
     }
 }
@@ -43,7 +48,49 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         Self {
             words: &dict.words,
             aff: &dict.aff_data,
+            check_lower_as_title: false,
+            check_lower_as_upper: false,
         }
+    }
+
+    /// Configures the `Checker` to check lowercase words in titlecase form.
+    ///
+    /// Normally lowercase words are checked in titlecase or uppercase forms. For example "Alice"
+    /// is correct in the `en_US` dictionary but not "alice," and "RSVP" is correct but not
+    /// "rsvp."
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
+    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+    /// let dict = spellbook::Dictionary::new(&aff, &dic).unwrap();
+    ///
+    /// assert!(!dict.check("alice"));
+    /// assert!(dict.checker().check_lower_as_title(true).check("alice"));
+    /// ```
+    pub fn check_lower_as_title(mut self, check_lower_as_title: bool) -> Self {
+        self.check_lower_as_title = check_lower_as_title;
+        self
+    }
+
+    /// Configures the `Checker` to check lowercase words in uppercase form.
+    ///
+    /// See `Checker::check_lower_as_title`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
+    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+    /// let dict = spellbook::Dictionary::new(&aff, &dic).unwrap();
+    ///
+    /// assert!(!dict.check("rsvp"));
+    /// assert!(dict.checker().check_lower_as_upper(true).check("rsvp"));
+    /// ```
+    pub fn check_lower_as_upper(mut self, check_lower_as_upper: bool) -> Self {
+        self.check_lower_as_upper = check_lower_as_upper;
+        self
     }
 
     /// Checks that the word is valid according to the dictionary.
@@ -146,9 +193,30 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     }
 
     fn spell_casing(&self, word: &str) -> Option<&FlagSet> {
-        match classify_casing(word) {
+        let casing = classify_casing(word);
+        match casing {
             Casing::None | Casing::Camel | Casing::Pascal => {
-                self.check_word(word, Forceucase::default(), HiddenHomonym::default())
+                if let Some(flags) =
+                    self.check_word(word, Forceucase::default(), HiddenHomonym::default())
+                {
+                    return Some(flags);
+                }
+
+                if self.check_lower_as_title && !matches!(casing, Casing::Pascal) {
+                    let title = self.aff.options.case_handling.titlecase(word);
+                    if let Some(flags) = self.spell_casing_title(&title) {
+                        return Some(flags);
+                    }
+                }
+
+                if self.check_lower_as_upper {
+                    let upper = self.aff.options.case_handling.uppercase(word);
+                    if let Some(flags) = self.spell_casing_upper(&upper) {
+                        return Some(flags);
+                    }
+                }
+
+                None
             }
             Casing::All => self.spell_casing_upper(word),
             Casing::Init => self.spell_casing_title(word),
@@ -2643,5 +2711,13 @@ mod test {
         assert!(EN_US.check("22nd"));
         assert!(EN_US.check("123rd"));
         assert!(EN_US.check("1234th"));
+    }
+
+    #[test]
+    fn check_lower_as_other_casings() {
+        assert!(!EN_US.check("alice"));
+        assert!(!EN_US.check("rsvp"));
+        assert!(EN_US.checker().check_lower_as_title(true).check("alice"));
+        assert!(EN_US.checker().check_lower_as_upper(true).check("rsvp"));
     }
 }
