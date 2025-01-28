@@ -21,6 +21,7 @@ macro_rules! has_flag {
 /// A wrapper struct for a dictionary that allows customizing suggestion behavior.
 ///
 /// Currently only [ngram suggestions](Suggester::with_ngram_suggestions) may be configured.
+#[derive(Clone, Copy)]
 pub struct Suggester<'a, S: BuildHasher> {
     checker: Checker<'a, S>,
     ngram_suggest: bool,
@@ -34,12 +35,24 @@ impl<S: BuildHasher> fmt::Debug for Suggester<'_, S> {
     }
 }
 
+impl<'a, S: BuildHasher> Checker<'a, S> {
+    /// Converts the [Checker] into a [Suggester] with default suggester options set.
+    pub fn into_suggester(self) -> Suggester<'a, S> {
+        Suggester::new(self)
+    }
+}
+
 impl<'a, S: BuildHasher> Suggester<'a, S> {
-    pub(crate) fn new(checker: Checker<'a, S>) -> Self {
+    fn new(checker: Checker<'a, S>) -> Self {
         Self {
             checker,
             ngram_suggest: true,
         }
+    }
+
+    /// Returns the underlying [Checker] used by this suggester.
+    pub fn into_checker(self) -> Checker<'a, S> {
+        self.checker
     }
 
     /// Enables or disables the suggester from finding suggestions based on "ngram similarity."

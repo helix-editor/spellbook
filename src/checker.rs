@@ -4,7 +4,7 @@ use crate::{
     aff::{
         AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG,
     },
-    alloc::{string::String, vec::Vec},
+    alloc::{fmt, string::String, vec::Vec},
     classify_casing, erase_chars, AffixingMode, Casing, Dictionary, Flag, FlagSet, Stem, WordList,
     AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD, MAX_WORD_LEN,
 };
@@ -23,14 +23,23 @@ macro_rules! flag {
     }};
 }
 
-// TODO: expose type and add options to it?
-pub(crate) struct Checker<'a, S: BuildHasher> {
+/// A wrapper struct for a dictionary that allows customizing checking behavior.
+#[derive(Clone, Copy)]
+pub struct Checker<'a, S: BuildHasher> {
     pub(crate) words: &'a WordList<S>,
     pub(crate) aff: &'a AffData,
 }
 
+impl<S: BuildHasher> fmt::Debug for Checker<'_, S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Checker")
+            .field("words", &self.words.len())
+            .finish_non_exhaustive()
+    }
+}
+
 impl<'a, S: BuildHasher> Checker<'a, S> {
-    pub fn new(dict: &'a Dictionary<S>) -> Self {
+    pub(crate) fn new(dict: &'a Dictionary<S>) -> Self {
         Self {
             words: &dict.words,
             aff: &dict.aff_data,

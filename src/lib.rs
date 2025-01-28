@@ -31,11 +31,11 @@ mod umbra_slice;
 pub use aff::parser::{
     ParseDictionaryError, ParseDictionaryErrorKind, ParseDictionaryErrorSource, ParseFlagError,
 };
+pub use checker::Checker;
 pub use suggester::Suggester;
 
 use crate::alloc::{borrow::Cow, slice, string::String, vec::Vec};
 use aff::AffData;
-use checker::Checker;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
 use hash_bag::HashBag;
 
@@ -186,7 +186,14 @@ impl<S: BuildHasher> Dictionary<S> {
     /// assert!(!dict.check("optimise")); // allowed by en_GB but not en_US.
     /// ```
     pub fn check(&self, word: &str) -> bool {
-        Checker::new(self).check(word)
+        self.checker().check(word)
+    }
+
+    /// Creates a [Checker] that borrows this dictionary.
+    ///
+    /// The [Checker] type can be used to customize the checking behavior. See the [Checker] docs.
+    pub fn checker(&self) -> Checker<S> {
+        Checker::new(self)
     }
 
     /// Fills the given vec with possible corrections from the dictionary for the given word.
@@ -201,7 +208,7 @@ impl<S: BuildHasher> Dictionary<S> {
     /// The [Suggester] type can be used to customize the suggestion behavior (for example to
     /// disable ngram suggestions). See the [Suggester] docs.
     pub fn suggester(&self) -> Suggester<S> {
-        Suggester::new(Checker::new(self))
+        self.checker().into_suggester()
     }
 
     /// Adds a word to the dictionary.
