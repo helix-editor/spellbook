@@ -514,7 +514,7 @@ mod test {
             val.hash(&mut state);
             state.finish()
         }
-        let hasher = ahash::RandomState::new();
+        let hasher = crate::DefaultHashBuilder::default();
 
         let s = UmbraString::from("hellohellohello");
         assert_eq!(hash_once(&hasher, &s), hash_once(&hasher, &s));

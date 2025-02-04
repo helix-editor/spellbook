@@ -24,7 +24,7 @@ fn main() {
 }
 ```
 
-Spellbook is `no_std` and only requires [`hashbrown`] as a dependency. (Note that [`ahash`] is included by default, see the feature flags section below.) This may change in the future for performance tweaks like small-string optimizations and maybe `memchr` but the hope is to keep this library as lightweight as possible: new dependencies must considerably improve performance or correctness.
+Spellbook aims to be minimal: it is `no_std` and only requires [`hashbrown`] as a dependency. (Note that [`foldhash`] is included by default, see the feature flags section below.)
 
 ### Maturity
 
@@ -38,11 +38,11 @@ Spellbook should be considered to be in _alpha_. Almost all of the Hunspell test
 
 ### Feature flags
 
-The only feature flag currently is `default-hasher` which pulls in [`ahash`] and is enabled by default similar to the equivalent flag from [`hashbrown`].
+Spellbook follows [`hashbrown`] by including a `default-hasher` feature flag which is enabled by default. Like Hashbrown v0.15+, the default hasher is [`foldhash`].
 
-A non-cryptographic hash significantly improves the time it takes to initialize a dictionary and check and suggest words. Denial-of-service attacks are not usually relevant for this use-case since you would usually not take dictionary files as arbitrary inputs, so a non-cryptographic hash is probably ok. (I am not a cryptologist.) Note that Hashbrown v0.15 and above use [`foldhash`](https://github.com/orlp/foldhash) instead of aHash. In my runs of the Spellbook benchmarks `foldhash` doesn't make a perceptible difference.
+A non-cryptographic hash significantly improves the time it takes to initialize a dictionary and check and suggest words. Denial-of-service attacks are not usually relevant for this use-case since you would usually not take dictionary files as arbitrary inputs, so a non-cryptographic hash is probably ok. (I am not a cryptologist.) Note that Hashbrown v0.14 and lower used [`ahash`](https://github.com/tkaitchuck/aHash) instead of foldhash. In my runs of the Spellbook benchmarks there is no perceptible performance difference between `foldhash` and `ahash`.
 
-You can easily drop this default feature:
+If you wish to use a different hasher you may turn this default feature off:
 
 ```toml
 [dependencies]
@@ -106,6 +106,6 @@ COMPOUNDRULE n*mp
 * The parser for `.dic` and `.aff` files is loosely based on [ZSpell](https://github.com/pluots/zspell).
 
 [`hashbrown`]: https://github.com/rust-lang/hashbrown
-[`ahash`]: https://github.com/tkaitchuck/aHash
+[`foldhash`]: https://github.com/orlp/foldhash
 [`@zverok`]: https://github.com/zverok
 [zverok-blog]: https://zverok.space/spellchecker.html

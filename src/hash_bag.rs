@@ -266,7 +266,7 @@ mod test {
         let mut bag = super::HashBag::with_capacity_and_hasher(
             pairs.len(),
             // We use a hard-coded seed so that the display is deterministic.
-            ahash::RandomState::with_seeds(123, 456, 789, 1000),
+            foldhash::fast::FixedState::with_seed(1234567810),
         );
         for (k, v) in pairs {
             bag.insert(k, v);

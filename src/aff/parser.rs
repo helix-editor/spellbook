@@ -1800,6 +1800,8 @@ impl FromStr for Condition {
 
 #[cfg(test)]
 mod test {
+    use crate::DefaultHashBuilder;
+
     use super::*;
 
     macro_rules! flag {
@@ -2045,7 +2047,7 @@ mod test {
         PFX A 0 re- e
         "#;
 
-        let (_words, aff_data) = parse(aff, dic, ahash::RandomState::new()).unwrap();
+        let (_words, aff_data) = parse(aff, dic, DefaultHashBuilder::default()).unwrap();
         assert_eq!(2, aff_data.prefixes.table.len());
         assert_eq!(
             Prefix::new(flag!('A'), true, None, "re", Some("[^e]"), flagset![]).unwrap(),
@@ -2125,7 +2127,7 @@ mod test {
         COMPOUNDROOT o
         FORCEUCASE p
         "#;
-        let (_words, aff_data) = parse(aff, dic, ahash::RandomState::new()).unwrap();
+        let (_words, aff_data) = parse(aff, dic, DefaultHashBuilder::default()).unwrap();
         assert_eq!(aff_data.options.forbidden_word_flag, Some(flag!('a')));
         assert_eq!(aff_data.options.circumfix_flag, Some(flag!('b')));
         assert_eq!(aff_data.options.keep_case_flag, Some(flag!('c')));
@@ -2151,14 +2153,14 @@ mod test {
     fn break_pattern_parsing() {
         let dic = "0";
         let aff = "";
-        let (_words, aff_data) = parse(aff, dic, ahash::RandomState::new()).unwrap();
+        let (_words, aff_data) = parse(aff, dic, DefaultHashBuilder::default()).unwrap();
         // By default it's `^-`, `-` and `-$`.
         assert_eq!(aff_data.break_table.table.len(), 3);
         // Default break patterns can be removed by setting `BREAK 0`.
 
         let dic = "0";
         let aff = "BREAK 0";
-        let (_words, aff_data) = parse(aff, dic, ahash::RandomState::new()).unwrap();
+        let (_words, aff_data) = parse(aff, dic, DefaultHashBuilder::default()).unwrap();
         assert_eq!(aff_data.break_table.table.len(), 0);
     }
 

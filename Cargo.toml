@@ -15,7 +15,7 @@ rust-version = "1.70"
 hashbrown = { version = "0.15", default-features = false  }
 # Used as the default BuildHasher when the `default-hasher` feature flag
 # is enabled (which it is by default).
-ahash = { version = "0.8", default-features = false, optional = true }
+foldhash = { version = "0.1.2", default-features = false, optional = true }
 
 [dev-dependencies]
 # Used in unit tests to lazily compile en_US. Used instead of
@@ -28,5 +28,5 @@ chardetng = "0.1"
 
 [features]
 default = ["default-hasher"]
-# Sets a default hasher (currently ahash).
-default-hasher = ["dep:ahash"]
+# Sets a default hasher (currently foldhash).
+default-hasher = ["dep:foldhash"]

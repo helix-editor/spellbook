@@ -44,7 +44,7 @@ use hash_bag::HashBag;
 /// This type is only meaningful if the `default-hasher` feature is enabled. This type isn't meant
 /// to be used directly: it's used internally to provide a default hasher for [`Dictionary::new`].
 #[cfg(feature = "default-hasher")]
-pub type DefaultHashBuilder = core::hash::BuildHasherDefault<ahash::AHasher>;
+pub type DefaultHashBuilder = foldhash::fast::RandomState;
 
 /// Dummy default hasher for hash tables.
 ///
@@ -153,7 +153,7 @@ impl<S: BuildHasher + Clone> Dictionary<S> {
     /// ```
     /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
     /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
-    /// let hasher = ahash::RandomState::new();
+    /// let hasher = foldhash::fast::RandomState::default();
     /// let dict = spellbook::Dictionary::new_with_hasher(&aff, &dic, hasher).unwrap();
     /// ```
     pub fn new_with_hasher(
