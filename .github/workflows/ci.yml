@@ -19,12 +19,6 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Remove the rust-toolchain.toml
-        # `rustup` will attempt to use the toolchain from
-        # the file which will conflict with the custom versions
-        # we use in the matrix.
-        run: rm rust-toolchain.toml
-
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@master
         with:
@@ -43,9 +37,6 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
-
-      - name: Remove the rust-toolchain.toml
-        run: rm rust-toolchain.toml
 
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@master
@@ -66,9 +57,6 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
-
-      - name: Remove the rust-toolchain.toml
-        run: rm rust-toolchain.toml
 
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@master

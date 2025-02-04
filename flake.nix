@@ -20,7 +20,7 @@
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
-          toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          toolchain = pkgs.rust-bin.stable.latest.default;
         in
         pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
