@@ -12,7 +12,7 @@ use core::{
     hash::BuildHasher,
     iter::{Enumerate, Peekable, TakeWhile},
     num::NonZeroU16,
-    str::{Chars, FromStr, SplitWhitespace},
+    str::{FromStr, SplitWhitespace},
 };
 
 use hashbrown::HashMap;
@@ -569,7 +569,7 @@ fn parse_compound_syllable<'aff>(
 
 fn parse_flag_aliases(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
     lines.parse_table1("AF", |alias| {
-        let flagset = parse_flags_from_chars(cx.flag_type, alias.chars())?;
+        let flagset = parse_flags_from_str(cx.flag_type, alias)?;
         cx.flag_aliases.push(flagset);
         Ok(())
     })
@@ -1146,22 +1146,28 @@ fn parse_flag_from_str(
             try_flag_from_u16(number)
         }
         FlagType::Utf8 => {
-            let mut chars = input.chars();
-            let ch = chars.next().expect("asserted to be non-empty above");
-            try_flag_from_char(ch)
+            // A u16 is not large enough to fit any Unicode scalar. Nuspell rejects scalars with
+            // codepoint values above `u16::MAX` but Hunspell accepts them. Hunspell converts the
+            // input string into UTF-16 and then takes the first u16.
+            let u16 = input
+                .encode_utf16()
+                .next()
+                .expect("asserted to be non-empty above");
+            try_flag_from_u16(u16)
         }
     }
 }
 
-fn parse_flags_from_chars(
+fn parse_flags_from_str(
     flag_type: FlagType,
-    mut chars: Chars,
+    input: &str,
 ) -> core::result::Result<FlagSet, ParseFlagError> {
     use ParseFlagError::*;
 
     match flag_type {
         FlagType::Short => {
-            let flagset = chars
+            let flagset = input
+                .chars()
                 .map(|ch| {
                     if ch.is_ascii() {
                         // The flag is ASCII: it's a valid `u8` so it can fit into a `u16`.
@@ -1174,6 +1180,7 @@ fn parse_flags_from_chars(
             Ok(flagset.into())
         }
         FlagType::Long => {
+            let mut chars = input.chars();
             let mut flags = Vec::new();
             while let Some(c1) = chars.next() {
                 let c2 = match chars.next() {
@@ -1189,7 +1196,7 @@ fn parse_flags_from_chars(
             let mut flags = Vec::new();
             let mut number = String::new();
             let mut separated = false;
-            for ch in chars.by_ref() {
+            for ch in input.chars() {
                 if ch == ',' {
                     if separated {
                         return Err(DuplicateComma);
@@ -1209,8 +1216,12 @@ fn parse_flags_from_chars(
             Ok(flags.into())
         }
         FlagType::Utf8 => {
-            let flags = chars
-                .map(try_flag_from_char)
+            // Using the UTF-16 encoding looks funny here... Nuspell rejects Unicode flags that
+            // take more than 16 bits to represent, but Hunspell silently accepts them (though it
+            // might lead to weird behavior down the line.)
+            let flags = input
+                .encode_utf16()
+                .map(try_flag_from_u16)
                 .collect::<core::result::Result<Vec<Flag>, _>>()?;
             Ok(flags.into())
         }
@@ -1232,8 +1243,7 @@ fn decode_flagset(
 ) -> core::result::Result<FlagSet, ParseFlagError> {
     // Fast lane for numeric flag-types and empty aliases.
     if matches!(flag_type, FlagType::Numeric) || aliases.is_empty() {
-        // TODO: refactor this function to take a str
-        return parse_flags_from_chars(flag_type, input.chars());
+        return parse_flags_from_str(flag_type, input);
     }
 
     if let Some(index) = input
@@ -1245,7 +1255,7 @@ fn decode_flagset(
         // NOTE: the aliases are 1-indexed.
         Ok(aliases[index - 1].clone())
     } else {
-        parse_flags_from_chars(flag_type, input.chars())
+        parse_flags_from_str(flag_type, input)
     }
 }
 
@@ -1839,17 +1849,28 @@ mod test {
         );
         assert_eq!(Ok(flag!(1)), parse_flag_from_str(FlagType::Numeric, "1"));
 
+        // U+1F52D '🔭' is four bytes in UTF8 and two code units in UTF-16. Nuspell rejects flags
+        // like this but Hunspell accepts them by discarding the lower code unit.
+        let telescope_flag =
+            parse_flag_from_str(FlagType::Utf8, "🔭").expect("can parse 🔭 UTF-8 flag");
+        // A consequence of this is that flags describing large Unicode scalar values are not
+        // precise and two emojis (for example) may "collide" to reuse the same flag value, for
+        // example the above telescope U+1F52D and the next scalar, U+1F52E crystal ball.
+        let crystal_ball_flag =
+            parse_flag_from_str(FlagType::Utf8, "🔮").expect("can parse 🔮 UTF-8 flag");
+        assert_eq!(telescope_flag, crystal_ball_flag);
+
         assert_eq!(
             Ok(flagset![1]),
-            parse_flags_from_chars(FlagType::Numeric, "1".chars())
+            parse_flags_from_str(FlagType::Numeric, "1")
         );
         assert_eq!(
             Ok(flagset![1001, 2002]),
-            parse_flags_from_chars(FlagType::Numeric, "1001,2002".chars())
+            parse_flags_from_str(FlagType::Numeric, "1001,2002")
         );
         assert_eq!(
             Ok(flagset![214, 216, 54321]),
-            parse_flags_from_chars(FlagType::Numeric, "214,216,54321".chars())
+            parse_flags_from_str(FlagType::Numeric, "214,216,54321")
         );
     }
 

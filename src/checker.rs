@@ -2720,4 +2720,24 @@ mod test {
         assert!(EN_US.checker().check_lower_as_title(true).check("alice"));
         assert!(EN_US.checker().check_lower_as_upper(true).check("rsvp"));
     }
+
+    #[test]
+    fn emoji_pfx_flag_test() {
+        // See <https://github.com/titoBouzout/Dictionaries/blob/80a5112e41b21ade9d00b837c05b0d06280f138f/Spanish.aff#L75-L77>
+        let aff = r#"
+        FLAG UTF-8
+
+        PFX 🔭 Y 2
+        PFX 🔭 0 macro [^r]
+        PFX 🔭 0 macror r
+        "#;
+
+        let dic = r#"1
+        concierto/hS🔭
+        "#;
+
+        let dict = Dictionary::new(aff, dic).unwrap();
+
+        assert!(dict.check("macroconcierto"));
+    }
 }
