@@ -2,7 +2,6 @@
 
 extern crate test;
 
-use ahash::RandomState;
 use once_cell::sync::Lazy;
 use spellbook::Dictionary;
 use test::{black_box, Bencher};
@@ -10,14 +9,10 @@ use test::{black_box, Bencher};
 const EN_US_AFF: &str = include_str!("../vendor/en_US/en_US.aff");
 const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
 
+type RandomState = foldhash::fast::FixedState;
 /// A random seed from a sample run. The values aren't important here: just that they're constant.
 /// We don't want the benchmark outputs to reflect random changes to the seed.
-const HASHER: RandomState = RandomState::with_seeds(
-    16553733157538299820,
-    16824988918979132550,
-    1196480943954226392,
-    17486544621636611338,
-);
+const HASHER: RandomState = RandomState::with_seed(16553733157538299820);
 
 static EN_US: Lazy<Dictionary<RandomState>> =
     Lazy::new(|| Dictionary::new_with_hasher(EN_US_AFF, EN_US_DIC, HASHER).unwrap());

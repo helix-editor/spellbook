@@ -2,7 +2,7 @@
 
 extern crate test;
 
-use ahash::RandomState;
+use foldhash::fast::FixedState;
 use spellbook::Dictionary;
 use test::{black_box, Bencher};
 
@@ -11,12 +11,7 @@ const EN_US_DIC: &str = include_str!("../vendor/en_US/en_US.dic");
 
 /// A random seed from a sample run. The values aren't important here: just that they're constant.
 /// We don't want the benchmark outputs to reflect random changes to the seed.
-const HASHER: RandomState = RandomState::with_seeds(
-    16553733157538299820,
-    16824988918979132550,
-    1196480943954226392,
-    17486544621636611338,
-);
+const HASHER: FixedState = FixedState::with_seed(16553733157538299820);
 
 #[bench]
 #[allow(non_snake_case)]
