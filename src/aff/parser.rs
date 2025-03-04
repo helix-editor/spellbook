@@ -1416,7 +1416,8 @@ pub(crate) fn parse_compound_rule(
             loop {
                 let flag = match chars.next() {
                     Some(ch) if !ch.is_ascii() => return Err(ParseFlagError::NonAscii(ch).into()),
-                    Some(ch) if ch != '?' && ch != '*' => try_flag_from_char(ch)?,
+                    // All ASCII can fit into a u16 (and a u8).
+                    Some(ch) if ch != '?' && ch != '*' => try_flag_from_u16(ch as u16)?,
                     None => break,
                     _ => return Err(ParseCompoundRuleError::InvalidFormat),
                 };
