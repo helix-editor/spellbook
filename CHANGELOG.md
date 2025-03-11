@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- ## [Unreleased] -->
 
+## [v0.3.1] - 2025-03-11
+
+### Fixed
+
+* Fixed handling of Unicode flags which are represented by more than one code
+  unit in UTF-16 representation, for example emoji such as '🔭'.
+
 ## [v0.3.0] - 2025-02-04
 
 ### Added
