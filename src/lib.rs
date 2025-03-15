@@ -284,21 +284,18 @@ impl fmt::Debug for Dictionary {
 /// * `FlagType::Long`: the first ASCII character occupies the higher 8 bits and the second ASCII
 ///   character occupies the lower 8 bits.
 /// * `FlagType::Numeric`: the flag is represented as a 16 bit integer.
-/// * `FlagType::Utf8`: the flag is fit into two bytes if possible. Hunspell and Nuspell restrict
-///   UTF8 flags to UTF8 code-points representable in one or two bytes. Flags are just attributes,
-///   so using symbols, emoji or non-Latin alphabets is unnecessary. Languages like `ar` (Arabic)
-///   use the `FlagType::Numeric` encoding for example.
+/// * `FlagType::Utf8`: the flag is converted into UTF-16 representation and the first code unit
+///   is taken as the flag value. Note that a 16 bit integer is not large enough to fit all of
+///   Unicode. Code points with large values might "collide", for example '🔮' and '🔭' will be
+///   treated as the exact same flag. In practice, using emojis or any Unicode code points with
+///   large values for flags is rare.
 ///
 /// Finally, a flag with a value of zero is not valid for any `FlagType`, so we can safely
-/// represent this as a _non-zero_ u16. Hunspell calls this zero flag "`FLAG_NULL`". Layout
-/// optimizations allow us to represent `Option<Flag>` in 16 bits.
+/// represent this as a _non-zero_ u16. Hunspell calls this zero flag "`FLAG_NULL`". The
+/// `NonZero{NumberType}` Rust types are "null pointer optimized," meaning that an `Option<Flag>`
+/// takes the same amount of bits to represent as a `Flag`, saving us some space on the `AffData`.
 ///
 /// Hunspell uses an `unsigned short` for flags while Nuspell uses a `char16_t`.
-// TODO: experiment with using a regular u16 instead. Because the flags are not defined as zero
-// in `.aff` files, we can use regular u16 comparison to check if a flag is set rather than
-// checking an option. For example what we do now is basically
-// `flag.is_some_and(|flag| flagset.contains(flag))` but could be simply `flagset.contains(flag)`,
-// and we could optionally also modify `FlagSet::contains` to bail early if it sees 0u16.
 type Flag = core::num::NonZeroU16;
 
 /// A collection of flags belonging to a word.
