@@ -56,6 +56,13 @@ use std::hash::BuildHasherDefault;
 type Dictionary = spellbook::Dictionary<BuildHasherDefault<ahash::AHasher>>;
 ```
 
+### Spellbook in practice
+
+Spellbook is used "in the wild" in these projects:
+
+* [`codebook`](https://github.com/blopker/codebook) uses [`tree-sitter`](https://github.com/tree-sitter/tree-sitter) and Spellbook for a programming-language-friendly spell checking extension for the Zed editor and a LSP language server
+* [`cargo-spellcheck`](https://github.com/drahnr/cargo-spellcheck) uses Spellbook as an optional back end under the `spellbook` feature flag for a CLI spell checking tool for [`cargo`](https://github.com/rust-lang/cargo) Rust projects
+
 ### How does it work?
 
 For a more in depth overview, check out [`@zverok`]'s blog series [Rebuilding the spellchecker][zverok-blog].
