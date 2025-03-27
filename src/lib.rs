@@ -384,9 +384,13 @@ const AT_COMPOUND_BEGIN: AffixingMode = 1;
 const AT_COMPOUND_MIDDLE: AffixingMode = 2;
 const AT_COMPOUND_END: AffixingMode = 3;
 
+/// The maximum allowed length of a word in bytes.
+///
+/// Above this length the checker will always return `false` and the suggester will always return
+/// an empty output.
 // Nuspell limits the length of the input word:
 // <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/src/nuspell/dictionary.cxx#L156>
-const MAX_WORD_LEN: usize = 360;
+pub const MAX_WORD_LEN: usize = 360;
 
 /// The casing of a word.
 // Hunspell: <https://github.com/hunspell/hunspell/blob/8f9bb2957bfd74ca153fad96083a54488b518ca5/src/hunspell/csutil.hxx#L91-L96>
