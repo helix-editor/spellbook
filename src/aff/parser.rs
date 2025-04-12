@@ -1107,6 +1107,7 @@ fn try_flag_from_char(ch: char) -> core::result::Result<Flag, ParseFlagError> {
     try_flag_from_u32(ch as u32)
 }
 
+// See Hunspell's `HashMgr::decode_flag`.
 fn parse_flag_from_str(
     flag_type: FlagType,
     input: &str,
@@ -1114,105 +1115,91 @@ fn parse_flag_from_str(
     use ParseFlagError::*;
     assert!(!input.is_empty());
 
-    match flag_type {
+    let u16 = match flag_type {
         FlagType::Short => {
-            let mut chars = input.chars();
-            let ch = chars.next().expect("asserted to be non-empty above");
-            if ch.is_ascii() {
-                // The flag is ASCII: it's a valid `u8` so it can fit into a `u16`.
-                try_flag_from_u16(ch as u16)
-            } else {
-                Err(NonAscii(ch))
-            }
+            // NOTE: Hunspell and Nuspell do not validate that the flag is ASCII and will accept
+            // (and work correctly, for the most part) non-ASCII flags.
+            // Also see <https://github.com/helix-editor/spellbook/issues/8>.
+            input.as_bytes()[0] as u16
         }
         FlagType::Long => {
-            let mut chars = input.chars();
-            let c1 = chars.next().expect("asserted to be non-empty above");
-            if !c1.is_ascii() {
-                return Err(NonAscii(c1));
+            // Same here: the first two bytes are taken and everything else is ignored.
+            let bytes = input.as_bytes();
+            if bytes.len() < 2 {
+                return Err(MissingSecondChar);
             }
-            let c2 = match chars.next() {
-                Some(ch) => ch,
-                None => return Err(MissingSecondChar(c1)),
-            };
-            if !c2.is_ascii() {
-                return Err(NonAscii(c2));
-            }
-
-            try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))
+            u16::from_ne_bytes([bytes[0], bytes[1]])
         }
-        FlagType::Numeric => {
-            let number = input.parse::<u16>().map_err(ParseIntError)?;
-            try_flag_from_u16(number)
-        }
+        FlagType::Numeric => input.parse::<u16>().map_err(ParseIntError)?,
         FlagType::Utf8 => {
             // A u16 is not large enough to fit any Unicode scalar. Nuspell rejects scalars with
             // codepoint values above `u16::MAX` but Hunspell accepts them. Hunspell converts the
             // input string into UTF-16 and then takes the first u16.
-            let u16 = input
+            input
                 .encode_utf16()
                 .next()
-                .expect("asserted to be non-empty above");
-            try_flag_from_u16(u16)
+                .expect("asserted to be non-empty above")
         }
-    }
+    };
+    try_flag_from_u16(u16)
 }
 
+// See Hunspell's `HashMgr::decode_flags`.
 fn parse_flags_from_str(
     flag_type: FlagType,
     input: &str,
 ) -> core::result::Result<FlagSet, ParseFlagError> {
     use ParseFlagError::*;
+    // See above notes about Unicode handling in `parse_flag_from_str`. Handling bytes here may
+    // cause the flags to handle Unicode poorly leading to "collisions" between two distinct
+    // Unicode characters.
+
+    if input.is_empty() {
+        return Ok(FlagSet::default());
+    }
 
     match flag_type {
         FlagType::Short => {
             let flagset = input
-                .chars()
-                .map(|ch| {
-                    if ch.is_ascii() {
-                        // The flag is ASCII: it's a valid `u8` so it can fit into a `u16`.
-                        try_flag_from_u16(ch as u16)
-                    } else {
-                        Err(ParseFlagError::NonAscii(ch))
-                    }
-                })
+                .bytes()
+                .map(|b| try_flag_from_u16(b as u16))
                 .collect::<core::result::Result<Vec<Flag>, _>>()?;
             Ok(flagset.into())
         }
         FlagType::Long => {
-            let mut chars = input.chars();
-            let mut flags = Vec::new();
-            while let Some(c1) = chars.next() {
-                let c2 = match chars.next() {
-                    Some(ch) => ch,
-                    None => return Err(MissingSecondChar(c1)),
-                };
-                let flag = try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))?;
-                flags.push(flag);
+            let bytes = input.as_bytes();
+            let mut len = bytes.len();
+            if (len & 1) == 1 {
+                return Err(MissingSecondChar);
+            }
+            len >>= 1;
+            let mut flags = Vec::with_capacity(len);
+            for i in 0..len {
+                let u16 = u16::from_ne_bytes([bytes[i << 1], bytes[(i << 1) | 1]]);
+                flags.push(try_flag_from_u16(u16)?);
             }
             Ok(flags.into())
         }
         FlagType::Numeric => {
             let mut flags = Vec::new();
-            let mut number = String::new();
-            let mut separated = false;
-            for ch in input.chars() {
-                if ch == ',' {
-                    if separated {
-                        return Err(DuplicateComma);
-                    }
-                    let n = number.parse::<u16>().map_err(ParseIntError)?;
-                    flags.push(try_flag_from_u16(n)?);
-                    number.clear();
-                } else {
-                    number.push(ch);
+            let mut start = 0;
+            while let Some(idx) = input[start..].find(',').map(|i| i + start) {
+                if input.as_bytes().get(idx + 1).copied() == Some(b',') {
+                    return Err(DuplicateComma);
                 }
-                separated = ch == ',';
+                let flag = input[start..idx]
+                    .parse::<u16>()
+                    .map_err(ParseIntError)
+                    .and_then(try_flag_from_u16)?;
+                flags.push(flag);
+                start = idx + 1;
             }
-            if !number.is_empty() {
-                let n = number.parse::<u16>().map_err(ParseIntError)?;
-                flags.push(try_flag_from_u16(n)?);
-            }
+            let flag = input[start..]
+                .parse::<u16>()
+                .map_err(ParseIntError)
+                .and_then(try_flag_from_u16)?;
+            flags.push(flag);
+
             Ok(flags.into())
         }
         FlagType::Utf8 => {
@@ -1693,7 +1680,7 @@ impl fmt::Display for UnknownFlagTypeError {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ParseFlagError {
     NonAscii(char),
-    MissingSecondChar(char),
+    MissingSecondChar,
     ParseIntError(core::num::ParseIntError),
     DuplicateComma,
     ZeroFlag,
@@ -1704,9 +1691,7 @@ impl fmt::Display for ParseFlagError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NonAscii(ch) => write!(f, "expected ascii char, found {}", ch),
-            Self::MissingSecondChar(ch) => {
-                write!(f, "expected two chars, {} is missing its second", ch)
-            }
+            Self::MissingSecondChar => f.write_str("expected two chars, found one"),
             Self::ParseIntError(err) => err.fmt(f),
             Self::DuplicateComma => f.write_str("unexpected extra comma"),
             Self::ZeroFlag => f.write_str("flag cannot be zero"),
@@ -1847,6 +1832,14 @@ mod test {
             Ok(flag!('a' as u16)),
             parse_flag_from_str(FlagType::Short, "a")
         );
+        // Non-ASCII is accepted for short flags too. Only the first byte is taken.
+        assert_eq!(Ok(flag!(195)), parse_flag_from_str(FlagType::Short, "À"));
+        // As below, this can cause "collisions."
+        // Here both characters share the same first byte (`0xC3`).
+        assert_eq!(
+            parse_flag_from_str(FlagType::Short, "À"),
+            parse_flag_from_str(FlagType::Short, "Ã")
+        );
         assert_eq!(Ok(flag!(1)), parse_flag_from_str(FlagType::Numeric, "1"));
 
         // U+1F52D '🔭' is four bytes in UTF8 and two code units in UTF-16. Nuspell rejects flags
@@ -1871,6 +1864,10 @@ mod test {
         assert_eq!(
             Ok(flagset![214, 216, 54321]),
             parse_flags_from_str(FlagType::Numeric, "214,216,54321")
+        );
+        assert_eq!(
+            Err(ParseFlagError::DuplicateComma),
+            parse_flags_from_str(FlagType::Numeric, "123,,789")
         );
     }
 
