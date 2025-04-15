@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- ## [Unreleased] -->
 
+## [v0.3.2] - 2025-04-15
+
+### Fixed
+
+* Aligned parsing of flags with Hunspell. This fixes cases where a dictionary would
+  use non-ASCII characters for flags without setting `FLAG UTF-8`.
+
 ## [v0.3.1] - 2025-03-11
 
 ### Fixed

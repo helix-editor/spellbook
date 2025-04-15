@@ -1,6 +1,6 @@
 [package]
 name = "spellbook"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Michael Davis <mcarsondavis@gmail.com>"]
 description = "A spellchecking library compatible with Hunspell dictionaries"
 readme = "README.md"
