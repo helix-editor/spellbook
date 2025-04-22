@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- ## [Unreleased] -->
 
+## [v0.3.3] - 2025-04-21
+
+### Fixed
+
+* Fixed a panic possible in the suggester when suggesting corrections for a word with
+  non-ASCII characters near the end in dictionaries with replacement patterns with end
+  anchors.
+    * For example `caféx` in a french dictionary which has a `REP è$ e` rule.
+
 ## [v0.3.2] - 2025-04-15
 
 ### Fixed
