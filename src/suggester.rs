@@ -436,10 +436,8 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         debug_assert_eq!(&scratch, word);
 
         for (from, to) in self.checker.aff.replacements.end_word_replacements() {
-            let Some(idx) = word.len().checked_sub(from.len()) else {
-                continue;
-            };
-            if &word[idx..] == from {
+            if word.ends_with(from) {
+                let idx = word.len() - from.len();
                 scratch.replace_range(idx.., to);
                 self.try_rep_suggestion(&scratch, out);
                 scratch.replace_range(idx.., from);
@@ -1359,5 +1357,22 @@ mod test {
         assert!(suggest(&dict, "assssa").contains(&"aßßa".to_string()));
         assert!(suggest(&dict, "foofoo").contains(&"foobar".to_string()));
         assert!(suggest(&dict, "foofoo").contains(&"barbar".to_string()));
+    }
+
+    #[test]
+    fn rep_panic() {
+        // <https://github.com/blopker/codebook/issues/67>
+        let aff = r#"
+        FLAG long
+
+        REP 1
+        REP è$ e
+        "#;
+        let dic = r#"6
+        café/L'D'Q'
+        café/S.
+        "#;
+        let dict = Dictionary::new(aff, dic).unwrap();
+        assert!(suggest(&dict, "caféx").contains(&"café".to_string()));
     }
 }
