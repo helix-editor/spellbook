@@ -1832,10 +1832,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         debug_assert_eq!(&scratch, word);
 
         for (from, to) in self.aff.replacements.end_word_replacements() {
-            let Some(idx) = word.len().checked_sub(from.len()) else {
-                continue;
-            };
-            if &word[idx..] == from {
+            if word.ends_with(from) {
+                let idx = word.len() - from.len();
                 scratch.replace_range(idx.., to);
                 if self
                     .check_simple_word(&scratch, HiddenHomonym::SkipHiddenHomonym)
