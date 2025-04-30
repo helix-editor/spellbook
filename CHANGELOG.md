@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- ## [Unreleased] -->
 
+## [v0.3.4] - 2025-04-30
+
+### Fixed
+
+* Fixed a panic similar to the one fixed in v0.3.3 but within the checker instead
+  of the suggester.
+    * This panic could happen in dictionaries which used `REP` patterns with end
+      anchors (i.e. the first word after `REP` ends in `$`) which also sets
+      `CHECKCOMPOUNDREP` and other related compounding rules.
+
 ## [v0.3.3] - 2025-04-21
 
 ### Fixed
