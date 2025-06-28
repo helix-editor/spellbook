@@ -24,6 +24,7 @@ extern crate alloc;
 
 pub(crate) mod aff;
 pub(crate) mod checker;
+pub mod hash_array_mapped_trie;
 mod hash_bag;
 mod suggester;
 mod umbra_slice;
