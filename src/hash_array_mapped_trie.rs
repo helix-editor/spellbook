@@ -1,9 +1,8 @@
 use core::{
     borrow::Borrow,
-    fmt,
-    hash::{self, BuildHasher, Hash},
+    hash::{BuildHasher, Hash},
     iter,
-    mem::{self, size_of, ManuallyDrop, MaybeUninit},
+    mem::{self, size_of},
     ptr::{self, NonNull},
     slice,
 };
@@ -46,30 +45,107 @@ where
     V: Clone + Hash,
     S: BuildHasher,
 {
-    pub fn get<'map, 'key, Q>(&'map self, k: &'key Q) -> GetAllIter<'map, 'key, Q, K, V>
+    pub fn insert(&mut self, k: K, v: V) {
+        todo!()
+    }
+
+    /// Gets the key-value pairs for all instances of the key in the bag.
+    ///
+    /// Note that the main work done by this iterator is done in this function rather than the
+    /// iterator: `get` is more expensive than iteration.
+    pub fn get<'key, 'map: 'key, Q>(
+        &'map self,
+        key: &'key Q,
+    ) -> impl Iterator<Item = (&'map K, &'map V)> + 'key
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let hash = make_hash(&*self.build_hasher, k);
+        const SHIFT: usize = size_of::<usize>();
+        const MAX_LEVEL: usize = size_of::<usize>();
 
-        GetAllIter {
-            key: k,
-            hash,
-            node: &self.root,
-            collision_index: 0,
+        let mut hash = make_hash(&*self.build_hasher, key);
+        let mut entry = &self.root;
+        let mut level = 0;
+
+        loop {
+            debug_assert!(level <= MAX_LEVEL);
+
+            match entry {
+                Entry::Subtrie(subtrie) => {
+                    // Generally this branch should be the hottest.
+
+                    // TODO: this should be done with shifts instead
+                    let index = (hash % Bitmap::BITS as u64) as usize;
+                    match subtrie.get(index) {
+                        Some(next_entry) => entry = next_entry,
+                        None => return GetAllIter::Value(None),
+                    }
+                }
+                Entry::Value((k, v)) => {
+                    // NOTE: is the equality check necessary? It's unlikely, but theoretically a
+                    // nonexistent key could collide with a real key, so we need to be diligent
+                    // and check that they actually _are_ equal.
+                    let value = if k.borrow() == key {
+                        Some((k, v))
+                    } else {
+                        None
+                    };
+                    return GetAllIter::Value(value);
+                }
+                Entry::Collision(node) => {
+                    // This branch is likely if a key actually does have multiple values in the
+                    // bag. Iterate over the values. It should be less likely than singular
+                    // K-V pairs though if we assume that accidental collisions are unlikely and
+                    // that duplicate keys are also somewhat rare.
+                    return GetAllIter::CollisionNode {
+                        key,
+                        node,
+                        // TODO: fast-forward here to the first value, if there is one?
+                        index: 0,
+                    };
+                }
+            }
+
+            level += 1;
+            hash >>= SHIFT;
         }
     }
 }
 
-pub struct GetAllIter<'map, 'key, Q: ?Sized, K: Clone, V: Clone> {
-    key: &'key Q,
-    hash: u64,
-    node: &'map Entry<(K, V)>,
-    collision_index: usize,
+enum GetAllIter<'map, 'key, Q: ?Sized, K, V> {
+    Value(Option<(&'map K, &'map V)>),
+    CollisionNode {
+        key: &'key Q,
+        node: &'map CollisionNode<(K, V)>,
+        index: usize,
+    },
 }
 
-// `make_hash`, `make_hasher`, and `Iter` are pulled from Hashbrown's `map` module
+impl<'map, 'key, Q, K, V> Iterator for GetAllIter<'map, 'key, Q, K, V>
+where
+    K: Borrow<Q>,
+    Q: Eq + ?Sized,
+{
+    type Item = (&'map K, &'map V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Value(value) => value.take(),
+            Self::CollisionNode { key, node, index } => {
+                let (k, v) = node.values.get(*index)?;
+                if k.borrow() == *key {
+                    *index += 1;
+                    Some((k, v))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+// `make_hash`is pulled from Hashbrown's `map` module
 // at `274c7bbd79398881e0225c0133e423ce60d7a8f1`.
 
 fn make_hash<Q, S>(hash_builder: &S, val: &Q) -> u64
@@ -81,14 +157,6 @@ where
     let mut state = hash_builder.build_hasher();
     val.hash(&mut state);
     state.finish()
-}
-
-fn make_hasher<Q, V, S>(hash_builder: &S) -> impl Fn(&(Q, V)) -> u64 + '_
-where
-    Q: Hash,
-    S: BuildHasher,
-{
-    move |val| make_hash::<Q, S>(hash_builder, &val.0)
 }
 
 #[derive(Clone, Copy)]
@@ -130,6 +198,8 @@ impl Bitmap {
         }
     }
 
+    // TODO: this needs some sanity unit testing. I think a `- 1` could be necessary here based
+    // on the OTP source.
     fn index_of(&self, index: usize) -> Result<usize, usize> {
         debug_assert!(index < Self::BITS);
         let pop = (self.0 << index).count_ones() as usize;
@@ -182,22 +252,29 @@ impl ExactSizeIterator for BitmapIter {
 }
 
 #[repr(C)]
-struct Subtrie<T: Clone> {
+struct Subtrie<T> {
     bitmap: Bitmap,
     // NOTE: this makes this type a dynamically sized type so it must always be on the heap.
-    entries: [Entry<T>],
+    entries: [T],
 }
 
-impl<T: Clone> Subtrie<T> {
-    fn entries(&self) -> &[Entry<T>] {
+impl<T> Subtrie<T> {
+    fn get(&self, index: usize) -> Option<&T> {
+        match self.bitmap.index_of(index) {
+            Ok(idx) => Some(&self.entries[idx]),
+            Err(_) => None,
+        }
+    }
+
+    fn entries(&self) -> &[T] {
         let len = self.bitmap.len();
-        let data = ptr::addr_of!(self.entries) as *const Entry<T>;
+        let data = ptr::addr_of!(self.entries) as *const T;
         unsafe { slice::from_raw_parts(data, len) }
     }
 
-    fn entries_mut(&mut self) -> &mut [Entry<T>] {
+    fn entries_mut(&mut self) -> &mut [T] {
         let len = self.bitmap.len();
-        let data = ptr::addr_of_mut!(self.entries) as *mut Entry<T>;
+        let data = ptr::addr_of_mut!(self.entries) as *mut T;
         unsafe { slice::from_raw_parts_mut(data, len) }
     }
 
@@ -205,7 +282,7 @@ impl<T: Clone> Subtrie<T> {
         Self::new(Bitmap::EMPTY, iter::empty())
     }
 
-    fn new<I: ExactSizeIterator<Item = Entry<T>>>(bitmap: Bitmap, entries: I) -> Arc<Self> {
+    fn new<I: ExactSizeIterator<Item = T>>(bitmap: Bitmap, entries: I) -> Arc<Self> {
         let len = bitmap.len();
         assert_eq!(bitmap.len(), entries.len());
 
@@ -218,7 +295,7 @@ impl<T: Clone> Subtrie<T> {
         let ptr = ptr::slice_from_raw_parts_mut(ptr, len) as *mut Self;
 
         unsafe { ptr::addr_of_mut!((*ptr).bitmap).write(bitmap) }
-        let entries_ptr = unsafe { ptr::addr_of_mut!((*ptr).entries) as *mut Entry<T> };
+        let entries_ptr = unsafe { ptr::addr_of_mut!((*ptr).entries) as *mut T };
         for (i, entry) in entries.enumerate() {
             unsafe { entries_ptr.add(i).write(entry) };
         }
@@ -228,14 +305,14 @@ impl<T: Clone> Subtrie<T> {
 
     fn layout(len: usize) -> alloc::Layout {
         alloc::Layout::new::<Bitmap>()
-            .extend(alloc::Layout::array::<Entry<T>>(len).unwrap())
+            .extend(alloc::Layout::array::<T>(len).unwrap())
             .unwrap()
             .0
             .pad_to_align()
     }
 }
 
-impl<T: Clone> Drop for Subtrie<T> {
+impl<T> Drop for Subtrie<T> {
     fn drop(&mut self) {
         if mem::needs_drop::<T>() {
             for entry in self.entries_mut() {
@@ -255,12 +332,12 @@ impl<T: Clone> Drop for Subtrie<T> {
 enum Entry<T: Clone> {
     Value(T),
     Collision(Arc<CollisionNode<T>>),
-    Subtrie(Arc<Subtrie<T>>),
+    Subtrie(Arc<Subtrie<Self>>),
 }
 
 /// When two keys have exactly the same hash they must share nodes.
 #[derive(Clone)]
-struct CollisionNode<T: Clone> {
+struct CollisionNode<T> {
     // hash? why do they store the hash?
     // Arc<[T]>?
     values: Vec<T>,
