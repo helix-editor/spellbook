@@ -23,19 +23,19 @@
           toolchain = pkgs.rust-bin.stable.latest.default;
         in
         pkgs.mkShell {
-          nativeBuildInputs = with pkgs; [
-            (toolchain.override {
-              extensions = [
-                "rust-src"
-                "clippy"
-                "llvm-tools-preview"
-              ];
-            })
-            rust-analyzer
-            cargo-flamegraph
-            cargo-llvm-cov
-            valgrind
-          ];
+          nativeBuildInputs = with pkgs;
+            [
+              (toolchain.override {
+                extensions = [
+                  "rust-src"
+                  "clippy"
+                  "llvm-tools-preview"
+                ];
+              })
+              rust-analyzer
+              cargo-flamegraph
+            ]
+            ++ (lib.optionals stdenv.isLinux [cargo-llvm-cov valgrind]);
           RUST_BACKTRACE = "1";
         }
       );
