@@ -3,6 +3,7 @@ use core::{
     hash::{BuildHasher, Hash},
     iter,
     mem::{self, size_of},
+    ops::Deref,
     ptr::{self, NonNull},
     slice,
 };
@@ -11,9 +12,11 @@ use crate::alloc::{alloc, boxed::Box, sync::Arc, vec::Vec};
 
 // NOTE: using 64 entries per subtrie... Should also try 32..
 
+// TODO: do we actually need the clone bound here? Makes things messy.
+
 pub struct HashArrayMappedTrie<K: Clone, V: Clone, S> {
     len: usize,
-    root: Entry<(K, V)>,
+    root: Arc<SparseArray<Entry<(K, V)>>>,
     build_hasher: Arc<S>,
 }
 
@@ -33,7 +36,7 @@ impl<K: Clone, V: Clone, S: Default> Default for HashArrayMappedTrie<K, V, S> {
     fn default() -> Self {
         Self {
             len: 0,
-            root: Entry::Subtrie(Subtrie::empty()),
+            root: SparseArray::empty(),
             build_hasher: Arc::new(S::default()),
         }
     }
@@ -45,8 +48,106 @@ where
     V: Clone + Hash,
     S: BuildHasher,
 {
-    pub fn insert(&mut self, k: K, v: V) {
-        todo!()
+    const SHIFT: usize = size_of::<usize>();
+    const MAX_LEVEL: usize = size_of::<usize>();
+
+    pub fn insert(&mut self, key: K, value: V) {
+        let hash = make_hash(&*self.build_hasher, &key);
+        Self::insert_impl(key, value, hash, &mut self.root, hash, 0);
+    }
+
+    fn insert_impl(
+        key: K,
+        value: V,
+        full_hash: u64,
+        mut trie: &mut Arc<SparseArray<Entry<(K, V)>>>,
+        mut hash: u64,
+        mut level: usize,
+    ) {
+        loop {
+            debug_assert!(level <= Self::MAX_LEVEL);
+
+            let index = shift_hash(hash);
+            match trie.bitmap.index_of(index) {
+                Ok(idx) => {
+                    // The entry in the subtrie is occupied. Replace it.
+                    let trie_mut = SparseArray::make_mut(trie);
+                    let entry = &mut trie_mut.entries[idx];
+                    match entry {
+                        Entry::Subtrie(next_trie) => trie = next_trie,
+                        Entry::Leaf {
+                            hash: leaf_hash,
+                            data: (leaf_key, leaf_value),
+                        } => {
+                            *entry = if level == Self::MAX_LEVEL {
+                                // Equal hashes at the top level creates a collision node.
+                                // The full hashes are equal here since we've exhausted our hash
+                                // bits at the max level.
+                                debug_assert_eq!(*leaf_hash, full_hash);
+                                let data = ArcSlice::new(
+                                    2,
+                                    [(key, value), (leaf_key.clone(), leaf_value.clone())]
+                                        .into_iter(),
+                                );
+                                Entry::Collision {
+                                    hash: full_hash,
+                                    data,
+                                }
+                            } else {
+                                // Otherwise create a new subtrie and insert the old leaf and the
+                                // new data into that.
+                                let mut subtrie = SparseArray::empty();
+                                Self::insert_impl(
+                                    leaf_key.clone(),
+                                    leaf_value.clone(),
+                                    *leaf_hash,
+                                    &mut subtrie,
+                                    hash,
+                                    level,
+                                );
+                                Entry::Subtrie(subtrie)
+                            };
+                            return;
+                        }
+                        Entry::Collision {
+                            hash: leaf_hash,
+                            data,
+                        } => {
+                            // Update the collision node to prepend the new key-value pair.
+                            debug_assert_eq!(*leaf_hash, full_hash);
+                            let new_data = ArcSlice::new(
+                                data.len() + 1,
+                                iter::once((key, value)).chain(data.iter().cloned()),
+                            );
+                            let new_entry = Entry::Collision {
+                                hash: full_hash,
+                                data: new_data,
+                            };
+                            *entry = new_entry;
+                            return;
+                        }
+                    }
+                }
+                Err(idx) => {
+                    // Insert a new leaf node in the trie.
+                    let bitmap = trie.bitmap.set(index);
+                    let (before, after) = trie.entries.split_at(idx);
+                    let entries = before
+                        .iter()
+                        .cloned()
+                        .chain(iter::once(Entry::Leaf {
+                            hash: full_hash,
+                            data: (key, value),
+                        }))
+                        .chain(after.iter().cloned());
+                    *trie = SparseArray::new(bitmap, entries);
+                    return;
+                }
+            }
+
+            level += 1;
+            hash >>= Self::SHIFT;
+        }
     }
 
     /// Gets the key-value pairs for all instances of the key in the bag.
@@ -61,54 +162,40 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        const SHIFT: usize = size_of::<usize>();
-        const MAX_LEVEL: usize = size_of::<usize>();
-
         let mut hash = make_hash(&*self.build_hasher, key);
-        let mut entry = &self.root;
+        let mut trie = &self.root;
         let mut level = 0;
 
         loop {
-            debug_assert!(level <= MAX_LEVEL);
+            debug_assert!(level <= Self::MAX_LEVEL);
 
-            match entry {
-                Entry::Subtrie(subtrie) => {
-                    // Generally this branch should be the hottest.
-
-                    // TODO: this should be done with shifts instead
-                    let index = (hash % Bitmap::BITS as u64) as usize;
-                    match subtrie.get(index) {
-                        Some(next_entry) => entry = next_entry,
-                        None => return GetAllIter::Value(None),
+            match trie.get(shift_hash(hash)) {
+                Some(entry) => match entry {
+                    Entry::Subtrie(next_trie) => trie = next_trie,
+                    Entry::Leaf { data: (k, v), .. } => {
+                        // NOTE: is the equality check necessary? It's unlikely, but theoretically a
+                        // nonexistent key could collide with a real key, so we need to be diligent
+                        // and check that they actually _are_ equal.
+                        let value = if k.borrow() == key {
+                            Some((k, v))
+                        } else {
+                            None
+                        };
+                        return GetAllIter::Value(value);
                     }
-                }
-                Entry::Value((k, v)) => {
-                    // NOTE: is the equality check necessary? It's unlikely, but theoretically a
-                    // nonexistent key could collide with a real key, so we need to be diligent
-                    // and check that they actually _are_ equal.
-                    let value = if k.borrow() == key {
-                        Some((k, v))
-                    } else {
-                        None
-                    };
-                    return GetAllIter::Value(value);
-                }
-                Entry::Collision(node) => {
-                    // This branch is likely if a key actually does have multiple values in the
-                    // bag. Iterate over the values. It should be less likely than singular
-                    // K-V pairs though if we assume that accidental collisions are unlikely and
-                    // that duplicate keys are also somewhat rare.
-                    return GetAllIter::CollisionNode {
-                        key,
-                        node,
-                        // TODO: fast-forward here to the first value, if there is one?
-                        index: 0,
-                    };
-                }
+                    Entry::Collision { data, .. } => {
+                        return GetAllIter::CollisionNode {
+                            key,
+                            data,
+                            index: 0,
+                        }
+                    }
+                },
+                None => return GetAllIter::Value(None),
             }
 
             level += 1;
-            hash >>= SHIFT;
+            hash >>= Self::SHIFT;
         }
     }
 }
@@ -117,7 +204,7 @@ enum GetAllIter<'map, 'key, Q: ?Sized, K, V> {
     Value(Option<(&'map K, &'map V)>),
     CollisionNode {
         key: &'key Q,
-        node: &'map CollisionNode<(K, V)>,
+        data: &'map ArcSlice<(K, V)>,
         index: usize,
     },
 }
@@ -132,8 +219,8 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Value(value) => value.take(),
-            Self::CollisionNode { key, node, index } => {
-                let (k, v) = node.values.get(*index)?;
+            Self::CollisionNode { key, data, index } => {
+                let (k, v) = data.get(*index)?;
                 if k.borrow() == *key {
                     *index += 1;
                     Some((k, v))
@@ -198,8 +285,7 @@ impl Bitmap {
         }
     }
 
-    // TODO: this needs some sanity unit testing. I think a `- 1` could be necessary here based
-    // on the OTP source.
+    /// Convert an index into the bitmap into an index of the sparse array.
     fn index_of(&self, index: usize) -> Result<usize, usize> {
         debug_assert!(index < Self::BITS);
         let pop = (self.0 << index).count_ones() as usize;
@@ -251,14 +337,19 @@ impl ExactSizeIterator for BitmapIter {
     }
 }
 
+const fn shift_hash(hash: u64) -> usize {
+    // TODO: this should be done with shifts instead
+    (hash % Bitmap::BITS as u64) as usize
+}
+
 #[repr(C)]
-struct Subtrie<T> {
+struct SparseArray<T> {
     bitmap: Bitmap,
     // NOTE: this makes this type a dynamically sized type so it must always be on the heap.
     entries: [T],
 }
 
-impl<T> Subtrie<T> {
+impl<T> SparseArray<T> {
     fn get(&self, index: usize) -> Option<&T> {
         match self.bitmap.index_of(index) {
             Ok(idx) => Some(&self.entries[idx]),
@@ -278,14 +369,12 @@ impl<T> Subtrie<T> {
         unsafe { slice::from_raw_parts_mut(data, len) }
     }
 
-    fn empty() -> Arc<Subtrie<T>> {
+    fn empty() -> Arc<SparseArray<T>> {
         Self::new(Bitmap::EMPTY, iter::empty())
     }
 
-    fn new<I: ExactSizeIterator<Item = T>>(bitmap: Bitmap, entries: I) -> Arc<Self> {
+    fn new<I: IntoIterator<Item = T>>(bitmap: Bitmap, entries: I) -> Arc<Self> {
         let len = bitmap.len();
-        assert_eq!(bitmap.len(), entries.len());
-
         let layout = Self::layout(len);
         let nullable = unsafe { alloc::alloc(layout) };
         let ptr = match NonNull::new(nullable) {
@@ -296,9 +385,12 @@ impl<T> Subtrie<T> {
 
         unsafe { ptr::addr_of_mut!((*ptr).bitmap).write(bitmap) }
         let entries_ptr = unsafe { ptr::addr_of_mut!((*ptr).entries) as *mut T };
-        for (i, entry) in entries.enumerate() {
+        let mut i = 0;
+        for entry in entries {
             unsafe { entries_ptr.add(i).write(entry) };
+            i += 1;
         }
+        assert_eq!(i, len);
         let boxed = unsafe { Box::from_raw(ptr) };
         boxed.into()
     }
@@ -312,7 +404,25 @@ impl<T> Subtrie<T> {
     }
 }
 
-impl<T> Drop for Subtrie<T> {
+impl<T: Clone> SparseArray<T> {
+    fn make_mut(this: &mut Arc<Self>) -> &mut Self {
+        // Need lexical borrows to fix this :/
+        // TODO: check if edition 2024 improves this.
+        if Arc::get_mut(this).is_some() {
+            return Arc::get_mut(this).unwrap();
+        }
+
+        *this = Self::clone(this);
+        // Ideally this would be get_mut_unchecked
+        Arc::get_mut(this).unwrap()
+    }
+
+    fn clone(this: &Arc<Self>) -> Arc<Self> {
+        Self::new(this.bitmap, this.entries().iter().cloned())
+    }
+}
+
+impl<T> Drop for SparseArray<T> {
     fn drop(&mut self) {
         if mem::needs_drop::<T>() {
             for entry in self.entries_mut() {
@@ -329,16 +439,65 @@ impl<T> Drop for Subtrie<T> {
 
 #[derive(Clone)]
 #[repr(C)]
-enum Entry<T: Clone> {
-    Value(T),
-    Collision(Arc<CollisionNode<T>>),
-    Subtrie(Arc<Subtrie<Self>>),
+enum Entry<T> {
+    Leaf { hash: u64, data: T },
+    Collision { hash: u64, data: ArcSlice<T> },
+    Subtrie(Arc<SparseArray<Self>>),
 }
 
-/// When two keys have exactly the same hash they must share nodes.
+// DSTs are a real pain :/
+// Maybe a customizable DST wrapper makes more sense...
 #[derive(Clone)]
-struct CollisionNode<T> {
-    // hash? why do they store the hash?
-    // Arc<[T]>?
-    values: Vec<T>,
+struct ArcSlice<T>(Arc<[T]>);
+
+impl<T> ArcSlice<T> {
+    fn new<I: Iterator<Item = T>>(len: usize, elements: I) -> Self {
+        let layout = alloc::Layout::array::<T>(len).unwrap().pad_to_align();
+        let nullable = unsafe { alloc::alloc(layout) };
+        let ptr = match NonNull::new(nullable) {
+            Some(ptr) => ptr.as_ptr(),
+            None => alloc::handle_alloc_error(layout),
+        };
+        let ptr = ptr::slice_from_raw_parts_mut(ptr, len) as *mut [T];
+        let elements_ptr = unsafe { ptr::addr_of_mut!((*ptr)) as *mut T };
+        let mut i = 0;
+        for element in elements {
+            unsafe { elements_ptr.add(i).write(element) };
+            i += 1;
+        }
+        assert_eq!(i, len);
+        let boxed = unsafe { Box::from_raw(ptr) };
+        Self(boxed.into())
+    }
+}
+
+impl<T> Deref for ArcSlice<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bitmap() {
+        assert_eq!(Bitmap::EMPTY.len(), 0);
+        for idx in 0..Bitmap::BITS {
+            assert!(!Bitmap::EMPTY.get(idx));
+            assert!(Bitmap::EMPTY.set(idx).get(idx));
+        }
+    }
+
+    #[test]
+    fn sparse_array() {
+        let a = SparseArray::<()>::empty();
+        assert_eq!(a.entries(), &[]);
+        assert_eq!(a.get(0), None);
+
+        // let a = SparseArray::new(Bitmap::, [5, 10]);
+    }
 }
