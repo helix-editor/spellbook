@@ -18,7 +18,7 @@
 //! [`hashbrown`]: https://github.com/rust-lang/hashbrown
 // TODO: more.
 
-#![no_std]
+// #![no_std]
 
 extern crate alloc;
 

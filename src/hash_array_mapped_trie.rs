@@ -1,5 +1,6 @@
 use core::{
     borrow::Borrow,
+    fmt,
     hash::{BuildHasher, Hash},
     iter,
     mem::{self, size_of},
@@ -8,19 +9,20 @@ use core::{
     slice,
 };
 
-use crate::alloc::{alloc, boxed::Box, sync::Arc, vec::Vec};
+use crate::alloc::{alloc, boxed::Box, sync::Arc};
 
 // NOTE: using 64 entries per subtrie... Should also try 32..
 
 // TODO: do we actually need the clone bound here? Makes things messy.
 
-pub struct HashArrayMappedTrie<K: Clone, V: Clone, S> {
+#[derive(Clone)]
+pub struct HashArrayMappedTrie<K, V, S> {
     len: usize,
     root: Arc<SparseArray<Entry<(K, V)>>>,
     build_hasher: Arc<S>,
 }
 
-impl<K: Clone, V: Clone, S> HashArrayMappedTrie<K, V, S> {
+impl<K, V, S> HashArrayMappedTrie<K, V, S> {
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
@@ -64,6 +66,7 @@ where
         mut hash: u64,
         mut level: usize,
     ) {
+        // TODO: update len
         loop {
             debug_assert!(level <= Self::MAX_LEVEL);
 
@@ -250,6 +253,12 @@ where
 #[repr(C)]
 struct Bitmap(usize);
 
+impl fmt::Debug for Bitmap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Binary::fmt(&self.0, f)
+    }
+}
+
 impl Bitmap {
     const EMPTY: Self = Self(0);
 
@@ -271,69 +280,21 @@ impl Bitmap {
         Self(self.0 | 1 << index)
     }
 
-    fn clear(self, index: usize) -> Self {
-        debug_assert!(index < Self::BITS);
-
-        Self(self.0 & !(1 << index))
-    }
-
-    fn iter(self) -> BitmapIter {
-        BitmapIter {
-            bits: self,
-            index: 0,
-            len: self.len(),
-        }
-    }
+    // would be used by a delete routine...
+    // fn clear(self, index: usize) -> Self {
+    //     debug_assert!(index < Self::BITS);
+    //     Self(self.0 & !(1 << index))
+    // }
 
     /// Convert an index into the bitmap into an index of the sparse array.
     fn index_of(&self, index: usize) -> Result<usize, usize> {
         debug_assert!(index < Self::BITS);
-        let pop = (self.0 << index).count_ones() as usize;
+        let pop = self.0.wrapping_shl(usize::BITS - index as u32).count_ones() as usize;
         if self.get(index) {
             Ok(pop)
         } else {
             Err(pop)
         }
-    }
-}
-
-struct BitmapIter {
-    bits: Bitmap,
-    index: usize,
-    len: usize,
-}
-
-impl BitmapIter {
-    fn remaining(&self) -> usize {
-        (self.bits.0 >> self.index).count_ones() as usize
-    }
-}
-
-impl Iterator for BitmapIter {
-    // The index into entries
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.index > self.len {
-                return None;
-            }
-            let idx = self.index;
-            self.index += 1;
-            if self.bits.get(idx) {
-                return Some(idx);
-            }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
-    }
-}
-
-impl ExactSizeIterator for BitmapIter {
-    fn len(&self) -> usize {
-        self.remaining()
     }
 }
 
@@ -490,6 +451,13 @@ mod tests {
             assert!(!Bitmap::EMPTY.get(idx));
             assert!(Bitmap::EMPTY.set(idx).get(idx));
         }
+
+        let b = Bitmap::EMPTY.set(5).set(10);
+        eprintln!("{b:?}");
+
+        assert_eq!(b.len(), 2);
+        assert_eq!(b.index_of(5), Ok(0));
+        assert_eq!(b.index_of(10), Ok(1));
     }
 
     #[test]
