@@ -2,8 +2,7 @@ use core::{
     borrow::Borrow,
     fmt,
     hash::{BuildHasher, Hash},
-    iter,
-    mem::{self, size_of},
+    iter, mem,
     ops::Deref,
     ptr::{self, NonNull},
     slice,
@@ -48,8 +47,8 @@ impl<K, V, S> HashArrayMappedTrie<K, V, S> {
 
 impl<K, V, S> HashArrayMappedTrie<K, V, S>
 where
-    K: Clone + Hash + Eq,
-    V: Clone,
+    K: Clone + Hash + Eq + fmt::Debug,
+    V: Clone + fmt::Debug,
     S: BuildHasher,
 {
     pub fn insert(&mut self, key: K, value: V) {
@@ -58,6 +57,7 @@ where
         self.len += 1;
     }
 
+    // TODO: move this to SparseArray?
     fn insert_impl(
         key: K,
         value: V,
@@ -66,6 +66,7 @@ where
         mut hash: u64,
         mut level: usize,
     ) {
+        eprintln!("inserting ({key:?}, {value:?}) with hash {full_hash:?} into {trie:?}");
         loop {
             debug_assert!(level <= Self::MAX_LEVEL);
 
@@ -156,7 +157,8 @@ where
 
 impl<K, V, S> HashArrayMappedTrie<K, V, S>
 where
-    K: Hash + Eq,
+    K: Hash + Eq + fmt::Debug,
+    V: fmt::Debug,
     S: BuildHasher,
 {
     /// Gets the key-value pairs for all instances of the key in the bag.
@@ -169,7 +171,7 @@ where
     ) -> impl Iterator<Item = (&'map K, &'map V)> + 'key
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
+        Q: Hash + Eq + ?Sized + fmt::Debug,
     {
         let mut hash = make_hash(&*self.build_hasher, key);
         let mut trie = &self.root;
@@ -178,13 +180,15 @@ where
         loop {
             debug_assert!(level <= Self::MAX_LEVEL);
 
+            eprintln!("getting {key:?} with hash {hash:?} in {trie:?}");
+
             match trie.get(Bitmap::hash_to_index(hash)) {
                 Some(entry) => match entry {
                     Entry::Subtrie(next_trie) => trie = next_trie,
                     Entry::Leaf { data: (k, v), .. } => {
-                        // NOTE: is the equality check necessary? It's unlikely, but theoretically a
-                        // nonexistent key could collide with a real key, so we need to be diligent
-                        // and check that they actually _are_ equal.
+                        // NOTE: is the equality check necessary? It's unlikely, but theoretically
+                        // a nonexistent key could collide with a real key, so we need to be
+                        // diligent and check that they actually _are_ equal.
                         let value = if k.borrow() == key {
                             Some((k, v))
                         } else {
@@ -265,8 +269,10 @@ impl fmt::Debug for Bitmap {
 impl Bitmap {
     const EMPTY: Self = Self(0);
 
+    const BITS: u32 = usize::BITS;
     const MAX_ENTRIES: usize = usize::BITS as usize;
-    const SHIFT: usize = usize::BITS.trailing_zeros() as usize;
+    /// The number of bits to consume of a hash to find an index in the bitmap.
+    const SHIFT: usize = Self::MAX_ENTRIES.ilog2() as usize;
 
     /// Convert a 64-bit hash value to an index in the bitmap.
     ///
@@ -274,8 +280,8 @@ impl Bitmap {
     /// be in the range `0..Bitmap::MAX_ENTRIES`.
     const fn hash_to_index(hash: u64) -> usize {
         // Bitwise equivalent to `hash % Self::MAX_ENTRIES`:
-        let mask = (Self::SHIFT - 1) as u64;
-        (hash & mask) as usize
+        const MASK: u64 = ((1 << Bitmap::SHIFT) - 1) as u64;
+        (hash & MASK) as usize
     }
 
     const fn len(&self) -> usize {
@@ -297,7 +303,14 @@ impl Bitmap {
     /// Convert an index into the bitmap into an index of the sparse array.
     fn index_of(&self, index: usize) -> Result<usize, usize> {
         debug_assert!(index < Self::MAX_ENTRIES);
-        let pop = self.0.wrapping_shl(usize::BITS - index as u32).count_ones() as usize;
+
+        let bits_under_index = Self::BITS - index as u32;
+        let pop = if bits_under_index < Self::BITS {
+            (self.0 << bits_under_index).count_ones() as usize
+        } else {
+            0
+        };
+
         if self.get(index) {
             Ok(pop)
         } else {
@@ -306,12 +319,24 @@ impl Bitmap {
     }
 }
 
-// Supports 64 elements on 64-bit architecture (`Bitmap::BITS`)
 #[repr(C)]
 struct SparseArray<T> {
     bitmap: Bitmap,
-    // NOTE: this makes this type a dynamically sized type so it must always be on the heap.
     entries: [T],
+}
+
+impl<T: fmt::Debug> fmt::Debug for SparseArray<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut map = f.debug_map();
+        map.entry(&"bitmap", &self.bitmap);
+        let mut entries = self.entries.iter();
+        for idx in 0..self.bitmap.len() {
+            if self.bitmap.get(idx) {
+                map.entry(&idx, &entries.next().unwrap());
+            }
+        }
+        map.finish()
+    }
 }
 
 impl<T> SparseArray<T> {
@@ -382,7 +407,7 @@ impl<T> Drop for SparseArray<T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[repr(C)]
 enum Entry<T> {
     Leaf { hash: u64, data: T },
@@ -392,7 +417,7 @@ enum Entry<T> {
 
 // DSTs are a real pain :/
 // Maybe a customizable DST wrapper makes more sense...
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct ArcSlice<T>(Arc<[T]>);
 
 impl<T> ArcSlice<T> {
@@ -436,13 +461,31 @@ mod tests {
             assert!(Bitmap::EMPTY.set(idx).get(idx));
         }
 
-        let b = Bitmap::EMPTY.set(5).set(10);
+        assert_eq!(Bitmap::hash_to_index(1), 1);
+        assert_eq!(Bitmap::hash_to_index(Bitmap::MAX_ENTRIES as u64 + 1), 1);
+        for n in 0..10_000 {
+            assert_eq!(
+                Bitmap::hash_to_index(n),
+                (n % Bitmap::MAX_ENTRIES as u64) as usize
+            );
+        }
 
+        let b = Bitmap::EMPTY.set(5).set(10);
         assert_eq!(b.len(), 2);
         assert_eq!(b.index_of(5), Ok(0));
         assert_eq!(b.index_of(7), Err(1));
         assert_eq!(b.index_of(10), Ok(1));
         assert_eq!(b.index_of(13), Err(2));
+
+        let b = Bitmap::EMPTY.set(1);
+        assert_eq!(b.len(), 1);
+        assert_eq!(b.index_of(1), Ok(0));
+        assert_eq!(b.index_of(5), Err(1));
+
+        let b = Bitmap::EMPTY.set(0);
+        assert_eq!(b.len(), 1);
+        assert_eq!(b.index_of(0), Ok(0));
+        assert_eq!(b.index_of(5), Err(1));
     }
 
     #[test]
@@ -476,5 +519,7 @@ mod tests {
         let mut map = Hamt::default();
         map.insert(1, 10);
         assert_eq!(map.get(&1).collect::<Vec<_>>(), [(&1, &10)]);
+        map.insert(5, 5);
+        assert_eq!(map.get(&5).collect::<Vec<_>>(), [(&5, &5)]);
     }
 }
