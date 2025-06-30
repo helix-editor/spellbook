@@ -10,10 +10,6 @@ use core::{
 
 use crate::alloc::{alloc, boxed::Box, sync::Arc};
 
-// NOTE: using 64 entries per subtrie... Should also try 32..
-
-// TODO: do we actually need the clone bound here? Makes things messy.
-
 #[derive(Clone)]
 pub struct HashArrayMappedTrie<K, V, S> {
     len: usize,
@@ -25,13 +21,14 @@ impl<K, V, S: Default> Default for HashArrayMappedTrie<K, V, S> {
     fn default() -> Self {
         Self {
             len: 0,
-            root: SparseArray::empty(),
+            root: Arc::new(SparseArray::empty()),
             build_hasher: Arc::new(S::default()),
         }
     }
 }
 
 impl<K, V, S> HashArrayMappedTrie<K, V, S> {
+    // How many times we can use and then shift the number of hash bits.
     const MAX_LEVEL: usize = u64::BITS as usize / Bitmap::SHIFT;
 
     #[inline(always)]
@@ -57,7 +54,6 @@ where
         self.len += 1;
     }
 
-    // TODO: move this to SparseArray?
     fn insert_impl(
         key: K,
         value: V,
@@ -71,11 +67,15 @@ where
             debug_assert!(level <= Self::MAX_LEVEL);
 
             let index = Bitmap::hash_to_index(hash);
-            match trie.bitmap.index_of(index) {
+
+            level += 1;
+            hash >>= Bitmap::SHIFT;
+
+            match trie.bitmap().index_of(index) {
                 Ok(idx) => {
                     // The entry in the subtrie is occupied. Replace it.
-                    let trie_mut = SparseArray::make_mut(trie);
-                    let entry = &mut trie_mut.entries[idx];
+                    let trie_mut = Arc::make_mut(trie);
+                    let entry = &mut trie_mut.entries_mut()[idx];
                     match entry {
                         Entry::Subtrie(next_trie) => trie = next_trie,
                         Entry::Leaf {
@@ -99,7 +99,7 @@ where
                             } else {
                                 // Otherwise create a new subtrie and insert the old leaf and the
                                 // new data into that.
-                                let mut subtrie = SparseArray::empty();
+                                let mut subtrie = Arc::new(SparseArray::empty());
                                 Self::insert_impl(
                                     leaf_key.clone(),
                                     leaf_value.clone(),
@@ -134,8 +134,8 @@ where
                 }
                 Err(idx) => {
                     // Insert a new leaf node in the trie.
-                    let bitmap = trie.bitmap.set(index);
-                    let (before, after) = trie.entries.split_at(idx);
+                    let bitmap = trie.bitmap().set(index);
+                    let (before, after) = trie.entries().split_at(idx);
                     let entries = before
                         .iter()
                         .cloned()
@@ -144,13 +144,10 @@ where
                             data: (key, value),
                         }))
                         .chain(after.iter().cloned());
-                    *trie = SparseArray::new(bitmap, entries);
+                    *trie = Arc::new(SparseArray::new(bitmap, entries));
                     return;
                 }
             }
-
-            level += 1;
-            hash >>= Bitmap::SHIFT;
         }
     }
 }
@@ -320,57 +317,66 @@ impl Bitmap {
 }
 
 #[repr(C)]
-struct SparseArray<T> {
+struct SparseArrayInner<T> {
     bitmap: Bitmap,
-    entries: [T],
+    entries: T, // repeated
 }
 
-impl<T: fmt::Debug> fmt::Debug for SparseArray<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut map = f.debug_map();
-        map.entry(&"bitmap", &self.bitmap);
-        let mut entries = self.entries.iter();
-        for idx in 0..self.bitmap.len() {
-            if self.bitmap.get(idx) {
-                map.entry(&idx, &entries.next().unwrap());
-            }
-        }
-        map.finish()
-    }
-}
+struct SparseArray<T>(NonNull<SparseArrayInner<T>>);
 
 impl<T> SparseArray<T> {
+    fn as_inner(&self) -> &SparseArrayInner<T> {
+        unsafe { self.0.as_ref() }
+    }
+
+    fn bitmap(&self) -> Bitmap {
+        self.as_inner().bitmap
+    }
+
+    fn entries(&self) -> &[T] {
+        let len = self.bitmap().len();
+        let ptr = self.0.as_ptr();
+        let entries = unsafe { ptr::addr_of!((*ptr).entries) };
+        unsafe { slice::from_raw_parts(entries, len) }
+    }
+
+    fn entries_mut(&mut self) -> &mut [T] {
+        let len = self.bitmap().len();
+        let ptr = self.0.as_ptr();
+        let entries = unsafe { ptr::addr_of_mut!((*ptr).entries) };
+        unsafe { slice::from_raw_parts_mut(entries, len) }
+    }
+
     fn get(&self, index: usize) -> Option<&T> {
-        match self.bitmap.index_of(index) {
-            Ok(idx) => Some(&self.entries[idx]),
+        match self.bitmap().index_of(index) {
+            Ok(idx) => Some(&self.entries()[idx]),
             Err(_) => None,
         }
     }
 
-    fn empty() -> Arc<SparseArray<T>> {
+    fn empty() -> Self {
         Self::new(Bitmap::EMPTY, iter::empty())
     }
 
-    fn new<I: IntoIterator<Item = T>>(bitmap: Bitmap, entries: I) -> Arc<Self> {
+    fn new<I: IntoIterator<Item = T>>(bitmap: Bitmap, entries: I) -> Self {
         let len = bitmap.len();
         let layout = Self::layout(len);
         let nullable = unsafe { alloc::alloc(layout) };
         let ptr = match NonNull::new(nullable) {
-            Some(ptr) => ptr.as_ptr(),
+            Some(ptr) => ptr.as_ptr().cast::<SparseArrayInner<T>>(),
             None => alloc::handle_alloc_error(layout),
         };
-        let ptr = ptr::slice_from_raw_parts_mut(ptr, len) as *mut Self;
 
         unsafe { ptr::addr_of_mut!((*ptr).bitmap).write(bitmap) }
-        let entries_ptr = unsafe { ptr::addr_of_mut!((*ptr).entries) as *mut T };
+        let entries_ptr = unsafe { ptr::addr_of_mut!((*ptr).entries) };
         let mut i = 0;
         for entry in entries {
             unsafe { entries_ptr.add(i).write(entry) };
             i += 1;
         }
         assert_eq!(i, len);
-        let boxed = unsafe { Box::from_raw(ptr) };
-        boxed.into()
+        // Checked above.
+        Self(unsafe { NonNull::new_unchecked(ptr) })
     }
 
     fn layout(len: usize) -> alloc::Layout {
@@ -382,28 +388,36 @@ impl<T> SparseArray<T> {
     }
 }
 
-impl<T: Clone> SparseArray<T> {
-    fn make_mut(this: &mut Arc<Self>) -> &mut Self {
-        // Need lexical borrows to fix this :/
-        // TODO: check if edition 2024 improves this.
-        if Arc::get_mut(this).is_some() {
-            return Arc::get_mut(this).unwrap();
-        }
-
-        *this = Self::new(this.bitmap, this.entries.iter().cloned());
-        // Ideally this would be get_mut_unchecked
-        Arc::get_mut(this).unwrap()
+impl<T: Clone> Clone for SparseArray<T> {
+    fn clone(&self) -> Self {
+        Self::new(self.bitmap(), self.entries().iter().cloned())
     }
 }
 
 impl<T> Drop for SparseArray<T> {
     fn drop(&mut self) {
         if mem::needs_drop::<T>() {
-            for entry in &mut self.entries {
+            for entry in self.entries_mut() {
                 let ptr = entry as *mut _;
                 unsafe { ptr::drop_in_place(ptr) };
             }
         }
+        let layout = Self::layout(self.bitmap().len());
+        unsafe { alloc::dealloc(self.0.as_ptr().cast(), layout) }
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for SparseArray<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut map = f.debug_map();
+        map.entry(&"bitmap", &self.bitmap());
+        let mut entries = self.entries().iter();
+        for idx in 0..self.bitmap().len() {
+            if self.bitmap().get(idx) {
+                map.entry(&idx, &entries.next().unwrap());
+            }
+        }
+        map.finish()
     }
 }
 
@@ -491,25 +505,16 @@ mod tests {
     #[test]
     fn sparse_array() {
         let a = SparseArray::<()>::empty();
-        assert_eq!(&a.entries, &[]);
+        assert_eq!(&a.entries(), &[]);
         assert_eq!(a.get(0), None);
 
-        let mut a = SparseArray::new(Bitmap::EMPTY.set(5).set(10), [123, 456]);
-        assert_eq!(&a.entries, &[123, 456]);
+        let a = SparseArray::new(Bitmap::EMPTY.set(5).set(10), [123, 456]);
+        assert_eq!(&a.entries(), &[123, 456]);
         assert_eq!(a.get(0), None);
         assert_eq!(a.get(5), Some(&123));
         assert_eq!(a.get(7), None);
         assert_eq!(a.get(10), Some(&456));
         assert_eq!(a.get(13), None);
-
-        let old_a = a.clone();
-        let new_a = SparseArray::make_mut(&mut a);
-        new_a.entries[1] = 789;
-        assert_eq!(new_a.get(10), Some(&789));
-        assert_eq!(old_a.entries[1], 456);
-        assert_eq!(old_a.get(10), Some(&456));
-        assert_eq!(a.entries[1], 789);
-        assert_eq!(a.get(10), Some(&789));
     }
 
     type Hamt<K, V> = HashArrayMappedTrie<K, V, crate::DefaultHashBuilder>;
