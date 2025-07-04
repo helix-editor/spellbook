@@ -429,11 +429,10 @@ impl<T> SparseArray<T> {
 
         let ptr = non_null.as_ptr();
         unsafe { ptr::addr_of_mut!((*ptr).bitmap).write(bitmap) };
-        let mut entries_ptr = unsafe { ptr::addr_of_mut!((*ptr).entries).cast::<T>() };
+        let entries_ptr = unsafe { ptr::addr_of_mut!((*ptr).entries).cast::<T>() };
         let mut i = 0;
         for entry in entries {
-            unsafe { entries_ptr.write(entry) };
-            entries_ptr = unsafe { entries_ptr.add(1) };
+            unsafe { entries_ptr.add(i).write(entry) };
             i += 1;
         }
         assert_eq!(i, len);
