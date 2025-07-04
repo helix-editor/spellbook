@@ -18,14 +18,14 @@
 //! [`hashbrown`]: https://github.com/rust-lang/hashbrown
 // TODO: more.
 
-// #![no_std]
+#![no_std]
 
 extern crate alloc;
 
 pub(crate) mod aff;
 pub(crate) mod checker;
 pub mod hash_array_mapped_trie;
-mod hash_bag;
+// mod hash_bag;
 mod suggester;
 mod umbra_slice;
 
@@ -38,7 +38,7 @@ pub use suggester::Suggester;
 use crate::alloc::{borrow::Cow, slice, string::String, vec::Vec};
 use aff::AffData;
 use core::{cmp::Ordering, fmt, hash::BuildHasher};
-use hash_bag::HashBag;
+// use hash_bag::HashBag;
 
 /// Default hasher for hash tables.
 ///
@@ -68,7 +68,7 @@ type Stem = umbra_slice::UmbraString;
 /// Each line in a dictionary's `.dic` file is parsed and inserted into the hash bag. The word
 /// list is central to checking. In a nutshell the checking procedure is to try to find an edit of
 /// the input word's casing and prefixes/suffixes that produces a word in this hash table.
-type WordList<S> = HashBag<Stem, FlagSet, S>;
+type WordList<S> = hash_array_mapped_trie::HashArrayMappedTrie<Stem, FlagSet, S>;
 
 /// A data structure allowing for fast lookup of words in a dictionary.
 ///

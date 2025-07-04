@@ -8,28 +8,26 @@ use core::{
     slice,
 };
 
-use crate::alloc::{alloc, sync::Arc, vec::Vec};
+use crate::alloc::{alloc, sync::Arc, vec, vec::Vec};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct HashArrayMappedTrie<K, V, S> {
     len: usize,
     root: Arc<SparseArray<Entry<(K, V)>>>,
     build_hasher: Arc<S>,
 }
 
-impl<K, V, S: Default> Default for HashArrayMappedTrie<K, V, S> {
-    fn default() -> Self {
-        Self {
-            len: 0,
-            root: Arc::new(SparseArray::empty()),
-            build_hasher: Arc::new(S::default()),
-        }
-    }
-}
-
 impl<K, V, S> HashArrayMappedTrie<K, V, S> {
     // How many times we can use and then shift the number of hash bits.
     const MAX_LEVEL: usize = u64::BITS as usize / Bitmap::SHIFT;
+
+    pub fn with_hasher(build_hasher: S) -> Self {
+        Self {
+            len: Default::default(),
+            root: Default::default(),
+            build_hasher: Arc::new(build_hasher),
+        }
+    }
 
     #[inline(always)]
     pub fn len(&self) -> usize {
@@ -40,12 +38,17 @@ impl<K, V, S> HashArrayMappedTrie<K, V, S> {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
+
+    pub fn iter(&self) -> Iter<K, V> {
+        let root = TrieNodeIter::Entries(self.root.entries().iter());
+        Iter { stack: vec![root] }
+    }
 }
 
 impl<K, V, S> HashArrayMappedTrie<K, V, S>
 where
-    K: Clone + Hash + Eq + fmt::Debug,
-    V: Clone + fmt::Debug,
+    K: Clone + Hash + Eq,
+    V: Clone,
     S: BuildHasher,
 {
     pub fn insert(&mut self, key: K, value: V) {
@@ -62,7 +65,6 @@ where
         mut hash: u64,
         mut level: usize,
     ) {
-        // eprintln!("inserting ({key:?}, {value:?}) with hash {full_hash:?} into {trie:?}");
         loop {
             debug_assert!(level <= Self::MAX_LEVEL);
 
@@ -84,17 +86,11 @@ where
                         } => {
                             *entry = if level == Self::MAX_LEVEL {
                                 // Equal hashes at the top level creates a collision node.
-                                // The full hashes are equal here since we've exhausted our hash
-                                // bits at the max level.
-                                debug_assert_eq!(*leaf_hash, full_hash);
                                 let data = ArcSlice::new(
                                     2,
                                     [(key, value), (leaf_key.clone(), leaf_value.clone())],
                                 );
-                                Entry::Collision {
-                                    hash: full_hash,
-                                    data,
-                                }
+                                Entry::Collision { data }
                             } else {
                                 // Otherwise replace the leaf with a new subtrie containing a leaf
                                 // for the key-value pair and insert the old leaf into that.
@@ -117,20 +113,13 @@ where
                             };
                             return;
                         }
-                        Entry::Collision {
-                            hash: leaf_hash,
-                            data,
-                        } => {
+                        Entry::Collision { data } => {
                             // Update the collision node to prepend the new key-value pair.
-                            debug_assert_eq!(*leaf_hash, full_hash);
                             let new_data = ArcSlice::new(
                                 data.len() + 1,
                                 iter::once((key, value)).chain(data.iter().cloned()),
                             );
-                            let new_entry = Entry::Collision {
-                                hash: full_hash,
-                                data: new_data,
-                            };
+                            let new_entry = Entry::Collision { data: new_data };
                             *entry = new_entry;
                             return;
                         }
@@ -158,8 +147,7 @@ where
 
 impl<K, V, S> HashArrayMappedTrie<K, V, S>
 where
-    K: Hash + Eq + fmt::Debug,
-    V: fmt::Debug,
+    K: Hash + Eq,
     S: BuildHasher,
 {
     /// Gets the key-value pairs for all instances of the key in the bag.
@@ -180,8 +168,6 @@ where
 
         loop {
             debug_assert!(level <= Self::MAX_LEVEL);
-
-            // eprintln!("getting {key:?} with hash {hash:?} in {trie:?}");
 
             match trie.get(Bitmap::hash_to_index(hash)) {
                 Some(entry) => match entry {
@@ -210,6 +196,19 @@ where
             level += 1;
             hash >>= Bitmap::SHIFT;
         }
+    }
+
+    // Helper to act more like a standard dictionary-like type, used just for tests.
+    #[cfg(test)]
+    pub fn get_one<'key, 'map: 'key, Q>(&'map self, key: &'key Q) -> Option<&'map V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized + fmt::Debug,
+    {
+        self.get(key).next().map(|(k, v)| {
+            assert_eq!(k.borrow(), key);
+            v
+        })
     }
 }
 
@@ -257,8 +256,53 @@ where
     state.finish()
 }
 
+enum TrieNodeIter<'a, T> {
+    Entries(slice::Iter<'a, Entry<T>>),
+    Values(slice::Iter<'a, T>),
+}
+
+pub struct Iter<'a, K, V> {
+    stack: Vec<TrieNodeIter<'a, (K, V)>>,
+}
+
+impl<'a, K, V> Iterator for Iter<'a, K, V> {
+    type Item = &'a (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // The iterator is implemented by depth-first search. This is a small spin on the very
+        // classic DFS approach which uses a stack of iterators - this works well for collision
+        // nodes.
+        // See the bottom of <https://en.wikipedia.org/wiki/Depth-first_search#Pseudocode>.
+        loop {
+            match self.stack.last_mut()? {
+                TrieNodeIter::Entries(entries) => match entries.next() {
+                    Some(entry) => match entry {
+                        Entry::Leaf { data, .. } => return Some(data),
+                        Entry::Collision { data } => {
+                            self.stack.push(TrieNodeIter::Values(data.iter()));
+                        }
+                        Entry::Subtrie(trie) => {
+                            self.stack
+                                .push(TrieNodeIter::Entries(trie.entries().iter()));
+                        }
+                    },
+                    None => {
+                        self.stack.pop();
+                    }
+                },
+                TrieNodeIter::Values(values) => match values.next() {
+                    Some(v) => return Some(v),
+                    None => {
+                        self.stack.pop();
+                    }
+                },
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
-#[repr(C)]
+#[repr(transparent)]
 struct Bitmap(usize);
 
 impl fmt::Debug for Bitmap {
@@ -289,7 +333,7 @@ impl Bitmap {
         self.0.count_ones() as usize
     }
 
-    const fn get(&self, index: usize) -> bool {
+    const fn is_set(&self, index: usize) -> bool {
         debug_assert!(index < Self::MAX_ENTRIES);
 
         self.0 & (1 << index) != 0
@@ -312,7 +356,7 @@ impl Bitmap {
             0
         };
 
-        if self.get(index) {
+        if self.is_set(index) {
             Ok(pop)
         } else {
             Err(pop)
@@ -322,33 +366,48 @@ impl Bitmap {
 
 #[repr(C)]
 struct SparseArrayInner<T> {
+    /// A bitmap describing which indices in the sparse array are allocated.
+    ///
+    /// For example if a bitmap has only the fifth bit set, then the `entries` array below will
+    /// be allocated with that one entry. Looking up index 5 would return that entry and any other
+    /// index would return `None`.
     bitmap: Bitmap,
-    // This field is repeated zero-to-`Bitmap::MAX_ENTRIES` times.
-    // It's basically `[T]` but dynamically sized types are very
-    // hard to work with.
-    entries: T,
+    /// The entries in the sparse array.
+    ///
+    /// This field has room for between zero and `Bitmap::MAX_ENTRIES` depending on how many slots
+    /// are occupied.
+    ///
+    /// A sparse array with one index set has one entry at this location - no matter what index in
+    /// the bitmap is set. When there are multiple indices set in the bitmap, the entries here
+    /// are stored consecutively so that the least significant set bit comes first, then the next
+    /// most significant and so on. If a sparse array is full then
+    entries: [T; 0],
 }
 
-#[repr(transparent)]
-struct SparseArray<T>(NonNull<SparseArrayInner<T>>);
+struct SparseArray<T> {
+    ptr: NonNull<SparseArrayInner<T>>,
+}
+
+unsafe impl<T> Sync for SparseArray<T> {}
+unsafe impl<T> Send for SparseArray<T> {}
 
 impl<T> SparseArray<T> {
     fn bitmap(&self) -> Bitmap {
-        let ptr = self.0.as_ptr();
-        unsafe { (*ptr).bitmap }
+        let ptr = self.ptr.as_ptr();
+        unsafe { ptr.read().bitmap }
     }
 
     fn entries(&self) -> &[T] {
         let len = self.bitmap().len();
-        let ptr = self.0.as_ptr();
-        let entries = unsafe { ptr::addr_of!((*ptr).entries) };
+        let ptr = self.ptr.as_ptr();
+        let entries = unsafe { ptr::addr_of!((*ptr).entries).cast() };
         unsafe { slice::from_raw_parts(entries, len) }
     }
 
     fn entries_mut(&mut self) -> &mut [T] {
         let len = self.bitmap().len();
-        let ptr = self.0.as_ptr();
-        let entries = unsafe { ptr::addr_of_mut!((*ptr).entries) };
+        let ptr = self.ptr.as_ptr();
+        let entries = unsafe { ptr::addr_of_mut!((*ptr).entries).cast() };
         unsafe { slice::from_raw_parts_mut(entries, len) }
     }
 
@@ -357,10 +416,6 @@ impl<T> SparseArray<T> {
             Ok(idx) => Some(&self.entries()[idx]),
             Err(_) => None,
         }
-    }
-
-    fn empty() -> Self {
-        Self::new(Bitmap::EMPTY, iter::empty())
     }
 
     fn new<I: IntoIterator<Item = T>>(bitmap: Bitmap, entries: I) -> Self {
@@ -373,24 +428,34 @@ impl<T> SparseArray<T> {
         };
 
         let ptr = non_null.as_ptr();
-        unsafe { ptr::addr_of_mut!((*ptr).bitmap).write(bitmap) }
-        let entries_ptr = unsafe { ptr::addr_of_mut!((*ptr).entries) };
+        unsafe { ptr::addr_of_mut!((*ptr).bitmap).write(bitmap) };
+        let mut entries_ptr = unsafe { ptr::addr_of_mut!((*ptr).entries).cast::<T>() };
         let mut i = 0;
         for entry in entries {
-            unsafe { entries_ptr.add(i).write(entry) };
+            unsafe { entries_ptr.write(entry) };
+            entries_ptr = unsafe { entries_ptr.add(1) };
             i += 1;
         }
         assert_eq!(i, len);
 
-        Self(non_null)
+        Self { ptr: non_null }
     }
 
     fn layout(len: usize) -> alloc::Layout {
         alloc::Layout::new::<Bitmap>()
+            // .align_to(align_of::<T>())
+            // .unwrap()
+            // .pad_to_align()
             .extend(alloc::Layout::array::<T>(len).unwrap())
             .unwrap()
             .0
             .pad_to_align()
+    }
+}
+
+impl<T> Default for SparseArray<T> {
+    fn default() -> Self {
+        Self::new(Bitmap::EMPTY, iter::empty())
     }
 }
 
@@ -409,7 +474,7 @@ impl<T> Drop for SparseArray<T> {
             }
         }
         let layout = Self::layout(self.bitmap().len());
-        unsafe { alloc::dealloc(self.0.as_ptr().cast(), layout) }
+        unsafe { alloc::dealloc(self.ptr.as_ptr().cast(), layout) }
     }
 }
 
@@ -419,7 +484,7 @@ impl<T: fmt::Debug> fmt::Debug for SparseArray<T> {
         map.entry(&"bitmap", &self.bitmap());
         let mut entries = self.entries().iter();
         for idx in 0..self.bitmap().len() {
-            if self.bitmap().get(idx) {
+            if self.bitmap().is_set(idx) {
                 map.entry(&idx, &entries.next().unwrap());
             }
         }
@@ -431,7 +496,7 @@ impl<T: fmt::Debug> fmt::Debug for SparseArray<T> {
 #[repr(C)]
 enum Entry<T> {
     Leaf { hash: u64, data: T },
-    Collision { hash: u64, data: ArcSlice<T> },
+    Collision { data: ArcSlice<T> },
     Subtrie(Arc<SparseArray<Self>>),
 }
 
@@ -465,8 +530,8 @@ mod tests {
     fn bitmap() {
         assert_eq!(Bitmap::EMPTY.len(), 0);
         for idx in 0..Bitmap::MAX_ENTRIES {
-            assert!(!Bitmap::EMPTY.get(idx));
-            assert!(Bitmap::EMPTY.set(idx).get(idx));
+            assert!(!Bitmap::EMPTY.is_set(idx));
+            assert!(Bitmap::EMPTY.set(idx).is_set(idx));
         }
 
         assert_eq!(Bitmap::hash_to_index(1), 1);
@@ -498,7 +563,7 @@ mod tests {
 
     #[test]
     fn sparse_array() {
-        let a = SparseArray::<()>::empty();
+        let a = SparseArray::<usize>::default();
         assert_eq!(a.bitmap().len(), 0);
         assert_eq!(a.entries(), &[]);
         assert_eq!(a.get(0), None);
@@ -512,14 +577,83 @@ mod tests {
         assert_eq!(a.get(13), None);
     }
 
-    type Hamt<K, V> = HashArrayMappedTrie<K, V, crate::DefaultHashBuilder>;
+    #[test]
+    fn sparse_array_size() {
+        // It's always a thin pointer - must be the same size as a pointer.
+        assert_eq!(size_of::<SparseArray<usize>>(), size_of::<usize>());
+        assert_eq!(size_of::<SparseArray<u8>>(), size_of::<usize>());
+        assert_eq!(size_of::<SparseArray<u128>>(), size_of::<usize>());
+    }
 
     #[test]
-    fn hamt() {
+    fn sparse_array_alignment() {
+        let bitmap = Bitmap::EMPTY.set(5).set(10);
+        assert_eq!(bitmap.len(), 2);
+
+        // Same size:
+        assert_eq!(size_of::<Bitmap>(), size_of::<usize>());
+        let mut a = SparseArray::<usize>::new(bitmap, [123, 456]);
+        assert_eq!(a.entries(), &[123, 456]);
+        a.entries_mut()[0] = 789;
+        assert_eq!(a.get(5), Some(&789));
+
+        // Inner type is smaller:
+        assert!(size_of::<Bitmap>() > size_of::<u8>());
+        let mut a = SparseArray::<u8>::new(bitmap, [12, 34]);
+        assert_eq!(a.entries(), &[12, 34]);
+        a.entries_mut()[0] = 56;
+        assert_eq!(a.get(5), Some(&56));
+
+        // Inner type is larger:
+        assert!(size_of::<Bitmap>() < size_of::<u128>());
+        let mut a = SparseArray::<u128>::new(bitmap, [123, 456]);
+        assert_eq!(a.entries(), &[123, 456]);
+        a.entries_mut()[0] = 789;
+        assert_eq!(a.get(5), Some(&789));
+    }
+
+    type Hamt<K, V> = HashArrayMappedTrie<K, V, crate::DefaultHashBuilder>;
+
+    impl<K: Ord, V: Ord, S> HashArrayMappedTrie<K, V, S> {
+        fn sorted_entries(&self) -> Vec<&(K, V)> {
+            let mut entries: Vec<_> = self.iter().collect();
+            entries.sort();
+            entries
+        }
+    }
+
+    #[test]
+    fn hamt_basics() {
         let mut map = Hamt::default();
         map.insert(1, 10);
-        assert_eq!(map.get(&1).collect::<Vec<_>>(), [(&1, &10)]);
+        assert_eq!(map.get_one(&1), Some(&10));
         map.insert(5, 5);
-        assert_eq!(map.get(&5).collect::<Vec<_>>(), [(&5, &5)]);
+        assert_eq!(map.get_one(&5), Some(&5));
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.sorted_entries(), [&(1, 10), &(5, 5)]);
+
+        let mut map = Hamt::default();
+        let len = Bitmap::MAX_ENTRIES * 10;
+        for i in 0..len {
+            map.insert(i, i);
+            assert_eq!(map.get_one(&i), Some(&i));
+        }
+        assert_eq!(map.len(), len);
+        let entries = map.sorted_entries();
+        assert_eq!(entries.len(), len);
+        for (i, entry) in entries.into_iter().enumerate() {
+            assert_eq!(entry, &(i, i));
+        }
+    }
+
+    #[test]
+    fn hamt_persistent() {
+        let mut map = Hamt::default();
+        let old_map = map.clone();
+        map.insert(1, 1);
+        assert_eq!(map.get_one(&1), Some(&1));
+        assert_eq!(map.len(), 1);
+        assert_eq!(old_map.get_one(&1), None);
+        assert_eq!(old_map.len(), 0);
     }
 }

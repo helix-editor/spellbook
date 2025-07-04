@@ -169,11 +169,11 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
 
     // Then parse the dic file into a WordList.
     let mut lines = Lines::<'dic>::new(dic_text, ParseDictionaryErrorSource::Dic);
-    let row_count = lines
+    let _row_count = lines
         .take_exactly_one_word()?
         .parse::<usize>()
         .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedNumber(err)))?;
-    let mut words = WordList::with_capacity_and_hasher(row_count, build_hasher);
+    let mut words = WordList::with_hasher(build_hasher);
 
     while !lines.is_finished() {
         lines.advance_line();
