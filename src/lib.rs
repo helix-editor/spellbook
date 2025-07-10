@@ -138,6 +138,10 @@ impl Dictionary<DefaultHashBuilder> {
     pub fn new(aff: &str, dic: &str) -> Result<Self, ParseDictionaryError> {
         Self::new_with_hasher(aff, dic, DefaultHashBuilder::default())
     }
+
+    pub fn estimated_size(&self) -> (usize, usize) {
+        self.words.estimated_size()
+    }
 }
 
 impl<S: BuildHasher + Clone> Dictionary<S> {

@@ -33,6 +33,9 @@ fn main() {
     let dict = Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap();
     println!("Compiled the dictionary in {:?}", now.elapsed());
 
+    let (size, subtries) = dict.estimated_size();
+    println!("Estimated dictionary size: {size} (subtries: {subtries})");
+
     let now = Instant::now();
     if dict.check(&word) {
         println!(

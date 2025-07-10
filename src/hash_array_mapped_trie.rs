@@ -43,6 +43,32 @@ impl<K, V, S> HashArrayMappedTrie<K, V, S> {
         let root = TrieNodeIter::Entries(self.root.entries().iter());
         Iter { stack: vec![root] }
     }
+
+    const ITEM_SIZE: usize = size_of::<(K, V)>();
+
+    fn trie_size(trie: &SparseArray<Entry<(K, V)>>) -> (usize, usize) {
+        let mut subtries = 0;
+        let mut size = size_of::<Bitmap>() + size_of::<Entry<(K, V)>>() * trie.bitmap().len();
+        for entry in trie.entries() {
+            size += match entry {
+                Entry::Subtrie(subtrie) => {
+                    let (s, t) = Self::trie_size(subtrie);
+                    subtries += 1 + t;
+                    s
+                }
+                Entry::Leaf { .. } => 0,
+                Entry::Collision { data } => Self::ITEM_SIZE * data.len(),
+            }
+        }
+        (size, subtries)
+    }
+
+    pub fn estimated_size(&self) -> (usize, usize) {
+        // TODO: another interesting thing to track could be a histogram of
+        // trie loads.
+        let (size, subtries) = Self::trie_size(&self.root);
+        (size_of::<Self>() + size, subtries)
+    }
 }
 
 impl<K, V, S> HashArrayMappedTrie<K, V, S>
