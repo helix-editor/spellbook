@@ -752,6 +752,8 @@ struct Lines<'text> {
 
 impl<'text> Lines<'text> {
     fn new(text: &'text str, source: ParseDictionaryErrorSource) -> Self {
+        // Skip the UTF-8 BOM if there is one.
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         let mut lines = text.lines().enumerate().peekable();
         let words = lines.peek().map(|(_line_no, line)| {
             line.split_whitespace()
