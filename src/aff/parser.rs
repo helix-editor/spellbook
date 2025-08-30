@@ -10,7 +10,7 @@
 use core::{
     fmt,
     hash::BuildHasher,
-    iter::{Enumerate, Peekable, TakeWhile},
+    iter::{Enumerate, Peekable},
     num::NonZeroU16,
     str::{FromStr, SplitWhitespace},
 };
@@ -550,13 +550,6 @@ fn parse_compound_syllable<'aff>(
             }))
         }
     };
-    let remaining_words = words.count();
-    if remaining_words > 0 {
-        return Err(lines.error(ParseDictionaryErrorKind::MismatchedArity {
-            expected: 2,
-            actual: 2 + remaining_words,
-        }));
-    }
 
     cx.options.compound_syllable_max = max
         .parse::<u16>()
@@ -656,14 +649,6 @@ fn parse_compound_pattern_table(cx: &mut AffLineParser, lines: &mut Lines) -> Pa
         };
         let replacement = words.next();
 
-        let remaining_words = words.count();
-        if remaining_words > 0 {
-            return Err(lines.error(ParseDictionaryErrorKind::MismatchedArity {
-                expected: 3,
-                actual: 3 + remaining_words,
-            }));
-        }
-
         let (first_word_end, first_word_flag) = split_word_and_flagset_naive(first_word_end);
         let (second_word_begin, second_word_flag) = split_word_and_flagset_naive(second_word_begin);
         let first_word_flag = (!first_word_flag.is_empty())
@@ -740,13 +725,10 @@ fn parse_map(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
     })
 }
 
-/// A helper type that means "words on a line split by whitespace with comments
-/// dropped." This is a concretion of `impl Iterator<Item = &'a str>`.
-type Words<'text> = TakeWhile<SplitWhitespace<'text>, for<'b, 'c> fn(&'b &'c str) -> bool>;
-
 struct Lines<'text> {
     lines: Peekable<Enumerate<core::str::Lines<'text>>>,
-    words: Option<Words<'text>>,
+    /// The words on the current line split by whitespace.
+    words: Option<SplitWhitespace<'text>>,
     source: ParseDictionaryErrorSource,
 }
 
@@ -755,10 +737,11 @@ impl<'text> Lines<'text> {
         // Skip the UTF-8 BOM if there is one.
         let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         let mut lines = text.lines().enumerate().peekable();
-        let words = lines.peek().map(|(_line_no, line)| {
-            line.split_whitespace()
-                .take_while((|word| !word.starts_with('#')) as for<'b, 'c> fn(&'b &'c str) -> bool)
-        });
+        while lines
+            .next_if(|(_line_no, line)| line.trim_start().starts_with('#'))
+            .is_some()
+        {}
+        let words = lines.peek().map(|(_line_no, line)| line.split_whitespace());
 
         Self {
             lines,
@@ -773,10 +756,15 @@ impl<'text> Lines<'text> {
 
     fn advance_line(&mut self) {
         self.lines.next();
-        self.words = self.lines.peek().map(|(_line_no, line)| {
-            line.split_whitespace()
-                .take_while((|word| !word.starts_with('#')) as for<'b, 'c> fn(&'b &'c str) -> bool)
-        });
+        while self
+            .lines
+            .next_if(|(_line_no, line)| line.trim_start().starts_with('#'))
+            .is_some()
+        {}
+        self.words = self
+            .lines
+            .peek()
+            .map(|(_line_no, line)| line.split_whitespace());
     }
 
     fn line(&mut self) -> Option<&str> {
@@ -814,19 +802,6 @@ impl<'text> Lines<'text> {
     }
 
     fn parse_bool(&mut self) -> Result<bool> {
-        // Boolean flags are specified by just the key. For example if you see `COMPLEXPREFIXES`
-        // as a line, `complex_prefixes` is true. Otherwise it's false.
-        let count = self
-            .words
-            .take()
-            .map(|words| words.count())
-            .unwrap_or_default();
-        if count > 0 {
-            return Err(self.error(ParseDictionaryErrorKind::MismatchedArity {
-                expected: 0,
-                actual: count,
-            }));
-        }
         Ok(true)
     }
 
@@ -873,13 +848,6 @@ impl<'text> Lines<'text> {
                     }))
                 }
             };
-            let remaining_words = words.count();
-            if remaining_words > 0 {
-                return Err(self.error(ParseDictionaryErrorKind::MismatchedArity {
-                    expected: 1,
-                    actual: 1 + remaining_words,
-                }));
-            }
 
             f(word).map_err(|kind| self.error(kind))?;
         }
@@ -933,13 +901,6 @@ impl<'text> Lines<'text> {
                     }))
                 }
             };
-            let remaining_words = words.count();
-            if remaining_words > 0 {
-                return Err(self.error(ParseDictionaryErrorKind::MismatchedArity {
-                    expected: 2,
-                    actual: 2 + remaining_words,
-                }));
-            }
 
             f(word1, word2).map_err(|kind| self.error(kind))?;
         }
@@ -1006,14 +967,6 @@ impl<'text> Lines<'text> {
                 }))
             }
         };
-
-        let remaining_words = words.count();
-        if remaining_words > 0 {
-            return Err(self.error(ParseDictionaryErrorKind::MismatchedArity {
-                expected: 3,
-                actual: 3 + remaining_words,
-            }));
-        }
 
         for row in 1..=row_count {
             // Each row takes the shape:
