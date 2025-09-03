@@ -12,10 +12,10 @@ rust-version = "1.70"
 
 [dependencies]
 # Used for HashMap and HashTable for a custom bag structure.
-hashbrown = { version = "0.15", default-features = false  }
+hashbrown = { version = ">=0.15", default-features = false  }
 # Used as the default BuildHasher when the `default-hasher` feature flag
 # is enabled (which it is by default).
-foldhash = { version = "0.1.2", default-features = false, optional = true }
+foldhash = { version = ">=0.1", default-features = false, optional = true }
 
 [dev-dependencies]
 # Used in unit tests to lazily compile en_US. Used instead of
