@@ -246,7 +246,7 @@ mod test {
     #[test]
     fn iter() {
         // The iterator is currently unused but very small and could be useful for debugging.
-        let pairs = &[(1, 1), (1, 2), (1, 3), (3, 1)];
+        let pairs = [(1, 1), (1, 2), (1, 3), (3, 1)];
         let mut bag = HashBag::new();
         for (k, v) in pairs {
             bag.insert(k, v);
@@ -254,9 +254,9 @@ mod test {
 
         assert_eq!(bag.iter().len(), pairs.len());
 
-        let mut values: Vec<_> = bag.iter().map(|(k, v)| (**k, **v)).collect();
+        let mut values: Vec<_> = bag.iter().map(|(k, v)| (*k, *v)).collect();
         values.sort_unstable();
-        assert_eq!(&values, pairs);
+        assert_eq!(values, pairs);
     }
 
     #[test]
