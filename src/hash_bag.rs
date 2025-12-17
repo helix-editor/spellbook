@@ -4,7 +4,7 @@ use core::{
     hash::{BuildHasher, Hash},
 };
 
-use hashbrown::hash_table::{self, HashTable, IterHash};
+use hashbrown::hash_table::{self, HashTable};
 
 /// A collection of key-value pairs - similar to a HashMap - which allows for duplicate keys.
 ///
@@ -84,6 +84,23 @@ where
             key: k,
         }
     }
+
+    /// Gets all values for any pairs in the table with the given key.
+    ///
+    /// This is the same as `get` but only exclusive borrows of the values are returned.
+    #[allow(unused)]
+    pub fn get_mut<'bag, 'key, Q>(&'bag mut self, k: &'key Q) -> GetAllMutIter<'bag, 'key, Q, K, V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        let hash = make_hash(&self.build_hasher, k);
+
+        GetAllMutIter {
+            inner: self.table.iter_hash_mut(hash),
+            key: k,
+        }
+    }
 }
 
 impl<K, V, S> Debug for HashBag<K, V, S>
@@ -148,7 +165,7 @@ where
     K: Borrow<Q>,
     Q: Hash + Eq,
 {
-    inner: IterHash<'bag, (K, V)>,
+    inner: hash_table::IterHash<'bag, (K, V)>,
     key: &'key Q,
 }
 
@@ -165,6 +182,37 @@ where
                 Some((k, v)) => {
                     if self.key.eq(k.borrow()) {
                         return Some((k, v));
+                    }
+                    continue;
+                }
+                None => return None,
+            }
+        }
+    }
+}
+
+pub struct GetAllMutIter<'bag, 'key, Q: ?Sized, K, V>
+where
+    K: Borrow<Q>,
+    Q: Hash + Eq,
+{
+    inner: hash_table::IterHashMut<'bag, (K, V)>,
+    key: &'key Q,
+}
+
+impl<'bag, Q: ?Sized, K, V> Iterator for GetAllMutIter<'bag, '_, Q, K, V>
+where
+    K: Borrow<Q>,
+    Q: Hash + Eq,
+{
+    type Item = &'bag mut V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.inner.next() {
+                Some((k, v)) => {
+                    if self.key.eq((*k).borrow()) {
+                        return Some(v);
                     }
                     continue;
                 }
@@ -276,5 +324,22 @@ mod test {
             "{1: 1, 1: 1, 1: 2, 1: 3, 3: 1}",
             crate::alloc::format!("{bag:?}").as_str()
         );
+    }
+
+    #[test]
+    fn mutate() {
+        let pairs = [(1, 1), (1, 2), (1, 3), (3, 1)];
+        let mut bag = HashBag::new();
+        for (k, v) in pairs {
+            bag.insert(k, v);
+        }
+
+        for mut_v in bag.get_mut(&1) {
+            *mut_v *= 2;
+        }
+
+        let mut values: Vec<_> = bag.iter().map(|(k, v)| (*k, *v)).collect();
+        values.sort_unstable();
+        assert_eq!(values, [(1, 2), (1, 4), (1, 6), (3, 1)]);
     }
 }
