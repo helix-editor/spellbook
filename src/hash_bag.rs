@@ -88,7 +88,6 @@ where
     /// Gets all values for any pairs in the table with the given key.
     ///
     /// This is the same as `get` but only exclusive borrows of the values are returned.
-    #[allow(unused)]
     pub fn get_mut<'bag, 'key, Q>(&'bag mut self, k: &'key Q) -> GetAllMutIter<'bag, 'key, Q, K, V>
     where
         K: Borrow<Q>,

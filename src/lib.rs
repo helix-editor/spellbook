@@ -252,6 +252,47 @@ impl<S: BuildHasher> Dictionary<S> {
         self.words.insert(word, flagset);
         Ok(())
     }
+
+    /// Removes the given stem from the dictionary.
+    ///
+    /// Once removed, `check` will return `false` for all conjugations of the stem. For example
+    /// "adventuring" in the `en_US` dictionary is based on the stem "adventure" with the "ing"
+    /// suffix applied. Removing "adventuring" does nothing while removing "adventure" removes
+    /// "adventuring", "adventured", etc..
+    ///
+    /// This function returns `true` if any stem in the dictionary is removed, otherwise `false`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let aff = std::fs::read_to_string("./vendor/en_US/en_US.aff").unwrap();
+    /// let dic = std::fs::read_to_string("./vendor/en_US/en_US.dic").unwrap();
+    /// let mut dict = spellbook::Dictionary::new(&aff, &dic).unwrap();
+    ///
+    /// assert!(dict.check("adventure"));
+    /// assert!(dict.check("adventuring"));
+    ///
+    /// // `remove` only works on stems.
+    /// assert!(!dict.remove_stem("adventuring"));
+    /// assert!(dict.check("adventure"));
+    /// assert!(dict.check("adventuring"));
+    /// // Removing the stem removes all conjugations.
+    /// assert!(dict.remove_stem("adventure"));
+    /// assert!(!dict.check("adventure"));
+    /// assert!(!dict.check("adventuring"));
+    /// // Once removed, removing the same stem again is a no-op.
+    /// assert!(!dict.remove_stem("adventure"));
+    /// ```
+    pub fn remove_stem(&mut self, word: &str) -> bool {
+        let mut did_remove = false;
+        for flags in self.words.get_mut(word) {
+            if !flags.contains(&self.aff_data.options.forbidden_word_flag) {
+                did_remove = true;
+                *flags = flags.with_flag(self.aff_data.options.forbidden_word_flag);
+            }
+        }
+        did_remove
+    }
 }
 
 impl fmt::Debug for Dictionary {
