@@ -247,7 +247,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                             .checker
                             .check_word(&buffer, Forceucase::default(), HiddenHomonym::default())
                             .is_some_and(|flags| {
-                                has_flag!(flags, self.checker.aff.options.forbidden_word_flag)
+                                flags.contains(&self.checker.aff.options.forbidden_word_flag)
                             })
                         {
                             out.push(buffer.clone());
@@ -278,10 +278,14 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         // > Suggest with dots can go here but nobody uses it so no point in
         // > implementing it.
 
-        if matches!(casing, Casing::Init | Casing::All)
-            && (self.checker.aff.options.keep_case_flag.is_some()
-                || self.checker.aff.options.forbidden_word_flag.is_some())
-        {
+        // NOTE: Both Hunspell and Nuspell check that the forbidden word flag is not zero (None)
+        // like the following code:
+        //     if matches!(casing, Casing::Init | Casing::All)
+        //         && (self.checker.aff.options.keep_case_flag.is_some()
+        //             || self.checker.aff.options.forbidden_word_flag.is_some())
+        // However the forbidden word flag has a non-zero default, so this `&&` branch always
+        // evaluates to `true`. So the check is not done at all here.
+        if matches!(casing, Casing::Init | Casing::All) {
             // Happily this is cleaner in Rust because of `retain_mut`. Nuspell inlines
             // `remove_if(it, last, is_not_ok)` because it needs to modify the suggestions.
             out.retain_mut(|suggestion| {
@@ -377,7 +381,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             return false;
         };
 
-        if has_flag!(flags, self.checker.aff.options.forbidden_word_flag) {
+        if flags.contains(&self.checker.aff.options.forbidden_word_flag) {
             return false;
         }
 

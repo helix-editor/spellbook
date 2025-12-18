@@ -139,7 +139,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         const MAX_DEPTH: usize = 9;
 
         if let Some(flags) = &self.spell_casing(word) {
-            if has_flag!(flags, self.aff.options.forbidden_word_flag) {
+            if flags.contains(&self.aff.options.forbidden_word_flag) {
                 return false;
             }
 
@@ -1444,7 +1444,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         // TODO: investigate just using a big chain of `||`s.
 
         let part1_entry = self.check_word_in_compound::<MODE>(&word[start_pos..i])?;
-        if has_flag!(part1_entry.flags, self.aff.options.forbidden_word_flag) {
+        if part1_entry
+            .flags
+            .contains(&self.aff.options.forbidden_word_flag)
+        {
             return None;
         }
         if self.aff.options.compound_check_triple && are_three_chars_equal(word, i) {
@@ -1469,7 +1472,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 part1_entry,
             );
         };
-        if has_flag!(part2_entry.flags, self.aff.options.forbidden_word_flag) {
+        if part2_entry
+            .flags
+            .contains(&self.aff.options.forbidden_word_flag)
+        {
             return self.check_compound_classic_try_recursive(
                 word,
                 start_pos,
@@ -1675,7 +1681,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 part1_entry,
             );
         };
-        if has_flag!(part2_entry.flags, self.aff.options.forbidden_word_flag) {
+        if part2_entry
+            .flags
+            .contains(&self.aff.options.forbidden_word_flag)
+        {
             return self.check_compound_classic_try_simplified_triple_recursive(
                 word_with_triple,
                 word,

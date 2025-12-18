@@ -1228,7 +1228,7 @@ pub(crate) struct AffOptions {
     pub forbid_warn: bool,
     pub only_in_compound_flag: Option<Flag>,
     pub circumfix_flag: Option<Flag>,
-    pub forbidden_word_flag: Option<Flag>,
+    pub forbidden_word_flag: Flag,
     pub keep_case_flag: Option<Flag>,
     pub need_affix_flag: Option<Flag>,
     pub warn_flag: Option<Flag>,
@@ -1267,13 +1267,18 @@ pub(crate) struct AffOptions {
 impl Default for AffOptions {
     fn default() -> Self {
         Self {
+            // Hunspell:
+            // // default flags
+            // #define DEFAULTFLAGS 65510
+            // #define FORBIDDENWORD 65510
+            // #define ONLYUPCASEFLAG 65511
             complex_prefixes: Default::default(),
             fullstrip: Default::default(),
             checksharps: Default::default(),
             forbid_warn: Default::default(),
             only_in_compound_flag: Default::default(),
             circumfix_flag: Default::default(),
-            forbidden_word_flag: Default::default(),
+            forbidden_word_flag: Flag::new(65510).unwrap(),
             keep_case_flag: Default::default(),
             need_affix_flag: Default::default(),
             warn_flag: Default::default(),

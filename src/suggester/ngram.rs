@@ -79,7 +79,7 @@ impl<S: BuildHasher> Suggester<'_, S> {
         let mut lowercase_stem_buf = Vec::with_capacity(stem_buf.len());
         let mut roots = BinaryHeap::with_capacity(100);
         for entry @ (stem, flagset) in self.checker.words.iter() {
-            if has_flag!(flagset, self.checker.aff.options.forbidden_word_flag)
+            if flagset.contains(&self.checker.aff.options.forbidden_word_flag)
                 || has_flag!(flagset, self.checker.aff.options.no_suggest_flag)
                 || has_flag!(flagset, self.checker.aff.options.only_in_compound_flag)
                 || flagset.contains(&HIDDEN_HOMONYM_FLAG)

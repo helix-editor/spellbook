@@ -197,10 +197,7 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
         // converting them to titlecase and setting the hidden homonym flag.
         let casing = crate::classify_casing(word.as_ref());
         if (matches!(casing, Casing::Pascal | Casing::Camel)
-            && !cx
-                .options
-                .forbidden_word_flag
-                .is_some_and(|flag| flagset.contains(&flag)))
+            && !flagset.contains(&cx.options.forbidden_word_flag))
             || (matches!(casing, Casing::All) && !flagset.is_empty())
         {
             let word = cx.options.case_handling.titlecase(word.as_ref()).into();
@@ -253,7 +250,7 @@ fn parse_flag_type(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
 fn parse_forbidden_word_flag(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
     lines
         .parse_flag(cx)
-        .map(|flag| cx.options.forbidden_word_flag = Some(flag))
+        .map(|flag| cx.options.forbidden_word_flag = flag)
 }
 
 fn parse_circumfix_flag(cx: &mut AffLineParser, lines: &mut Lines) -> ParseResult {
@@ -2102,7 +2099,7 @@ mod test {
         FORCEUCASE p
         "#;
         let (_words, aff_data) = parse(aff, dic, DefaultHashBuilder::default()).unwrap();
-        assert_eq!(aff_data.options.forbidden_word_flag, Some(flag!('a')));
+        assert_eq!(aff_data.options.forbidden_word_flag, flag!('a'));
         assert_eq!(aff_data.options.circumfix_flag, Some(flag!('b')));
         assert_eq!(aff_data.options.keep_case_flag, Some(flag!('c')));
         assert_eq!(aff_data.options.need_affix_flag, Some(flag!('d')));
