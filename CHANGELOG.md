@@ -5,12 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+<!-- ## [Unreleased] -->
+
+## [v0.4.0] - 2026-05-25
+
+### Added
+
+* Added `spellbook::Dictionary::remove_stem`. This acts the same as
+  `Hunspell::remove`. ([#11](https://github.com/helix-editor/spellbook/pull/11))
 
 ### Fixed
 
 * Fixed string slicing panic when checking a word with non-ASCII text when the
   dictionary has `CHECKCOMPOUNDPATTERN` rules.
+* Fixed bug in suggestions using `MAP` rules which would cause suggestions to
+  take a very long time to compute in dictionaries with `MAP` rules.
+  ([#14](https://github.com/helix-editor/spellbook/pull/14))
 
 ## [v0.3.5] - 2025-09-12
 
