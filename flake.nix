@@ -32,10 +32,7 @@
               ];
             })
             rust-analyzer
-            cargo-flamegraph
-            cargo-llvm-cov
-            valgrind
-          ];
+          ] ++ (lib.optionals stdenv.isLinux [cargo-flamegraph cargo-llvm-cov valgrind]);
           RUST_BACKTRACE = "1";
         }
       );
