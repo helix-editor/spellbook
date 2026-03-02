@@ -2059,7 +2059,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             if i < partition {
                 return false;
             }
-            if !word[i - partition..].starts_with(pattern.begin_end_chars.full_str()) {
+            if !word
+                .get(i - partition..)
+                .is_some_and(|comp| comp.starts_with(pattern.begin_end_chars.full_str()))
+            {
                 return false;
             }
             if pattern
