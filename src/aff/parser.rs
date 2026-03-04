@@ -1044,15 +1044,11 @@ impl<'text> Lines<'text> {
     }
 }
 
-fn try_flag_from_u16(val: u16) -> core::result::Result<Flag, ParseFlagError> {
-    Flag::new(val).ok_or(ParseFlagError::ZeroFlag)
-}
-
 fn try_flag_from_u32(val: u32) -> core::result::Result<Flag, ParseFlagError> {
     if val > u16::MAX as u32 {
         return Err(ParseFlagError::FlagAbove65535);
     }
-    try_flag_from_u16(val as u16)
+    Ok(val as u16)
 }
 
 fn try_flag_from_char(ch: char) -> core::result::Result<Flag, ParseFlagError> {
@@ -1093,7 +1089,7 @@ fn parse_flag_from_str(
                 .expect("asserted to be non-empty above")
         }
     };
-    try_flag_from_u16(u16)
+    Ok(u16)
 }
 
 // See Hunspell's `HashMgr::decode_flags`.
@@ -1112,10 +1108,7 @@ fn parse_flags_from_str(
 
     match flag_type {
         FlagType::Short => {
-            let flagset = input
-                .bytes()
-                .map(|b| try_flag_from_u16(b as u16))
-                .collect::<core::result::Result<Vec<Flag>, _>>()?;
+            let flagset: Vec<Flag> = input.bytes().map(u16::from).collect();
             Ok(flagset.into())
         }
         FlagType::Long => {
@@ -1128,7 +1121,7 @@ fn parse_flags_from_str(
             let mut flags = Vec::with_capacity(len);
             for i in 0..len {
                 let u16 = u16::from_ne_bytes([bytes[i << 1], bytes[(i << 1) | 1]]);
-                flags.push(try_flag_from_u16(u16)?);
+                flags.push(u16);
             }
             Ok(flags.into())
         }
@@ -1139,17 +1132,11 @@ fn parse_flags_from_str(
                 if input.as_bytes().get(idx + 1).copied() == Some(b',') {
                     return Err(DuplicateComma);
                 }
-                let flag = input[start..idx]
-                    .parse::<u16>()
-                    .map_err(ParseIntError)
-                    .and_then(try_flag_from_u16)?;
+                let flag = input[start..idx].parse::<u16>().map_err(ParseIntError)?;
                 flags.push(flag);
                 start = idx + 1;
             }
-            let flag = input[start..]
-                .parse::<u16>()
-                .map_err(ParseIntError)
-                .and_then(try_flag_from_u16)?;
+            let flag = input[start..].parse::<u16>().map_err(ParseIntError)?;
             flags.push(flag);
 
             Ok(flags.into())
@@ -1158,10 +1145,7 @@ fn parse_flags_from_str(
             // Using the UTF-16 encoding looks funny here... Nuspell rejects Unicode flags that
             // take more than 16 bits to represent, but Hunspell silently accepts them (though it
             // might lead to weird behavior down the line.)
-            let flags = input
-                .encode_utf16()
-                .map(try_flag_from_u16)
-                .collect::<core::result::Result<Vec<Flag>, _>>()?;
+            let flags: Vec<Flag> = input.encode_utf16().collect();
             Ok(flags.into())
         }
     }
@@ -1366,7 +1350,7 @@ pub(crate) fn parse_compound_rule(
                 let flag = match chars.next() {
                     Some(ch) if !ch.is_ascii() => return Err(ParseFlagError::NonAscii(ch).into()),
                     // All ASCII can fit into a u16 (and a u8).
-                    Some(ch) if ch != '?' && ch != '*' => try_flag_from_u16(ch as u16)?,
+                    Some(ch) if ch != '?' && ch != '*' => ch as u16,
                     None => break,
                     _ => return Err(ParseCompoundRuleError::InvalidFormat),
                 };
@@ -1436,7 +1420,7 @@ pub(crate) fn parse_compound_rule(
                             return Err(ParseCompoundRuleError::InvalidFormat);
                         }
 
-                        try_flag_from_u16(u16::from_ne_bytes([c1 as u8, c2 as u8]))?
+                        u16::from_ne_bytes([c1 as u8, c2 as u8])
                     }
                     Some(_) => return Err(ParseCompoundRuleError::InvalidFormat),
                     None => break,
@@ -1478,7 +1462,7 @@ pub(crate) fn parse_compound_rule(
                             .map_err(ParseFlagError::ParseIntError)?;
                         number.clear();
 
-                        try_flag_from_u16(n)?
+                        n
                     }
                     Some(_) => return Err(ParseCompoundRuleError::InvalidFormat),
                     None => break,
@@ -1635,7 +1619,6 @@ pub enum ParseFlagError {
     MissingSecondChar,
     ParseIntError(core::num::ParseIntError),
     DuplicateComma,
-    ZeroFlag,
     FlagAbove65535,
 }
 
@@ -1646,7 +1629,6 @@ impl fmt::Display for ParseFlagError {
             Self::MissingSecondChar => f.write_str("expected two chars, found one"),
             Self::ParseIntError(err) => err.fmt(f),
             Self::DuplicateComma => f.write_str("unexpected extra comma"),
-            Self::ZeroFlag => f.write_str("flag cannot be zero"),
             Self::FlagAbove65535 => f.write_str("flag's binary representation exceeds 65535"),
         }
     }
@@ -1754,7 +1736,7 @@ mod test {
 
     macro_rules! flag {
         ( $x:expr ) => {{
-            Flag::new($x as u16).unwrap()
+            $x as u16
         }};
     }
     macro_rules! flagset {
@@ -1763,7 +1745,7 @@ mod test {
         }};
         ( $( $x:expr ),* ) => {
             {
-                FlagSet::from( $crate::alloc::vec![ $( Flag::new( $x as u16 ).unwrap() ),* ] )
+                FlagSet::from( $crate::alloc::vec![ $( $x as u16 ),* ] )
             }
         };
     }

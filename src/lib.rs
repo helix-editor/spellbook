@@ -332,7 +332,7 @@ impl fmt::Debug for Dictionary {
 /// takes the same amount of bits to represent as a `Flag`, saving us some space on the `AffData`.
 ///
 /// Hunspell uses an `unsigned short` for flags while Nuspell uses a `char16_t`.
-type Flag = core::num::NonZeroU16;
+type Flag = u16;
 
 /// A collection of flags belonging to a word.
 ///
@@ -516,7 +516,7 @@ mod test {
 
     macro_rules! flag {
         ( $x:expr ) => {{
-            Flag::new($x as u16).unwrap()
+            $x as u16
         }};
     }
     macro_rules! flagset {
@@ -525,7 +525,7 @@ mod test {
         }};
         ( $( $x:expr ),* ) => {
             {
-                FlagSet::from( $crate::alloc::vec![ $( Flag::new( $x as u16 ).unwrap() ),* ] )
+                FlagSet::from( $crate::alloc::vec![ $( $x as u16 ),* ] )
             }
         };
     }
