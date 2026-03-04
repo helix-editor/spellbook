@@ -5,7 +5,7 @@ use crate::{
         AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG,
     },
     alloc::{fmt, string::String, vec::Vec},
-    classify_casing, erase_chars, AffixingMode, Casing, Dictionary, Flag, FlagSet, Stem, WordList,
+    classify_casing, erase_chars, AffixingMode, Casing, Dictionary, FlagSet, Stem, WordList,
     AT_COMPOUND_BEGIN, AT_COMPOUND_END, AT_COMPOUND_MIDDLE, FULL_WORD, MAX_WORD_LEN,
 };
 
@@ -19,7 +19,7 @@ macro_rules! has_flag {
 }
 macro_rules! flag {
     ( $x:expr ) => {{
-        Flag::new($x as u16).unwrap()
+        $x as u16
     }};
 }
 
@@ -2014,7 +2014,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         num_syllable_mod -= suffix_extra as i16;
 
         if self.aff.options.compound_syllable_num {
-            match char::from_u32(suffix.flag.get() as u32) {
+            match char::from_u32(suffix.flag as u32) {
                 Some('c') => num_syllable_mod += 2,
                 Some('J') => num_syllable_mod += 1,
                 Some('I') => {

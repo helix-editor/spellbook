@@ -12,7 +12,7 @@ use crate::{
 
 use core::{marker::PhantomData, num::NonZeroU16, str::Chars};
 
-pub(crate) const HIDDEN_HOMONYM_FLAG: Flag = unsafe { Flag::new_unchecked(u16::MAX) };
+pub(crate) const HIDDEN_HOMONYM_FLAG: Flag = u16::MAX;
 pub(crate) const MAX_SUGGESTIONS: usize = 16;
 
 macro_rules! has_flag {
@@ -1278,7 +1278,7 @@ impl Default for AffOptions {
             forbid_warn: Default::default(),
             only_in_compound_flag: Default::default(),
             circumfix_flag: Default::default(),
-            forbidden_word_flag: Flag::new(65510).unwrap(),
+            forbidden_word_flag: 65510,
             keep_case_flag: Default::default(),
             need_affix_flag: Default::default(),
             warn_flag: Default::default(),
@@ -1328,7 +1328,7 @@ mod test {
 
     macro_rules! flag {
         ( $x:expr ) => {{
-            Flag::new($x as u16).unwrap()
+            $x as u16
         }};
     }
     macro_rules! flagset {
@@ -1337,7 +1337,7 @@ mod test {
         }};
         ( $( $x:expr ),* ) => {
             {
-                FlagSet::from( $crate::alloc::vec![ $( Flag::new( $x as u16 ).unwrap() ),* ] )
+                FlagSet::from( $crate::alloc::vec![ $( $x as u16 ),* ] )
             }
         };
     }
@@ -1488,7 +1488,7 @@ mod test {
     fn affix_index_prefix_multiset_nuspell_unit_test() {
         // Upstream: <https://github.com/nuspell/nuspell/blob/b37faff6ea630a4a1bfb22097d455224b4239f8e/tests/unit_test.cxx#L315-L329>
         fn prefix(add: &str) -> Prefix {
-            Prefix::new(Flag::new(1).unwrap(), true, None, add, None, flagset![]).unwrap()
+            Prefix::new(1, true, None, add, None, flagset![]).unwrap()
         }
 
         let index: PrefixIndex = [
@@ -1510,7 +1510,7 @@ mod test {
     fn affix_index_suffix_multiset_nuspell_unit_test() {
         // Upstream: <https://github.com/nuspell/nuspell/blob/b37faff6ea630a4a1bfb22097d455224b4239f8e/tests/unit_test.cxx#L331-L345>
         fn suffix(add: &str) -> Suffix {
-            Suffix::new(Flag::new(1).unwrap(), true, None, add, None, flagset![]).unwrap()
+            Suffix::new(1, true, None, add, None, flagset![]).unwrap()
         }
 
         let index: SuffixIndex = [
@@ -1540,7 +1540,7 @@ mod test {
         // SFX D   y     ied        [^aeiou]y
         // SFX D   0     ed         [^ey]
         // SFX D   0     ed         [aeiou]y
-        let flag = Flag::new('D' as u16).unwrap();
+        let flag = 'D' as u16;
         let suffix1 = Suffix::new(flag, true, None, "d", Some("e"), flagset![]).unwrap();
         let suffix2 =
             Suffix::new(flag, true, Some("y"), "ied", Some("[^aeiou]y"), flagset![]).unwrap();
