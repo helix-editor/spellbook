@@ -499,8 +499,8 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     ///
     /// This is used to swap out diacritics, for example equating 'o' with 'ö'.
     fn map_suggest(&self, word: &str, out: &mut Vec<String>) {
-        let remaining_attempts = self.max_attempts_for_long_alogs(word);
-        self.map_suggest_impl(word, out, 0, remaining_attempts);
+        let mut remaining_attempts = self.max_attempts_for_long_alogs(word);
+        self.map_suggest_impl(word, out, 0, &mut remaining_attempts);
     }
 
     fn map_suggest_impl(
@@ -508,7 +508,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         word: &str,
         out: &mut Vec<String>,
         i: usize,
-        mut remaining_attempts: usize,
+        remaining_attempts: &mut usize,
     ) {
         let buffer = &mut String::from(word);
         for (mut idx, ch) in word[i..].char_indices() {
@@ -519,10 +519,10 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                         if similar_ch == ch {
                             continue;
                         }
-                        if remaining_attempts == 0 {
+                        if *remaining_attempts == 0 {
                             return;
                         }
-                        remaining_attempts -= 1;
+                        *remaining_attempts -= 1;
 
                         replace_char_at(buffer, idx, ch, similar_ch);
                         self.add_suggestion_if_correct(&*buffer, out);
@@ -536,10 +536,10 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                         debug_assert_eq!(&*buffer, word);
                     }
                     for similar_str in similarity.strings.iter() {
-                        if remaining_attempts == 0 {
+                        if *remaining_attempts == 0 {
                             return;
                         }
-                        remaining_attempts -= 1;
+                        *remaining_attempts -= 1;
 
                         buffer.replace_range(idx..idx + ch.len_utf8(), similar_str);
                         self.add_suggestion_if_correct(&*buffer, out);
@@ -560,10 +560,10 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                             continue;
                         };
                         for similar_ch in similarity.chars.chars() {
-                            if remaining_attempts == 0 {
+                            if *remaining_attempts == 0 {
                                 return;
                             }
-                            remaining_attempts -= 1;
+                            *remaining_attempts -= 1;
 
                             let mut ch_str = [0u8; 4];
                             let ch_str = similar_ch.encode_utf8(&mut ch_str);
@@ -582,10 +582,10 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                             if core::ptr::eq(string, similar_str) {
                                 continue;
                             }
-                            if remaining_attempts == 0 {
+                            if *remaining_attempts == 0 {
                                 return;
                             }
-                            remaining_attempts -= 1;
+                            *remaining_attempts -= 1;
 
                             buffer.replace_range(idx..idx + string.len(), similar_str);
                             self.add_suggestion_if_correct(&*buffer, out);
