@@ -7,12 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- ## [Unreleased] -->
 
-## [v0.4.0] - 2026-05-25
-
-### Added
-
-* Added `spellbook::Dictionary::remove_stem`. This acts the same as
-  `Hunspell::remove`. ([#11](https://github.com/helix-editor/spellbook/pull/11))
+## [v0.4.1] - 2026-05-25
 
 ### Fixed
 
@@ -21,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed bug in suggestions using `MAP` rules which would cause suggestions to
   take a very long time to compute in dictionaries with `MAP` rules.
   ([#14](https://github.com/helix-editor/spellbook/pull/14))
+
+## [v0.4.0] - 2025-12-27
+
+### Added
+
+* Added `spellbook::Dictionary::remove_stem`. This acts the same as
+  `Hunspell::remove`. ([#11](https://github.com/helix-editor/spellbook/pull/11))
 
 ## [v0.3.5] - 2025-09-12
 
