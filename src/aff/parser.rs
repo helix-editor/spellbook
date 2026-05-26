@@ -31,6 +31,9 @@ use super::{
     FlagType, Prefix, SimilarityGroup, Suffix, HIDDEN_HOMONYM_FLAG,
 };
 
+// Cap the allocation size a dictionary can suggest to ~1 million.
+const MAX_HINT: usize = 1 << 20;
+
 type Result<T> = core::result::Result<T, ParseDictionaryError>;
 type ParseResult = Result<()>;
 
@@ -173,7 +176,7 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
         .take_exactly_one_word()?
         .parse::<usize>()
         .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedNumber(err)))?;
-    let mut words = WordList::with_capacity_and_hasher(row_count, build_hasher);
+    let mut words = WordList::with_capacity_and_hasher(row_count.min(MAX_HINT), build_hasher);
 
     while !lines.is_finished() {
         lines.advance_line();

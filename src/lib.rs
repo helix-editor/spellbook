@@ -603,6 +603,13 @@ mod test {
     }
 
     #[test]
+    fn bad_hint() {
+        let aff = "";
+        let dic = "999999999999999\n";
+        let _ = Dictionary::new(aff, dic);
+    }
+
+    #[test]
     fn add_word() {
         let mut dict = Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap();
         assert!(!dict.check("foobarbaz"));
