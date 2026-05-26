@@ -2785,4 +2785,20 @@ mod test {
         let dict = Dictionary::new(aff, dic).unwrap();
         assert!(dict.check("trädsökningsalgoritm"));
     }
+
+    #[test]
+    fn crossproduct_n() {
+        let aff = r#"
+        SFX A N 1
+        SFX A 0 ed .
+        PFX B Y 1
+        PFX B 0 re .
+        "#;
+        let dic = r#"1
+        walk/AB
+        "#;
+        let dict = Dictionary::new(aff, dic).unwrap();
+        // SFX A is N (no cross-product), so "rewalked" should NOT be accepted.
+        assert!(!dict.check("rewalked"));
+    }
 }

@@ -943,7 +943,7 @@ impl<'text> Lines<'text> {
 
         let crossproduct = match words.next() {
             Some("Y") => true,
-            Some("N") => true,
+            Some("N") => false,
             Some(_) => return Err(self.error(ParseDictionaryErrorKind::MalformedAffix)),
             None => {
                 return Err(self.error(ParseDictionaryErrorKind::MismatchedArity {
