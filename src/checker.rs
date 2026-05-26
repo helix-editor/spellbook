@@ -1626,10 +1626,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 );
             }
             let part2_word = part2_entry.stem.as_ref();
-            // TODO: do we need a bounds check? Use starts_with on the subslice of `&word[i..]`
-            // instead?
-            if &word[i..i + part2_word.len()] == part2_word
-                && self.is_rep_similar(&word[start_pos..i - start_pos + part2_word.len()])
+            if word
+                .get(i..)
+                .is_some_and(|tail| tail.starts_with(part2_word))
+                && self.is_rep_similar(&word[start_pos..i + part2_word.len()])
             {
                 return self.check_compound_classic_try_simplified_triple(
                     word,
@@ -1790,10 +1790,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             }
 
             let part2_word = part2_entry.stem.as_ref();
-            // TODO: do we need a bounds check? Use starts_with on the subslice of `&word[i..]`
-            // instead?
-            if &word[i..i + part2_word.len()] == part2_word
-                && self.is_rep_similar(&word[start_pos..i - start_pos + part2_word.len()])
+            if word
+                .get(i..)
+                .is_some_and(|tail| tail.starts_with(part2_word))
+                && self.is_rep_similar(&word[start_pos..i + part2_word.len()])
             {
                 return None;
             }
@@ -2797,6 +2797,36 @@ mod test {
         let dict = Dictionary::new(aff, dic).unwrap();
         // SFX A is N (no cross-product), so "rewalked" should NOT be accepted.
         assert!(!dict.check("rewalked"));
+    }
+
+    #[test]
+    fn compound_simplified_triple_rep_panic() {
+        // SIMPLIFIEDTRIPLE compound checking creates word_with_triple by inserting a character
+        // into the original word. check_compound_impl runs against word_with_triple, so
+        // part2_entry.stem may be longer than the corresponding slice in the original word.
+        // When part2_word.len() covers the full tail of word_with_triple, indexing
+        // word[i..i + part2_word.len()] panics because i + part2_word.len() > word.len().
+        //
+        // "bbabcge" trace (i=3, word_with_triple="bbaabcge"):
+        //   part2 found: "abcg" matches stem "abcde" via the SFX rule (5 chars)
+        //   word[3..3+5] = word[3..8] but word.len() = 7 -> panic
+        let aff = r#"
+        COMPOUNDBEGIN B
+        COMPOUNDMIDDLE M
+        COMPOUNDEND E
+        COMPOUNDMIN 1
+        SIMPLIFIEDTRIPLE
+        CHECKCOMPOUNDREP
+        SFX S Y 1
+        SFX S de g .
+        "#;
+        let dic = r#"3
+        bba/B
+        abcde/MS
+        e/E
+        "#;
+        let dict = Dictionary::new(aff, dic).unwrap();
+        dict.check("bbabcge");
     }
 
     #[test]
