@@ -748,7 +748,11 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
         let mut remaining_attempts = self.max_attempts_for_long_alogs(word);
         let mut buffer = String::from(word);
         for ch in self.checker.aff.try_chars.chars() {
-            for (idx, _) in word.char_indices() {
+            for idx in word
+                .char_indices()
+                .map(|(i, _)| i)
+                .chain(core::iter::once(word.len()))
+            {
                 if remaining_attempts == 0 {
                     return;
                 }
@@ -1253,6 +1257,8 @@ mod test {
     fn forgotten_char_suggest() {
         assert!(suggest(&EN_US, "helo").contains(&"hello".to_string()));
         assert!(suggest(&EN_US, "wrld").contains(&"world".to_string()));
+        // trailing position: missing char at end of word
+        assert!(suggest(&EN_US, "hell").contains(&"hello".to_string()));
     }
 
     #[test]
