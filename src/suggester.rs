@@ -73,7 +73,7 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     /// The `out` vec is cleared before suggestions are added.
     pub fn suggest(&self, word: &str, out: &mut Vec<String>) {
         out.clear();
-        if word.len() >= MAX_WORD_LEN {
+        if word.len() > MAX_WORD_LEN {
             return;
         }
 
