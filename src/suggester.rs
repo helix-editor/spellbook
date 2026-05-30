@@ -718,7 +718,11 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                     debug_assert_eq!(word, &buffer);
                 }
 
-                if let Some(next_kb_ch) = kb[..match_idx].chars().next().filter(|ch| *ch != '|') {
+                if let Some(next_kb_ch) = kb[match_idx + word_ch.len_utf8()..]
+                    .chars()
+                    .next()
+                    .filter(|ch| *ch != '|')
+                {
                     buffer.remove(idx);
                     buffer.insert(idx, next_kb_ch);
                     self.add_suggestion_if_correct(&buffer, out);
@@ -1285,6 +1289,8 @@ mod test {
         assert!(suggest(&dict, "dteam").contains(&"dream".to_string()));
         assert!(suggest(&dict, "dresm").contains(&"dream".to_string()));
         assert!(!suggest(&dict, "dredm").contains(&"dream".to_string()));
+        // right neighbor: 's' -> 'd' (next char after 's' in the KEY layout)
+        assert!(suggest(&dict, "sream").contains(&"dream".to_string()));
     }
 
     #[test]
