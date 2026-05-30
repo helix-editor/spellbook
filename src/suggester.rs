@@ -164,10 +164,12 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                         continue;
                     };
                     let len = suggestion.len() - after_space_idx;
-                    if len > word.len() {
-                        continue;
-                    }
-                    if suggestion[after_space_idx..] == word[word.len() - len..] {
+                    if word
+                        .len()
+                        .checked_sub(len)
+                        .and_then(|s| word.get(s..))
+                        .is_some_and(|tail| suggestion[after_space_idx..] == *tail)
+                    {
                         continue;
                     }
                     let titled = self
@@ -1378,5 +1380,22 @@ mod test {
         "#;
         let dict = Dictionary::new(aff, dic).unwrap();
         assert!(suggest(&dict, "caféx").contains(&"café".to_string()));
+    }
+
+    #[test]
+    fn camel_pascal_multibyte_panic() {
+        // "BäB" is Pascal casing. The REP rule produces a space suggestion whose tail byte
+        // length does not align to a char boundary in the original word.
+        let aff = r#"
+        SET UTF-8
+        REP 1
+        REP ä a_B
+        "#;
+        let dic = r#"1
+        ba
+        "#;
+        let dict = Dictionary::new(aff, dic).unwrap();
+        let mut out = Vec::new();
+        dict.suggest("BäB", &mut out);
     }
 }
