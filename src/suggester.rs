@@ -69,6 +69,8 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     }
 
     /// Fills the given vec with possible corrections from the dictionary for the given word.
+    ///
+    /// The `out` vec is cleared before suggestions are added.
     pub fn suggest(&self, word: &str, out: &mut Vec<String>) {
         out.clear();
         if word.len() >= MAX_WORD_LEN {

@@ -199,6 +199,8 @@ impl<S: BuildHasher> Dictionary<S> {
     /// Fills the given vec with possible corrections from the dictionary for the given word.
     ///
     /// This is the same as [Suggester::suggest] but uses the default Suggester behavior.
+    ///
+    /// The `out` vec is cleared before suggestions are added.
     pub fn suggest(&self, word: &str, out: &mut Vec<String>) {
         self.suggester().suggest(word, out)
     }
