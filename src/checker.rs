@@ -2143,40 +2143,34 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             };
             words_data.push(part1_flags);
 
-            let Some((_part2_stem, part2_flags)) =
+            // Check whether the remainder of the word is a valid final part.
+            let direct_match = if let Some((_part2_stem, part2_flags)) =
                 self.words.get(&word[i..]).find(|(_stem, flags)| {
                     !has_flag!(flags, self.aff.options.need_affix_flag)
                         && self.aff.compound_rules.has_any_flags(flags)
-                })
-            else {
-                if let Some(result) =
-                    self.check_compound_with_rules_impl(word, words_data, i, forceucase)
-                {
-                    return Some(result);
-                } else {
-                    continue;
-                }
+                }) {
+                words_data.push(part2_flags);
+                let ok = self.aff.compound_rules.any_rule_matches(words_data)
+                    && !(forceucase.forbid()
+                        && has_flag!(part2_flags, self.aff.options.compound_force_uppercase_flag));
+                words_data.pop();
+                ok
+            } else {
+                false
             };
 
-            words_data.push(part2_flags);
-
-            if !self.aff.compound_rules.any_rule_matches(words_data)
-                || (forceucase.forbid()
-                    && has_flag!(part2_flags, self.aff.options.compound_force_uppercase_flag))
-            {
-                // Pop part2_flags and part1_flags before recursing/continuing.
+            if direct_match {
                 words_data.pop();
-                words_data.pop();
-                if let Some(result) =
-                    self.check_compound_with_rules_impl(word, words_data, i, forceucase)
-                {
-                    return Some(result);
-                } else {
-                    continue;
-                }
+                return Some(CompoundingResult::new(part1_stem, part1_flags));
             }
 
-            return Some(CompoundingResult::new(part1_stem, part1_flags));
+            // Recurse with part1 still in words_data, mirroring Nuspell's AT_SCOPE_EXIT
+            // which keeps part1 on the stack through the try_recursive label.
+            let result = self.check_compound_with_rules_impl(word, words_data, i, forceucase);
+            words_data.pop();
+            if let Some(r) = result {
+                return Some(r);
+            }
         }
 
         None
@@ -2803,5 +2797,25 @@ mod test {
         let dict = Dictionary::new(aff, dic).unwrap();
         // SFX A is N (no cross-product), so "rewalked" should NOT be accepted.
         assert!(!dict.check("rewalked"));
+    }
+
+    #[test]
+    fn compound_rule_three_part() {
+        // "foobarbaz" is a valid 3-part compound matching rule "ABC".
+        // "barbaz/B" causes part2 to be found at the first split ("foo"|"barbaz"),
+        // but [A,B] doesn't match "ABC". Part1's flags must still be present when
+        // recursing so the deeper split "foo"+"bar"+"baz" can match [A,B,C].
+        let aff = r#"
+        COMPOUNDRULE 1
+        COMPOUNDRULE ABC
+        "#;
+        let dic = r#"4
+        foo/A
+        bar/B
+        baz/C
+        barbaz/B
+        "#;
+        let dict = Dictionary::new(aff, dic).unwrap();
+        assert!(dict.check("foobarbaz"));
     }
 }
