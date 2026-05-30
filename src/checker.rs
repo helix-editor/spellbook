@@ -2202,7 +2202,7 @@ fn is_number(word: &str) -> bool {
         }
     }
 
-    true
+    !separated
 }
 
 /// Checks if the three chars around byte index `idx` are the same.
@@ -2398,6 +2398,9 @@ mod test {
         assert!(!is_number("123..456.78-9,0"));
         assert!(!is_number("123.456.-78-9,0"));
         assert!(!is_number("123..456.78-9-,0"));
+        // trailing separator
+        assert!(!is_number("1."));
+        assert!(!is_number("1,2,"));
     }
 
     #[test]
