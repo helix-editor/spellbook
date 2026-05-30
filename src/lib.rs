@@ -612,6 +612,13 @@ mod test {
     }
 
     #[test]
+    fn word_too_long() {
+        let aff = "";
+        let dic = alloc::format!("1\n{}\n", "a".repeat(u16::MAX as usize + 1));
+        assert!(Dictionary::new(aff, &dic).is_err());
+    }
+
+    #[test]
     fn add_word() {
         let mut dict = Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap();
         assert!(!dict.check("foobarbaz"));

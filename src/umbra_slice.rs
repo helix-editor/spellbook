@@ -429,8 +429,12 @@ impl fmt::Debug for UmbraString {
 
 impl From<&str> for UmbraString {
     fn from(s: &str) -> Self {
-        // TODO: propagate error instead.
-        assert!(s.len() <= u16::MAX as usize);
+        // Inputs over u16::MAX bytes are rejected at the dictionary parse boundary;
+        // internal callers are guaranteed to pass bounded strings.
+        assert!(
+            s.len() <= u16::MAX as usize,
+            "UmbraString::from called with input longer than u16::MAX bytes"
+        );
         Self(s.as_bytes().try_into().unwrap())
     }
 }

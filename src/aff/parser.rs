@@ -193,6 +193,10 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
             continue;
         }
 
+        if line.len() > u16::MAX as usize {
+            return Err(lines.error(ParseDictionaryErrorKind::WordTooLong));
+        }
+
         let (word, flagset) =
             parse_dic_line(line, cx.flag_type, &cx.flag_aliases, &cx.ignore_chars)
                 .map_err(|err| lines.error(ParseDictionaryErrorKind::MalformedFlag(err)))?;
@@ -1555,6 +1559,7 @@ pub enum ParseDictionaryErrorKind {
     // MalformedMorphologicalField(String),
     MalformedAffix,
     MalformedCondition(ConditionError),
+    WordTooLong,
     Empty,
 }
 
@@ -1601,6 +1606,7 @@ impl fmt::Display for ParseDictionaryErrorKind {
             // }
             Self::MalformedAffix => write!(f, "failed to parse affix"),
             Self::MalformedCondition(err) => write!(f, "condition is malformed: {}", err),
+            Self::WordTooLong => write!(f, "word is too long (longer than u16::MAX bytes)"),
             Self::Empty => write!(f, "the file is empty"),
         }
     }
