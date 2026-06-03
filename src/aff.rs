@@ -1009,10 +1009,28 @@ struct Conversion {
 #[derive(Debug, Clone)]
 pub(crate) struct ConversionTable {
     inner: Box<[Conversion]>,
+    /// The set of bytes that any conversion pattern can start with.
+    ///
+    /// `convert` is called on every checked word (and every suggestion candidate), but most words
+    /// contain none of the conversion patterns. Before walking the word we check whether it
+    /// contains any byte that could begin a pattern; if not, there's nothing to convert and we
+    /// return the word untouched. Indexed by `u8`.
+    possible_start_bytes: [bool; 256],
+    /// Whether every conversion pattern contains at least one non-ASCII byte.
+    ///
+    /// When this holds, a purely ASCII word cannot contain any pattern as a substring, so there is
+    /// nothing to convert. This is the common, cheap rejection for dictionaries like French whose
+    /// conversion patterns are all accented/decomposed characters, ligatures and fancy
+    /// apostrophes: a plain ASCII word like "test" skips conversion entirely. Note that the
+    /// per-byte filter alone is not enough here - French stores patterns in decomposed form (e.g.
+    /// "é" as "e" + a combining accent), so their starting byte is an ASCII vowel that ordinary
+    /// words contain.
+    all_patterns_non_ascii: bool,
 }
 
 impl From<Vec<(&str, &str)>> for ConversionTable {
     fn from(table: Vec<(&str, &str)>) -> Self {
+        let mut possible_start_bytes = [false; 256];
         let mut inner: Vec<Conversion> = table
             .into_iter()
             .map(|(from, to)| {
@@ -1021,6 +1039,9 @@ impl From<Vec<(&str, &str)>> for ConversionTable {
                 } else {
                     (from, false)
                 };
+                if let Some(&byte) = from.as_bytes().first() {
+                    possible_start_bytes[byte as usize] = true;
+                }
                 Conversion {
                     to: to.into(),
                     from: from.into(),
@@ -1034,8 +1055,12 @@ impl From<Vec<(&str, &str)>> for ConversionTable {
         // whole table for every position in every word.
         inner.sort_unstable_by(|a, b| a.from.cmp(&b.from));
 
+        let all_patterns_non_ascii = !inner.is_empty() && inner.iter().all(|c| !c.from.is_ascii());
+
         Self {
             inner: inner.into(),
+            possible_start_bytes,
+            all_patterns_non_ascii,
         }
     }
 }
@@ -1085,16 +1110,39 @@ impl ConversionTable {
     /// (longer patterns are replaced before shorter ones). After a replacement, scanning resumes
     /// after the replacement text.
     pub fn convert<'a>(&self, word: &'a str) -> Cow<'a, str> {
+        // Most dictionaries have no ICONV/OCONV rules at all (and even those that do usually leave
+        // one of the two tables empty), so the table is empty far more often than not. Bail in O(1)
+        // rather than scanning the word with the byte filter below.
+        if self.inner.is_empty() {
+            return Cow::Borrowed(word);
+        }
+
+        // Fast path: skip the whole walk when no pattern can possibly match. `convert` runs on
+        // every checked word and every suggestion candidate, but the overwhelmingly common case is
+        // that nothing matches.
+        //
+        // First, if every pattern needs a non-ASCII byte then an all-ASCII word matches none of
+        // them. `str::is_ascii` is SIMD-optimized, so this is very cheap and handles the common
+        // case for dictionaries like French. Otherwise fall back to checking whether the word
+        // contains any byte a pattern could start with (which also covers an empty table).
+        if self.all_patterns_non_ascii && word.is_ascii() {
+            return Cow::Borrowed(word);
+        }
+        if !word
+            .as_bytes()
+            .iter()
+            .any(|&byte| self.possible_start_bytes[byte as usize])
+        {
+            return Cow::Borrowed(word);
+        }
+
         let mut word = Cow::Borrowed(word);
 
         let mut i = 0;
         while i < word.len() {
             let Some(conversion) = self.match_at(&word[i..]) else {
                 // No pattern matches here; advance to the next character.
-                i += word[i..]
-                    .chars()
-                    .next()
-                    .map_or(1, |ch| ch.len_utf8());
+                i += word[i..].chars().next().map_or(1, |ch| ch.len_utf8());
                 continue;
             };
 
