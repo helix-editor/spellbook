@@ -522,7 +522,7 @@ impl<C: AffixKind> AffixIndex<C> {
         self.table.len()
     }
 
-    pub fn iter(&self) -> core::slice::Iter<Affix<C>> {
+    pub fn iter(&self) -> core::slice::Iter<'_, Affix<C>> {
         self.table.iter()
     }
 }

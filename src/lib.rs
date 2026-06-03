@@ -192,7 +192,7 @@ impl<S: BuildHasher> Dictionary<S> {
     /// Creates a [Checker] that borrows this dictionary.
     ///
     /// The [Checker] type can be used to customize the checking behavior. See the [Checker] docs.
-    pub fn checker(&self) -> Checker<S> {
+    pub fn checker(&self) -> Checker<'_, S> {
         Checker::new(self)
     }
 
@@ -209,7 +209,7 @@ impl<S: BuildHasher> Dictionary<S> {
     ///
     /// The [Suggester] type can be used to customize the suggestion behavior (for example to
     /// disable ngram suggestions). See the [Suggester] docs.
-    pub fn suggester(&self) -> Suggester<S> {
+    pub fn suggester(&self) -> Suggester<'_, S> {
         self.checker().into_suggester()
     }
 

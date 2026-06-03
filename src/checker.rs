@@ -1391,7 +1391,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         start_pos: usize,
         num_parts: usize,
         allow_bad_forceucase: Forceucase,
-    ) -> Option<CompoundingResult> {
+    ) -> Option<CompoundingResult<'_>> {
         let min_chars = self
             .aff
             .options
@@ -1431,7 +1431,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         i: usize,
         mut num_part: usize,
         forceucase: Forceucase,
-    ) -> Option<CompoundingResult> {
+    ) -> Option<CompoundingResult<'_>> {
         // There's an odd bit of code in Nuspell here that declares `old_num_part` and sets it
         // to `num_part` instead of declaring it below. The variable isn't used between here and
         // the declaration below but Nuspell sets it here anyways. Nuspell must declare
@@ -1580,7 +1580,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         num_part: usize,
         forceucase: Forceucase,
         part1_entry: CompoundingResult<'a>,
-    ) -> Option<CompoundingResult> {
+    ) -> Option<CompoundingResult<'_>> {
         let Some(part2_entry) =
             self.check_compound_impl::<AT_COMPOUND_MIDDLE>(word, i, num_part + 1, forceucase)
         else {
@@ -1653,7 +1653,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         num_part: usize,
         forceucase: Forceucase,
         part1_entry: CompoundingResult<'a>,
-    ) -> Option<CompoundingResult> {
+    ) -> Option<CompoundingResult<'_>> {
         if !self.aff.options.compound_simplified_triple {
             return None;
         }
@@ -1769,7 +1769,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         num_part: usize,
         forceucase: Forceucase,
         part1_entry: CompoundingResult<'a>,
-    ) -> Option<CompoundingResult> {
+    ) -> Option<CompoundingResult<'_>> {
         let part2_entry = self.check_compound_impl::<AT_COMPOUND_MIDDLE>(
             &word_with_triple,
             i,
@@ -1881,7 +1881,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         _i: usize,
         _num_parts: usize,
         _allow_bad_forceucase: Forceucase,
-    ) -> Option<CompoundingResult> {
+    ) -> Option<CompoundingResult<'_>> {
         // TODO: find a dictionary that uses CHECKCOMPOUNDPATTERN with replacements.
         // This function does nothing unless we have a compound pattern with a replacement (as
         // you might guess from the function name).
@@ -1891,7 +1891,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
     fn check_word_in_compound<const MODE: AffixingMode>(
         &self,
         word: &str,
-    ) -> Option<CompoundingResult> {
+    ) -> Option<CompoundingResult<'_>> {
         let compound_flag = match MODE {
             AT_COMPOUND_BEGIN => self.aff.options.compound_begin_flag,
             AT_COMPOUND_MIDDLE => self.aff.options.compound_middle_flag,
