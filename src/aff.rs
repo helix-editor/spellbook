@@ -1000,21 +1000,6 @@ struct Conversion {
     anchor_end: bool,
 }
 
-impl Conversion {
-    fn find(&self, word: &str) -> Option<usize> {
-        if word.len() < self.from.len() {
-            return None;
-        }
-
-        if self.anchor_end {
-            word.ends_with(&*self.from)
-                .then_some(word.len() - self.from.len())
-        } else {
-            word.find(&*self.from)
-        }
-    }
-}
-
 /// The conversion table used by ICONV and OCONV rules.
 ///
 /// This is nothing more than a sequence of `(from, to)` replacement pairs. Not many dictionaries
@@ -1027,86 +1012,98 @@ pub(crate) struct ConversionTable {
 }
 
 impl From<Vec<(&str, &str)>> for ConversionTable {
-    fn from(mut table: Vec<(&str, &str)>) -> Self {
-        // Sort the table so that longer patterns come before shorter.
-        table.sort_unstable_by_key(|(from, _to)| core::cmp::Reverse(*from));
+    fn from(table: Vec<(&str, &str)>) -> Self {
+        let mut inner: Vec<Conversion> = table
+            .into_iter()
+            .map(|(from, to)| {
+                let (from, anchor_end) = if let Some(from) = from.strip_suffix('_') {
+                    (from, true)
+                } else {
+                    (from, false)
+                };
+                Conversion {
+                    to: to.into(),
+                    from: from.into(),
+                    anchor_end,
+                }
+            })
+            .collect();
+
+        // Sort ascending by the (stripped) pattern text. `convert` relies on this ordering to
+        // binary search for the patterns sharing a given leading byte rather than scanning the
+        // whole table for every position in every word.
+        inner.sort_unstable_by(|a, b| a.from.cmp(&b.from));
 
         Self {
-            inner: table
-                .into_iter()
-                .map(|(from, to)| {
-                    let (from, anchor_end) = if let Some(from) = from.strip_suffix('_') {
-                        (from, true)
-                    } else {
-                        (from, false)
-                    };
-                    Conversion {
-                        to: to.into(),
-                        from: from.into(),
-                        anchor_end,
-                    }
-                })
-                .collect(),
+            inner: inner.into(),
         }
     }
 }
 
-/// A match of an ICONV/OCONV pattern in a word.
-/// The lifetime belongs to the table.
-#[derive(Debug)]
-struct ConversionMatch<'a> {
-    /// The byte index in the word at which the match starts.
-    start: usize,
-    /// The pattern which matched.
-    from: &'a str,
-    /// The text that should be used to replace the pattern.
-    replacement: &'a str,
-}
-
 impl ConversionTable {
-    /// Finds the earliest conversion which matches the given word at the offset with the longest
-    /// replacement length.
-    fn find_match<'a>(&'a self, word: &str, offset: usize) -> Option<ConversionMatch<'a>> {
-        let mut mat: Option<ConversionMatch> = None;
+    /// Finds the longest conversion whose pattern matches at the very start of `tail`.
+    ///
+    /// The table is sorted by pattern, so all patterns sharing `tail`'s first byte form a
+    /// contiguous run which we locate with a binary search. Real conversion tables have only a
+    /// handful of patterns per leading byte, so the subsequent scan of that run is short - far
+    /// cheaper than the substring search over the whole table that a naive implementation would do
+    /// at every position.
+    fn match_at(&self, tail: &str) -> Option<&Conversion> {
+        let first = *tail.as_bytes().first()?;
 
-        for conversion in self.inner.iter() {
-            let start = match conversion.find(&word[offset..]) {
-                Some(idx) => idx + offset,
-                None => continue,
+        // Patterns with an empty `from` (and any byte less than `first`) sort before this point and
+        // are skipped. The run we want starts here and ends when the leading byte changes.
+        let start = self
+            .inner
+            .partition_point(|c| c.from.as_bytes().first().copied() < Some(first));
+
+        let mut best: Option<&Conversion> = None;
+        for conversion in self.inner[start..].iter() {
+            if conversion.from.as_bytes().first().copied() != Some(first) {
+                break;
+            }
+
+            let matches = if conversion.anchor_end {
+                // An end-anchored pattern only matches if it consumes the rest of the word.
+                tail == conversion.from.as_ref()
+            } else {
+                tail.starts_with(conversion.from.as_ref())
             };
 
-            // Favor the longest pattern which starts at the earliest byte.
-            if mat.is_none()
-                || mat.as_ref().is_some_and(|mat| {
-                    start < mat.start
-                        || (start == mat.start && conversion.from.len() > mat.from.len())
-                })
-            {
-                mat = Some(ConversionMatch {
-                    start,
-                    from: &conversion.from,
-                    replacement: &conversion.to,
-                })
+            // Favor the longest matching pattern.
+            if matches && best.map_or(true, |b| conversion.from.len() > b.from.len()) {
+                best = Some(conversion);
             }
         }
 
-        mat
+        best
     }
 
     /// Applies any ICONV/OCONV conversions to the given word.
     ///
-    /// Longer patterns are replaced before shorter ones.
+    /// Walks the word left to right replacing the longest pattern that matches at each position
+    /// (longer patterns are replaced before shorter ones). After a replacement, scanning resumes
+    /// after the replacement text.
     pub fn convert<'a>(&self, word: &'a str) -> Cow<'a, str> {
         let mut word = Cow::Borrowed(word);
 
         let mut i = 0;
-        while let Some(conversion) = self.find_match(&word, i) {
+        while i < word.len() {
+            let Some(conversion) = self.match_at(&word[i..]) else {
+                // No pattern matches here; advance to the next character.
+                i += word[i..]
+                    .chars()
+                    .next()
+                    .map_or(1, |ch| ch.len_utf8());
+                continue;
+            };
+
+            let from_len = conversion.from.len();
+            let advance = conversion.to.len();
             let mut string = word.into_owned();
-            // Adjust for finding a match within `&word[i..]`
-            let range = conversion.start..conversion.start + conversion.from.len();
-            string.replace_range(range, conversion.replacement);
+            string.replace_range(i..i + from_len, &conversion.to);
             word = Cow::Owned(string);
-            i = conversion.start + conversion.replacement.len();
+            i += advance;
         }
 
         word
