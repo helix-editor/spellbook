@@ -591,21 +591,24 @@ impl<'index, C: AffixKind> Iterator for AffixesIter<'index, '_, C> {
             // the table where the nth character for each affix matches this character of the
             // search key.
             let ch = self.chars.next()?;
+            let target = Some(ch);
 
-            // Move `start` up to the index of the first affix that has this character in its
-            // nth position.
-            let char_beginning_idx = self
+            // The table is sorted lexicographically by `appending()`. Within this sub-slice every
+            // affix shares the first `chars_matched` characters with the search key, so the slice
+            // is sorted by the character at position `chars_matched`. (Affixes whose key is
+            // exactly `chars_matched` characters long sort first but have already been emitted and
+            // removed from the front by the `count` check above.) That lets us binary search for
+            // the range of affixes whose nth character matches, rather than scanning linearly.
+            let start = self
                 .table
-                .iter()
-                .position(|affix| affix.appending().nth(self.chars_matched) == Some(ch))?;
-            self.table = &self.table[char_beginning_idx..];
-
-            // Move the `end` back so that the last element in the search slice is the last
-            // affix that shares this character in its nth position.
-            let char_end_idx = self
+                .partition_point(|affix| affix.appending().nth(self.chars_matched) < target);
+            let end = self
                 .table
-                .partition_point(|affix| affix.appending().nth(self.chars_matched) == Some(ch));
-            self.table = &self.table[..char_end_idx];
+                .partition_point(|affix| affix.appending().nth(self.chars_matched) <= target);
+            if start == end {
+                return None;
+            }
+            self.table = &self.table[start..end];
 
             self.chars_matched += 1;
         }
