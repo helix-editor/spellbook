@@ -34,6 +34,12 @@ fn dict_with_iconv(n: usize) -> Dictionary<RandomState> {
 // actually consulted at each position) but matches none of them.
 const WORD: &str = "abcdefghijklmnopqrstuvwxyzabcdef";
 
+// A 32-character word whose bytes are all uppercase, so none of them is a pattern start byte
+// (`a`-`z`). This exercises the `possible_start_bytes` filter's full scan-and-reject path - the
+// overwhelmingly common "nothing to convert" case - rather than `match_at`. This is the case the
+// set's representation actually affects, since the whole word is probed against it.
+const NO_OVERLAP_WORD: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEF";
+
 #[bench]
 fn iconv_table_64(b: &mut Bencher) {
     let dict = dict_with_iconv(64);
@@ -44,4 +50,16 @@ fn iconv_table_64(b: &mut Bencher) {
 fn iconv_table_1024(b: &mut Bencher) {
     let dict = dict_with_iconv(1024);
     b.iter(|| dict.check(black_box(WORD)))
+}
+
+#[bench]
+fn iconv_filter_reject_64(b: &mut Bencher) {
+    let dict = dict_with_iconv(64);
+    b.iter(|| dict.check(black_box(NO_OVERLAP_WORD)))
+}
+
+#[bench]
+fn iconv_filter_reject_1024(b: &mut Bencher) {
+    let dict = dict_with_iconv(1024);
+    b.iter(|| dict.check(black_box(NO_OVERLAP_WORD)))
 }

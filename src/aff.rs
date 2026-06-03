@@ -1000,6 +1000,22 @@ struct Conversion {
     anchor_end: bool,
 }
 
+/// A compact set of byte values, stored as a 256-bit bitset (32 bytes rather than the 256 bytes a
+/// `[bool; 256]` would take). `contains` is a shift and mask, so the smaller footprint comes at
+/// no measurable cost to the per-byte probe done while converting words.
+#[derive(Debug, Clone, Default)]
+struct ByteSet([u64; 4]);
+
+impl ByteSet {
+    fn insert(&mut self, byte: u8) {
+        self.0[(byte >> 6) as usize] |= 1 << (byte & 63);
+    }
+
+    fn contains(&self, byte: u8) -> bool {
+        self.0[(byte >> 6) as usize] & (1 << (byte & 63)) != 0
+    }
+}
+
 /// The conversion table used by ICONV and OCONV rules.
 ///
 /// This is nothing more than a sequence of `(from, to)` replacement pairs. Not many dictionaries
@@ -1014,8 +1030,8 @@ pub(crate) struct ConversionTable {
     /// `convert` is called on every checked word (and every suggestion candidate), but most words
     /// contain none of the conversion patterns. Before walking the word we check whether it
     /// contains any byte that could begin a pattern; if not, there's nothing to convert and we
-    /// return the word untouched. Indexed by `u8`.
-    possible_start_bytes: [bool; 256],
+    /// return the word untouched. A 256-bit set indexed by `u8`; see [`ByteSet`].
+    possible_start_bytes: ByteSet,
     /// Whether every conversion pattern contains at least one non-ASCII byte.
     ///
     /// When this holds, a purely ASCII word cannot contain any pattern as a substring, so there is
@@ -1030,7 +1046,7 @@ pub(crate) struct ConversionTable {
 
 impl From<Vec<(&str, &str)>> for ConversionTable {
     fn from(table: Vec<(&str, &str)>) -> Self {
-        let mut possible_start_bytes = [false; 256];
+        let mut possible_start_bytes = ByteSet::default();
         let mut inner: Vec<Conversion> = table
             .into_iter()
             .map(|(from, to)| {
@@ -1040,7 +1056,7 @@ impl From<Vec<(&str, &str)>> for ConversionTable {
                     (from, false)
                 };
                 if let Some(&byte) = from.as_bytes().first() {
-                    possible_start_bytes[byte as usize] = true;
+                    possible_start_bytes.insert(byte);
                 }
                 Conversion {
                     to: to.into(),
@@ -1131,7 +1147,7 @@ impl ConversionTable {
         if !word
             .as_bytes()
             .iter()
-            .any(|&byte| self.possible_start_bytes[byte as usize])
+            .any(|&byte| self.possible_start_bytes.contains(byte))
         {
             return Cow::Borrowed(word);
         }
