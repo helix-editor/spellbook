@@ -63,6 +63,15 @@ pub(crate) struct Condition {
     /// `Condition` is such a small subset of regex that we can tell only from a linear scan of
     /// the input how many characters we will attempt to match.
     chars: usize,
+    /// Whether `pattern` is a plain literal: it contains no wildcard (`.`) or character class
+    /// (`[...]`) syntax.
+    ///
+    /// The overwhelming majority of conditions in real dictionaries are plain literals (for
+    /// example the French dictionary has thousands of suffix conditions like `uire` or `er` and
+    /// only a few hundred with character classes). For a literal, matching reduces to a
+    /// `str::starts_with`/`str::ends_with` check which is backed by an optimized `memcmp` rather
+    /// than the general character-by-character matcher.
+    is_literal: bool,
 }
 
 impl Condition {
@@ -309,6 +318,11 @@ impl Prefix {
             return false;
         }
 
+        // Fast path: a literal condition is just a prefix check on the word.
+        if condition.is_literal {
+            return word.starts_with(&*condition.pattern);
+        }
+
         condition.matches(word)
     }
 }
@@ -371,6 +385,11 @@ impl Suffix {
         let len_bytes = word.len();
         if len_bytes < condition.chars {
             return false;
+        }
+
+        // Fast path: a literal condition is just a suffix check on the word.
+        if condition.is_literal {
+            return word.ends_with(&*condition.pattern);
         }
 
         let (chars, bytes) = word

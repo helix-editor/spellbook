@@ -1751,6 +1751,10 @@ impl FromStr for Condition {
         Ok(Self {
             pattern: s.into(),
             chars,
+            // A literal condition has no wildcard or character class syntax.
+            // NOTE: we don't need to search for ']' here since we already rejected mismatched
+            // brackets above as an Err.
+            is_literal: !s.contains(['.', '[']),
         })
     }
 }
@@ -1881,28 +1885,32 @@ mod test {
         assert_eq!(
             Ok(Condition {
                 pattern: "foo".into(),
-                chars: 3
+                chars: 3,
+                is_literal: true
             }),
             "foo".parse()
         );
         assert_eq!(
             Ok(Condition {
                 pattern: "foo[bar]".into(),
-                chars: 4
+                chars: 4,
+                is_literal: false
             }),
             "foo[bar]".parse()
         );
         assert_eq!(
             Ok(Condition {
                 pattern: "[foo]bar".into(),
-                chars: 4
+                chars: 4,
+                is_literal: false
             }),
             "[foo]bar".parse()
         );
         assert_eq!(
             Ok(Condition {
                 pattern: "foo[bar]baz".into(),
-                chars: 7
+                chars: 7,
+                is_literal: false
             }),
             "foo[bar]baz".parse()
         );
