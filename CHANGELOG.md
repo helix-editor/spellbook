@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- ## [Unreleased] -->
 
+## [v0.4.2] - 2026-06-03
+
+### Fixed
+
+* Fixed `PFX`/`SFX` rules with cross-product set to `N` being treated as
+  cross-product (`Y`). Previously the cross-product flag in the affix table was
+  ignored, so prefixes and suffixes could be combined when the dictionary
+  disallowed it.
+* Fixed several panics from slicing on non-character boundaries:
+    * In the suggester when generating camel/pascal-case corrections for words
+      with multi-byte characters.
+    * In the checker when checking compound words against `CHECKCOMPOUNDREP`
+      patterns.
+* Fixed `KEY` (keyboard) suggestions only considering the left neighbor of a
+  key; the right neighbor is now also suggested.
+* Fixed forgotten-character suggestions not considering a missing character at
+  the very end of the word (e.g. `hell` -> `hello`).
+* Fixed checking of multi-part compound words joined by `COMPOUNDRULE`.
+* Numbers with a trailing separator (e.g. `1.` or `1,2,`) are no longer
+  classified as numeric.
+* The suggester now skips words strictly longer than `MAX_WORD_LEN`, matching
+  the checker.
+* Overly long dictionary lines are now rejected during parsing instead of
+  triggering a debug assertion, and the capacity hint from the dictionary file
+  is capped to avoid excessive allocation on malformed input.
+
+### Performance
+
+* Sped up `ICONV`/`OCONV` input/output conversion by binary-searching the
+  conversion table and adding fast lanes for common cases.
+* Added a fast lane for matching affix `Condition`s against literal characters.
+* Binary-search affixes in `AffixesIter::next`.
+
 ## [v0.4.1] - 2026-05-25
 
 ### Fixed
