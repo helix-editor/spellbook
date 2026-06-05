@@ -83,9 +83,20 @@ fn fr_in_dictionary_word(b: &mut Bencher) {
     b.iter(|| FR_FR.check(black_box("test")))
 }
 
+// "mangerais" is not a stem in the wordlist - it's "manger" plus a suffix - so checking it can
+// only succeed by running the suffix-stripping machinery (`AffixesIter`). (Contrast a word like
+// "mangeable" which is a literal stem and short-circuits on the wordlist lookup.)
 #[bench]
 fn fr_word_with_suffix(b: &mut Bencher) {
-    b.iter(|| FR_FR.check(black_box("mangeable")))
+    b.iter(|| FR_FR.check(black_box("mangerais")))
+}
+
+// Like `fr_word_with_suffix` but both the input and the stripped suffix contain a multi-byte
+// character ("â"). This stresses the char-by-char decoding inside `AffixesIter`, where indexing
+// the nth character of an affix re-walks the UTF-8 from one end.
+#[bench]
+fn fr_word_with_suffix_multibyte(b: &mut Bencher) {
+    b.iter(|| FR_FR.check(black_box("mangeât")))
 }
 
 #[bench]
