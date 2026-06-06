@@ -7,10 +7,10 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END, FULL_WORD,
+    erase_chars, AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END, FULL_WORD,
 };
 
-use core::{marker::PhantomData, num::NonZeroU16, str::Chars};
+use core::{marker::PhantomData, num::NonZeroU16};
 
 pub(crate) const HIDDEN_HOMONYM_FLAG: Flag = unsafe { Flag::new_unchecked(u16::MAX) };
 pub(crate) const MAX_SUGGESTIONS: usize = 16;
@@ -171,8 +171,17 @@ impl<K: AffixKind> Affix<K> {
         })
     }
 
-    pub fn appending(&self) -> K::Chars<'_> {
-        K::chars(&self.add)
+    /// The raw UTF-8 bytes of `add`. `AffixesIter` indexes these in comparison order (forward for
+    /// prefixes, from the end for suffixes) via `K::nth_byte`.
+    #[inline]
+    pub fn appending(&self) -> &[u8] {
+        self.add.as_bytes()
+    }
+
+    /// Erases the given `IGNORE` characters from `add`. The parser applies this after construction
+    /// because `IGNORE` may be declared after the affixes in the `.aff` file.
+    pub fn erase_ignored_chars(&mut self, ignore: &[char]) {
+        self.add = erase_chars(&self.add, ignore).into();
     }
 
     #[inline]
@@ -191,19 +200,23 @@ pub(crate) type Prefix = Affix<Pfx>;
 /// Rules for replacing characters at the end of a stem.
 pub(crate) type Suffix = Affix<Sfx>;
 
-/// A helper trait that, together with `Pfx` and `Sfx`, allows generically reading either
-/// characters of a `&str` forwards or backwards.
+/// A helper trait that, together with `Pfx` and `Sfx`, indexes the UTF-8 bytes of an affix's
+/// `add` (or a search word) in the order `AffixesIter` compares them: forward for prefixes, from
+/// the end for suffixes.
 ///
-/// This is a textbook ["lending iterator"] which uses a generic associated type to express that
-/// the lifetime of the iterator is bound only to the input word.
-///
-/// ["lending iterator"]: https://rust-lang.github.io/generic-associated-types-initiative/design_patterns/iterable.html
+/// `AffixesIter` walks the affix table by matching one byte at a time. UTF-8's design makes this
+/// equivalent to matching one code point at a time. Byte-order equals code-point order, and since
+/// every stored `add` is a whole number of characters, a byte-prefix/suffix match is always
+/// character-aligned, but with no decoding and O(1) random access straight into the existing
+/// `&[u8]`. This mirrors Nuspell, whose affix `appending` is a `std::string` (bytes) searched
+/// byte-wise.
 pub(crate) trait AffixKind {
-    type Chars<'a>: Iterator<Item = char>
-    where
-        Self: 'a;
+    /// The `i`th byte of `bytes` in comparison order, or `None` if `i` is past the end. `O(1)`.
+    fn nth_byte(bytes: &[u8], i: usize) -> Option<u8>;
 
-    fn chars(word: &str) -> Self::Chars<'_>;
+    /// Orders two affix keys by their comparison-order bytes. Used once to sort the table at load
+    /// time; `AffixesIter` then relies on that ordering to binary search.
+    fn cmp(a: &[u8], b: &[u8]) -> core::cmp::Ordering;
 
     // Reversed form of `affix_NOT_valid` from Nuspell.
     fn is_valid<const MODE: AffixingMode>(affix: &Affix<Self>, options: &AffOptions) -> bool
@@ -212,10 +225,12 @@ pub(crate) trait AffixKind {
 }
 
 impl AffixKind for Pfx {
-    type Chars<'a> = Chars<'a>;
+    fn nth_byte(bytes: &[u8], i: usize) -> Option<u8> {
+        bytes.get(i).copied()
+    }
 
-    fn chars(word: &str) -> Self::Chars<'_> {
-        word.chars()
+    fn cmp(a: &[u8], b: &[u8]) -> core::cmp::Ordering {
+        a.cmp(b)
     }
 
     fn is_valid<const MODE: AffixingMode>(prefix: &Prefix, options: &AffOptions) -> bool {
@@ -236,10 +251,13 @@ impl AffixKind for Pfx {
 }
 
 impl AffixKind for Sfx {
-    type Chars<'a> = core::iter::Rev<Chars<'a>>;
+    fn nth_byte(bytes: &[u8], i: usize) -> Option<u8> {
+        // The `i`th byte from the end.
+        bytes.len().checked_sub(i + 1).map(|j| bytes[j])
+    }
 
-    fn chars(word: &str) -> Self::Chars<'_> {
-        word.chars().rev()
+    fn cmp(a: &[u8], b: &[u8]) -> core::cmp::Ordering {
+        a.iter().rev().cmp(b.iter().rev())
     }
 
     fn is_valid<const MODE: AffixingMode>(suffix: &Suffix, options: &AffOptions) -> bool {
@@ -458,8 +476,8 @@ pub(crate) type SuffixIndex = AffixIndex<Sfx>;
 #[derive(Debug, Clone)]
 pub(crate) struct AffixIndex<C> {
     table: Box<[Affix<C>]>,
-    first_char: Box<[char]>,
-    prefix_idx_with_first_char: Box<[usize]>,
+    first_byte: Box<[u8]>,
+    prefix_idx_with_first_byte: Box<[usize]>,
     pub all_flags: FlagSet,
 }
 
@@ -472,41 +490,37 @@ impl<C: AffixKind> FromIterator<Affix<C>> for AffixIndex<C> {
 
 impl<C: AffixKind> From<Vec<Affix<C>>> for AffixIndex<C> {
     fn from(mut table: Vec<Affix<C>>) -> Self {
-        // Sort the table lexiographically by key. We will use this lexiographical ordering to
-        // efficiently search in AffixesIter.
-        table.sort_unstable_by(|a, b| a.appending().cmp(b.appending()));
+        // Sort the table lexiographically by key (comparison-order bytes). We will use this
+        // lexiographical ordering to efficiently search in AffixesIter.
+        table.sort_unstable_by(|a, b| C::cmp(a.appending(), b.appending()));
 
-        let mut first_char = Vec::new();
-        let mut prefix_idx_with_first_char = Vec::new();
+        let mut first_byte = Vec::new();
+        let mut prefix_idx_with_first_byte = Vec::new();
 
         // Seek through the sorted table to the first element where the key is non-empty.
-        let mut first_char_idx = table.partition_point(|affix| affix.appending().next().is_none());
-        while first_char_idx < table.len() {
-            let ch = table[first_char_idx]
-                .appending()
-                .next()
+        let mut first_byte_idx = table.partition_point(|affix| affix.appending().is_empty());
+        while first_byte_idx < table.len() {
+            let byte = C::nth_byte(table[first_byte_idx].appending(), 0)
                 .expect("vec is sorted so empty keys are before the partition point");
 
-            // Save the first character of the key and the index of the affix in the table that
-            // starts off this character. We can use this while reading the AffixIndex to jump
+            // Save the first byte of the key and the index of the affix in the table that
+            // starts off this byte. We can use this while reading the AffixIndex to jump
             // ahead efficiently in the table.
-            first_char.push(ch);
-            prefix_idx_with_first_char.push(first_char_idx);
+            first_byte.push(byte);
+            prefix_idx_with_first_byte.push(first_byte_idx);
 
-            match table[first_char_idx..].iter().position(|affix| {
-                affix
-                    .appending()
-                    .next()
+            match table[first_byte_idx..].iter().position(|affix| {
+                C::nth_byte(affix.appending(), 0)
                     .expect("vec is sorted so empty keys are before the partition point")
-                    > ch
+                    > byte
             }) {
-                Some(next_char_index) => first_char_idx += next_char_index,
+                Some(next_byte_index) => first_byte_idx += next_byte_index,
                 None => break,
             }
         }
-        // Add an extra element to the end so that `prefix_idx_with_first_char` is always one
-        // element longer than `first_char`.
-        prefix_idx_with_first_char.push(table.len());
+        // Add an extra element to the end so that `prefix_idx_with_first_byte` is always one
+        // element longer than `first_byte`.
+        prefix_idx_with_first_byte.push(table.len());
 
         let flags = table
             .iter()
@@ -516,8 +530,8 @@ impl<C: AffixKind> From<Vec<Affix<C>>> for AffixIndex<C> {
 
         Self {
             table: table.into(),
-            first_char: first_char.into(),
-            prefix_idx_with_first_char: prefix_idx_with_first_char.into(),
+            first_byte: first_byte.into(),
+            prefix_idx_with_first_byte: prefix_idx_with_first_byte.into(),
             all_flags: flags,
         }
     }
@@ -530,10 +544,10 @@ impl<C: AffixKind> AffixIndex<C> {
     ) -> AffixesIter<'index, 'word, C> {
         AffixesIter {
             table: &self.table,
-            first_char: &self.first_char,
-            prefix_idx_with_first_char: &self.prefix_idx_with_first_char,
-            chars: C::chars(word),
-            chars_matched: 0,
+            first_byte: &self.first_byte,
+            prefix_idx_with_first_byte: &self.prefix_idx_with_first_byte,
+            word: word.as_bytes(),
+            bytes_matched: 0,
         }
     }
 
@@ -549,44 +563,41 @@ impl<C: AffixKind> AffixIndex<C> {
 /// An iterator over the prefixes/suffixes of a given word.
 pub(crate) struct AffixesIter<'index, 'word, C: AffixKind + 'static> {
     table: &'index [Affix<C>],
-    first_char: &'index [char],
-    prefix_idx_with_first_char: &'index [usize],
-    chars: C::Chars<'word>,
-    chars_matched: usize,
+    first_byte: &'index [u8],
+    prefix_idx_with_first_byte: &'index [usize],
+    /// The search word's raw UTF-8 bytes, indexed in comparison order via `C::nth_byte`.
+    word: &'word [u8],
+    bytes_matched: usize,
 }
 
 impl<'index, C: AffixKind> Iterator for AffixesIter<'index, '_, C> {
     type Item = &'index Affix<C>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // TODO: revisit this type. I suspect it's faster to just use `str::starts_with` and
-        // `str::ends_with` rather than char iterators. Also using char iterators shouldn't
-        // be necessary I think - we could switch to bytes instead.
-
         // Return all affixes that append nothing first.
-        if self.chars_matched == 0 {
+        if self.bytes_matched == 0 {
             if self.table.is_empty() {
                 return None;
             }
 
             let item = &self.table[0];
-            if item.appending().next().is_some() {
+            if !item.add.is_empty() {
                 // The empty portion of the table is done.
-                // Scan ahead to where the first character is.
-                let ch = self.chars.next()?;
-                let first_char_idx = self.first_char.iter().position(|c| *c == ch)?;
+                // Scan ahead to where the first byte is.
+                let byte = C::nth_byte(self.word, 0)?;
+                let first_byte_idx = self.first_byte.iter().position(|b| *b == byte)?;
 
-                // NOTE: `prefix_idx_with_first_char` always has at least one element and is
-                // always one element longer than `first_char`, so we can safely index at `0`
-                // and at whatever index we get from `first_char` plus one.
-                let empty_offset = self.prefix_idx_with_first_char[0];
-                // Constrain the bounds of the search to affixes that share the first letter
+                // NOTE: `prefix_idx_with_first_byte` always has at least one element and is
+                // always one element longer than `first_byte`, so we can safely index at `0`
+                // and at whatever index we get from `first_byte` plus one.
+                let empty_offset = self.prefix_idx_with_first_byte[0];
+                // Constrain the bounds of the search to affixes that share the first byte
                 // of the key. Offset by the number of affixes with empty `add` that we emitted
                 // previously.
-                let start = self.prefix_idx_with_first_char[first_char_idx] - empty_offset;
-                let end = self.prefix_idx_with_first_char[first_char_idx + 1] - empty_offset;
+                let start = self.prefix_idx_with_first_byte[first_byte_idx] - empty_offset;
+                let end = self.prefix_idx_with_first_byte[first_byte_idx + 1] - empty_offset;
                 self.table = &self.table[start..end];
-                self.chars_matched = 1;
+                self.bytes_matched = 1;
             } else {
                 self.table = &self.table[1..];
                 return Some(item);
@@ -598,38 +609,37 @@ impl<'index, C: AffixKind> Iterator for AffixesIter<'index, '_, C> {
                 return None;
             }
 
-            // If the search key is exactly matched so far (up to the number of characters we've
+            // If the search key is exactly matched so far (up to the number of bytes we've
             // seen), emit the item.
             let item = &self.table[0];
-            if item.appending().count() == self.chars_matched {
+            if item.add.len() == self.bytes_matched {
                 self.table = &self.table[1..];
                 return Some(item);
             }
 
-            // Look at the next character in the search key. Limit the search to the slice of
-            // the table where the nth character for each affix matches this character of the
-            // search key.
-            let ch = self.chars.next()?;
-            let target = Some(ch);
+            // Look at the next byte in the search key. Limit the search to the slice of
+            // the table where the nth byte for each affix matches this byte of the search key.
+            let byte = C::nth_byte(self.word, self.bytes_matched)?;
+            let target = Some(byte);
 
             // The table is sorted lexicographically by `appending()`. Within this sub-slice every
-            // affix shares the first `chars_matched` characters with the search key, so the slice
-            // is sorted by the character at position `chars_matched`. (Affixes whose key is
-            // exactly `chars_matched` characters long sort first but have already been emitted and
-            // removed from the front by the `count` check above.) That lets us binary search for
-            // the range of affixes whose nth character matches, rather than scanning linearly.
-            let start = self
-                .table
-                .partition_point(|affix| affix.appending().nth(self.chars_matched) < target);
-            let end = self
-                .table
-                .partition_point(|affix| affix.appending().nth(self.chars_matched) <= target);
+            // affix shares the first `bytes_matched` bytes with the search key, so the slice
+            // is sorted by the byte at position `bytes_matched`. (Affixes whose key is
+            // exactly `bytes_matched` bytes long sort first but have already been emitted and
+            // removed from the front by the `len` check above.) That lets us binary search for
+            // the range of affixes whose nth byte matches, rather than scanning linearly.
+            let start = self.table.partition_point(|affix| {
+                C::nth_byte(affix.appending(), self.bytes_matched) < target
+            });
+            let end = self.table.partition_point(|affix| {
+                C::nth_byte(affix.appending(), self.bytes_matched) <= target
+            });
             if start == end {
                 return None;
             }
             self.table = &self.table[start..end];
 
-            self.chars_matched += 1;
+            self.bytes_matched += 1;
         }
     }
 }

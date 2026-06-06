@@ -23,7 +23,7 @@ use crate::{
         string::{String, ToString},
         vec::Vec,
     },
-    erase_chars, Casing, Flag, FlagSet, Stem, WordList,
+    Casing, Flag, FlagSet, Stem, WordList,
 };
 
 use super::{
@@ -215,12 +215,10 @@ pub(crate) fn parse<'aff, 'dic, S: BuildHasher + Clone>(
 
     if !cx.ignore_chars.is_empty() {
         for prefix in cx.prefixes.iter_mut() {
-            let add = erase_chars(&prefix.add, &cx.ignore_chars);
-            prefix.add = add.into();
+            prefix.erase_ignored_chars(&cx.ignore_chars);
         }
         for suffix in cx.suffixes.iter_mut() {
-            let add = erase_chars(&suffix.add, &cx.ignore_chars);
-            suffix.add = add.into();
+            suffix.erase_ignored_chars(&cx.ignore_chars);
         }
     }
 
