@@ -35,9 +35,12 @@ fn number(b: &mut Bencher) {
     b.iter(|| EN_US.check(black_box("8675,309.0")))
 }
 
+// "earthed" is not a stem in the wordlist - it's "earth" plus the `-ed` suffix - so checking it
+// can only succeed by running the suffix-stripping machinery (`AffixesIter`). (Contrast "earthly",
+// which is a literal stem and short-circuits on the wordlist lookup without exercising suffixes.)
 #[bench]
 fn word_with_suffix(b: &mut Bencher) {
-    b.iter(|| EN_US.check(black_box("earthly")))
+    b.iter(|| EN_US.check(black_box("earthed")))
 }
 
 #[bench]
