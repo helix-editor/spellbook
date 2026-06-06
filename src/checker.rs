@@ -2,7 +2,8 @@ use core::hash::BuildHasher;
 
 use crate::{
     aff::{
-        AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, Suffix, HIDDEN_HOMONYM_FLAG,
+        AffData, Affix, AffixKind, CompoundPattern, Pfx, Prefix, Sfx, StemBuf, Suffix,
+        HIDDEN_HOMONYM_FLAG,
     },
     alloc::{fmt, string::String, vec::Vec},
     classify_casing, erase_chars, AffixingMode, Casing, Dictionary, Flag, FlagSet, Stem, WordList,
@@ -470,6 +471,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
+        let mut buf = StemBuf::new();
         for suffix in self.aff.suffixes.affixes_of(word) {
             if !self.is_outer_affix_valid::<_, MODE>(suffix) {
                 continue;
@@ -486,13 +488,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            let stem = suffix.to_stem(word);
+            let stem = suffix.to_stem_into(word, &mut buf);
 
-            if !suffix.condition_matches(&stem) {
+            if !suffix.condition_matches(stem) {
                 continue;
             }
 
-            for (stem, flags) in self.words.get(stem.as_ref()) {
+            for (stem, flags) in self.words.get(stem) {
                 // Nuspell:
                 // if (!cross_valid_inner_outer(word_flags, e))
                 // 	continue;
@@ -531,6 +533,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
+        let mut buf = StemBuf::new();
         for prefix in self.aff.prefixes.affixes_of(word) {
             if !self.is_outer_affix_valid::<_, MODE>(prefix) {
                 continue;
@@ -547,13 +550,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            let stem = prefix.to_stem(word);
+            let stem = prefix.to_stem_into(word, &mut buf);
 
-            if !prefix.condition_matches(&stem) {
+            if !prefix.condition_matches(stem) {
                 continue;
             }
 
-            for (stem, flags) in self.words.get(stem.as_ref()) {
+            for (stem, flags) in self.words.get(stem) {
                 // Nuspell:
                 // if (!cross_valid_inner_outer(word_flags, e))
                 // 	continue;
@@ -635,6 +638,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         word: &str,
         hidden_homonym: HiddenHomonym,
     ) -> Option<AffixForm<'a>> {
+        let mut prefix_buf = StemBuf::new();
+        let mut suffix_buf = StemBuf::new();
         for prefix in self.aff.prefixes.affixes_of(word) {
             if !prefix.crossproduct {
                 continue;
@@ -644,9 +649,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            let stem_without_prefix = prefix.to_stem(word);
+            let stem_without_prefix = prefix.to_stem_into(word, &mut prefix_buf);
 
-            if !prefix.condition_matches(&stem_without_prefix) {
+            if !prefix.condition_matches(stem_without_prefix) {
                 continue;
             }
 
@@ -654,7 +659,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             let has_needaffix_prefix = has_flag!(prefix.flags, self.aff.options.need_affix_flag);
             let is_circumfix_prefix = self.is_circumfix(prefix);
 
-            for suffix in self.aff.suffixes.affixes_of(&stem_without_prefix) {
+            for suffix in self.aff.suffixes.affixes_of(stem_without_prefix) {
                 if !suffix.crossproduct {
                     continue;
                 }
@@ -674,13 +679,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                let stem_without_suffix = suffix.to_stem(&stem_without_prefix);
+                let stem_without_suffix = suffix.to_stem_into(stem_without_prefix, &mut suffix_buf);
 
-                if !suffix.condition_matches(&stem_without_suffix) {
+                if !suffix.condition_matches(stem_without_suffix) {
                     continue;
                 }
 
-                for (stem, flags) in self.words.get(stem_without_suffix.as_ref()) {
+                for (stem, flags) in self.words.get(stem_without_suffix) {
                     let valid_cross_prefix_outer = !has_needaffix_prefix
                         && flags.contains(&suffix.flag)
                         && (suffix.flags.contains(&prefix.flag) || flags.contains(&prefix.flag));
@@ -732,6 +737,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return None;
         }
 
+        let mut outer_buf = StemBuf::new();
+        let mut inner_buf = StemBuf::new();
         for outer_suffix in self.aff.suffixes.affixes_of(word) {
             // Another fast lane:
             if !self.aff.suffixes.all_flags.contains(&outer_suffix.flag) {
@@ -746,14 +753,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            let stem = outer_suffix.to_stem(word);
+            let stem = outer_suffix.to_stem_into(word, &mut outer_buf);
 
-            if !outer_suffix.condition_matches(&stem) {
+            if !outer_suffix.condition_matches(stem) {
                 continue;
             }
 
             // Inline version of strip_sfx_then_sfx_2. Assume `AffixingMode::FullWord` here.
-            for inner_suffix in self.aff.suffixes.affixes_of(stem.as_ref()) {
+            for inner_suffix in self.aff.suffixes.affixes_of(stem) {
                 // Nuspell:
                 // if (!cross_valid_inner_outer(word_flags, se2))
                 // 	continue;
@@ -768,13 +775,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                let stem2 = inner_suffix.to_stem(&stem);
+                let stem2 = inner_suffix.to_stem_into(stem, &mut inner_buf);
 
-                if !inner_suffix.condition_matches(&stem2) {
+                if !inner_suffix.condition_matches(stem2) {
                     continue;
                 }
 
-                for (stem, flags) in self.words.get(stem2.as_ref()) {
+                for (stem, flags) in self.words.get(stem2) {
                     if !flags.contains(&inner_suffix.flag) {
                         continue;
                     }
@@ -810,6 +817,8 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return None;
         }
 
+        let mut outer_buf = StemBuf::new();
+        let mut inner_buf = StemBuf::new();
         for outer_prefix in self.aff.prefixes.affixes_of(word) {
             // Fastlane
             if !self.aff.prefixes.all_flags.contains(&outer_prefix.flag) {
@@ -824,14 +833,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            let stem = outer_prefix.to_stem(word);
+            let stem = outer_prefix.to_stem_into(word, &mut outer_buf);
 
-            if !outer_prefix.condition_matches(&stem) {
+            if !outer_prefix.condition_matches(stem) {
                 continue;
             }
 
             // Inline version of strip_pfx_then_pfx_2. Assume `AffixingMode::FullWord` here.
-            for inner_prefix in self.aff.prefixes.affixes_of(stem.as_ref()) {
+            for inner_prefix in self.aff.prefixes.affixes_of(stem) {
                 if !inner_prefix.flags.contains(&outer_prefix.flag) {
                     continue;
                 }
@@ -843,13 +852,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                let stem2 = inner_prefix.to_stem(&stem);
+                let stem2 = inner_prefix.to_stem_into(stem, &mut inner_buf);
 
-                if !inner_prefix.condition_matches(&stem2) {
+                if !inner_prefix.condition_matches(stem2) {
                     continue;
                 }
 
-                for (stem, flags) in self.words.get(stem2.as_ref()) {
+                for (stem, flags) in self.words.get(stem2) {
                     if !flags.contains(&inner_prefix.flag) {
                         continue;
                     }
@@ -885,6 +894,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return None;
         }
 
+        let mut prefix_buf = StemBuf::new();
+        let mut outer_buf = StemBuf::new();
+        let mut inner_buf = StemBuf::new();
         // Strip the prefix.
         for prefix in self.aff.prefixes.affixes_of(word) {
             if !prefix.crossproduct {
@@ -895,15 +907,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            // TODO: check whether the condition matches while producing the stem - avoid allocations
-            let stem = prefix.to_stem(word);
+            let stem = prefix.to_stem_into(word, &mut prefix_buf);
 
-            if !prefix.condition_matches(&stem) {
+            if !prefix.condition_matches(stem) {
                 continue;
             }
 
             // Strip the outer suffix.
-            for outer_suffix in self.aff.suffixes.affixes_of(&stem) {
+            for outer_suffix in self.aff.suffixes.affixes_of(stem) {
                 // Fastlane
                 if !self.aff.suffixes.all_flags.contains(&outer_suffix.flag) {
                     continue;
@@ -921,14 +932,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                let stem2 = outer_suffix.to_stem(&stem);
+                let stem2 = outer_suffix.to_stem_into(stem, &mut outer_buf);
 
-                if !outer_suffix.condition_matches(&stem2) {
+                if !outer_suffix.condition_matches(stem2) {
                     continue;
                 }
 
                 // Strip the inner suffix.
-                for inner_suffix in self.aff.suffixes.affixes_of(&stem2) {
+                for inner_suffix in self.aff.suffixes.affixes_of(stem2) {
                     if !inner_suffix.flags.contains(&outer_suffix.flag) {
                         continue;
                     }
@@ -941,14 +952,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    let stem3 = inner_suffix.to_stem(&stem2);
+                    let stem3 = inner_suffix.to_stem_into(stem2, &mut inner_buf);
 
-                    if !inner_suffix.condition_matches(&stem3) {
+                    if !inner_suffix.condition_matches(stem3) {
                         continue;
                     }
 
                     // Check that the fully stripped word is a stem in the dictionary.
-                    for (stem, flags) in self.words.get(stem3.as_ref()) {
+                    for (stem, flags) in self.words.get(stem3) {
                         if !outer_suffix.flags.contains(&prefix.flag)
                             && !flags.contains(&prefix.flag)
                         {
@@ -1012,6 +1023,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return None;
         }
 
+        let mut outer_buf = StemBuf::new();
+        let mut prefix_buf = StemBuf::new();
+        let mut inner_buf = StemBuf::new();
         for outer_suffix in self.aff.suffixes.affixes_of(word) {
             // Fastlane
             if !self.aff.prefixes.all_flags.contains(&outer_suffix.flag)
@@ -1028,13 +1042,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            let stem = outer_suffix.to_stem(word);
+            let stem = outer_suffix.to_stem_into(word, &mut outer_buf);
 
-            if !outer_suffix.condition_matches(&stem) {
+            if !outer_suffix.condition_matches(stem) {
                 continue;
             }
 
-            for prefix in self.aff.prefixes.affixes_of(&stem) {
+            for prefix in self.aff.prefixes.affixes_of(stem) {
                 if !prefix.crossproduct {
                     continue;
                 }
@@ -1043,9 +1057,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                let stem2 = prefix.to_stem(&stem);
+                let stem2 = prefix.to_stem_into(stem, &mut prefix_buf);
 
-                if !prefix.condition_matches(&stem) {
+                if !prefix.condition_matches(stem) {
                     continue;
                 }
 
@@ -1053,7 +1067,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     prefix.flags.contains(&outer_suffix.flag);
 
                 // Inlined version of Nuspell's `strip_s_p_s_3`. Here kitty kitty.
-                for inner_suffix in self.aff.suffixes.affixes_of(&stem2) {
+                for inner_suffix in self.aff.suffixes.affixes_of(stem2) {
                     if !inner_suffix.crossproduct {
                         continue;
                     }
@@ -1079,13 +1093,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    let stem3 = inner_suffix.to_stem(&stem2);
+                    let stem3 = inner_suffix.to_stem_into(stem2, &mut inner_buf);
 
-                    if !inner_suffix.condition_matches(&stem3) {
+                    if !inner_suffix.condition_matches(stem3) {
                         continue;
                     }
 
-                    for (stem, flags) in self.words.get(stem3.as_ref()) {
+                    for (stem, flags) in self.words.get(stem3) {
                         if !inner_suffix.flags.contains(&prefix.flag)
                             && !flags.contains(&prefix.flag)
                         {
@@ -1129,6 +1143,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return None;
         }
 
+        let mut suffix_buf = StemBuf::new();
+        let mut outer_buf = StemBuf::new();
+        let mut inner_buf = StemBuf::new();
         // Strip the suffix.
         for suffix in self.aff.suffixes.affixes_of(word) {
             if !suffix.crossproduct {
@@ -1139,14 +1156,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            let stem = suffix.to_stem(word);
+            let stem = suffix.to_stem_into(word, &mut suffix_buf);
 
-            if !suffix.condition_matches(&stem) {
+            if !suffix.condition_matches(stem) {
                 continue;
             }
 
             // Strip the outer prefix.
-            for outer_prefix in self.aff.prefixes.affixes_of(&stem) {
+            for outer_prefix in self.aff.prefixes.affixes_of(stem) {
                 // Fastlane
                 if !self.aff.suffixes.all_flags.contains(&outer_prefix.flag) {
                     continue;
@@ -1164,14 +1181,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                let stem2 = outer_prefix.to_stem(&stem);
+                let stem2 = outer_prefix.to_stem_into(stem, &mut outer_buf);
 
-                if !outer_prefix.condition_matches(&stem2) {
+                if !outer_prefix.condition_matches(stem2) {
                     continue;
                 }
 
                 // Strip the inner prefix.
-                for inner_prefix in self.aff.prefixes.affixes_of(&stem2) {
+                for inner_prefix in self.aff.prefixes.affixes_of(stem2) {
                     if !inner_prefix.flags.contains(&outer_prefix.flag) {
                         continue;
                     }
@@ -1184,14 +1201,14 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    let stem3 = inner_prefix.to_stem(&stem2);
+                    let stem3 = inner_prefix.to_stem_into(stem2, &mut inner_buf);
 
-                    if !inner_prefix.condition_matches(&stem3) {
+                    if !inner_prefix.condition_matches(stem3) {
                         continue;
                     }
 
                     // Check that the fully stripped word is a stem in the dictionary.
-                    for (stem, flags) in self.words.get(stem3.as_ref()) {
+                    for (stem, flags) in self.words.get(stem3) {
                         if !outer_prefix.flags.contains(&suffix.flag)
                             && !flags.contains(&suffix.flag)
                         {
@@ -1255,6 +1272,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
             return None;
         }
 
+        let mut outer_buf = StemBuf::new();
+        let mut suffix_buf = StemBuf::new();
+        let mut inner_buf = StemBuf::new();
         for outer_prefix in self.aff.prefixes.affixes_of(word) {
             // Fastlane
             if !self.aff.prefixes.all_flags.contains(&outer_prefix.flag)
@@ -1271,13 +1291,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 continue;
             }
 
-            let stem = outer_prefix.to_stem(word);
+            let stem = outer_prefix.to_stem_into(word, &mut outer_buf);
 
-            if !outer_prefix.condition_matches(&stem) {
+            if !outer_prefix.condition_matches(stem) {
                 continue;
             }
 
-            for suffix in self.aff.suffixes.affixes_of(&stem) {
+            for suffix in self.aff.suffixes.affixes_of(stem) {
                 if !suffix.crossproduct {
                     continue;
                 }
@@ -1286,9 +1306,9 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                     continue;
                 }
 
-                let stem2 = suffix.to_stem(&stem);
+                let stem2 = suffix.to_stem_into(stem, &mut suffix_buf);
 
-                if !suffix.condition_matches(&stem) {
+                if !suffix.condition_matches(stem) {
                     continue;
                 }
 
@@ -1296,7 +1316,7 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                 let suffix_flags_contains_outer_prefix_flag =
                     suffix.flags.contains(&outer_prefix.flag);
 
-                for inner_prefix in self.aff.prefixes.affixes_of(&stem2) {
+                for inner_prefix in self.aff.prefixes.affixes_of(stem2) {
                     if !inner_prefix.crossproduct {
                         continue;
                     }
@@ -1322,13 +1342,13 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
                         continue;
                     }
 
-                    let stem3 = inner_prefix.to_stem(&stem2);
+                    let stem3 = inner_prefix.to_stem_into(stem2, &mut inner_buf);
 
-                    if !inner_prefix.condition_matches(&stem3) {
+                    if !inner_prefix.condition_matches(stem3) {
                         continue;
                     }
 
-                    for (stem, flags) in self.words.get(stem3.as_ref()) {
+                    for (stem, flags) in self.words.get(stem3) {
                         if !inner_prefix.flags.contains(&suffix.flag)
                             && !flags.contains(&suffix.flag)
                         {

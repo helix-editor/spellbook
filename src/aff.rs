@@ -8,9 +8,64 @@ use crate::{
         vec::Vec,
     },
     erase_chars, AffixingMode, Flag, FlagSet, AT_COMPOUND_BEGIN, AT_COMPOUND_END, FULL_WORD,
+    MAX_WORD_LEN,
 };
 
 use core::{marker::PhantomData, num::NonZeroU16};
+
+/// How many bytes a `StemBuf` holds inline before spilling to the heap. A stem can be up to
+/// `MAX_WORD_LEN` bytes, but almost every real stem is far shorter, so the inline array is sized for
+/// the common case. Keeping it small matters: these buffers live in the stack frame of the hot
+/// `check_simple_word` (the strip methods inline into it), and a `MAX_WORD_LEN`-sized array there
+/// measurably slows affix checking - large enough to stop the prefix strip methods inlining.
+const STEM_INLINE_CAP: usize = 64;
+
+/// A scratch buffer used by `Prefix::to_stem_into` and `Suffix::to_stem_into` to build a stem
+/// without allocating on the common path.
+///
+/// A stem's length is `strip.len() + word.len() - add.len()`, bounded by `MAX_WORD_LEN`. Stems that
+/// fit in `STEM_INLINE_CAP` bytes are built in the inline array (no allocation); the rare longer
+/// stem spills to the heap buffer, which is reused across calls.
+pub struct StemBuf {
+    inline: [u8; STEM_INLINE_CAP],
+    heap: String,
+}
+
+impl StemBuf {
+    pub fn new() -> Self {
+        Self {
+            inline: [0u8; STEM_INLINE_CAP],
+            heap: String::new(),
+        }
+    }
+
+    /// Writes `a` immediately followed by `b` and returns the result as a `&str`. The inputs always
+    /// come from `&str`s, so the written bytes (and their concatenation) are valid UTF-8.
+    fn concat(&mut self, a: &str, b: &str) -> &str {
+        let len = a.len() + b.len();
+        debug_assert!(
+            len <= MAX_WORD_LEN,
+            "a stem cannot exceed MAX_WORD_LEN bytes"
+        );
+        if len <= STEM_INLINE_CAP {
+            self.inline[..a.len()].copy_from_slice(a.as_bytes());
+            self.inline[a.len()..len].copy_from_slice(b.as_bytes());
+            // SAFETY: `a` and `b` come from `&str`s, so the written `..len` bytes are valid UTF-8.
+            unsafe { core::str::from_utf8_unchecked(&self.inline[..len]) }
+        } else {
+            self.heap.clear();
+            self.heap.push_str(a);
+            self.heap.push_str(b);
+            self.heap.as_str()
+        }
+    }
+}
+
+impl Default for StemBuf {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub(crate) const HIDDEN_HOMONYM_FLAG: Flag = unsafe { Flag::new_unchecked(u16::MAX) };
 pub(crate) const MAX_SUGGESTIONS: usize = 16;
@@ -287,7 +342,10 @@ impl Prefix {
     /// # Panics
     ///
     /// This function `expect`s that the `Prefix`'s `add` is a prefix of the input `word`.
-    pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
+    /// Writes the stem into the caller-provided `buf` (avoiding a heap allocation) and returns it
+    /// as a `&str`. When this prefix has no `strip` the stem is just a slice of `word`, so `buf`
+    /// is left untouched and the borrowed slice is returned directly.
+    pub fn to_stem_into<'a>(&self, word: &'a str, buf: &'a mut StemBuf) -> &'a str {
         debug_assert!(
             word.starts_with(&*self.add),
             "to_stem should only be called when the `add` is a prefix of the word"
@@ -297,12 +355,9 @@ impl Prefix {
         let stripped = &word[self.add.len()..];
 
         match &self.strip {
-            Some(strip) => {
-                let mut stem = strip.to_string();
-                stem.push_str(stripped);
-                Cow::Owned(stem)
-            }
-            None => Cow::Borrowed(stripped),
+            // Stem is `strip + stripped`.
+            Some(strip) => buf.concat(strip, stripped),
+            None => stripped,
         }
     }
 
@@ -359,7 +414,10 @@ impl Suffix {
     /// # Panics
     ///
     /// This function `expect`s that the `Suffix`'s `add` is a suffix of the input `word`.
-    pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
+    /// Writes the stem into the caller-provided `buf` (avoiding a heap allocation) and returns it
+    /// as a `&str`. When this suffix has no `strip` the stem is just a slice of `word`, so `buf`
+    /// is left untouched and the borrowed slice is returned directly.
+    pub fn to_stem_into<'a>(&self, word: &'a str, buf: &'a mut StemBuf) -> &'a str {
         debug_assert!(
             word.ends_with(&*self.add),
             "to_stem should only be called when the `add` is a suffix of the word"
@@ -369,12 +427,9 @@ impl Suffix {
         let stripped = &word[..word.len() - self.add.len()];
 
         match self.strip.as_deref() {
-            Some(strip) => {
-                let mut stem = stripped.to_string();
-                stem.push_str(strip);
-                Cow::Owned(stem)
-            }
-            None => Cow::Borrowed(stripped),
+            // Stem is `stripped + strip`.
+            Some(strip) => buf.concat(stripped, strip),
+            None => stripped,
         }
     }
 
@@ -1569,11 +1624,13 @@ mod test {
         // Upstream: <https://github.com/nuspell/nuspell/blob/349e0d6bc68b776af035ca3ff664a7fc55d69387/tests/unit_test.cxx#L301-L313>
         let prefix = Prefix::new(flag!('F'), false, Some("qw"), "Qwe", None, flagset![]).unwrap();
         assert_eq!(prefix.to_derived("qwrty").as_str(), "Qwerty");
-        assert_eq!(prefix.to_stem("Qwerty").as_ref(), "qwrty");
+        let mut buf = StemBuf::new();
+        assert_eq!(prefix.to_stem_into("Qwerty", &mut buf), "qwrty");
 
         let suffix = Suffix::new(flag!('F'), false, Some("ie"), "ying", None, flagset![]).unwrap();
         assert_eq!(suffix.to_derived("pie").as_str(), "pying");
-        assert_eq!(suffix.to_stem("pying").as_ref(), "pie");
+        let mut buf = StemBuf::new();
+        assert_eq!(suffix.to_stem_into("pying", &mut buf), "pie");
     }
 
     #[test]
@@ -1663,17 +1720,20 @@ mod test {
         // Note: even though the condition can match, we would also need to look up the produced
         // stem in the word list to confirm that "aced" is a valid word.
 
-        let stem1 = suffix1.to_stem(word);
-        assert_eq!(&stem1, "ace");
-        assert!(suffix1.condition_matches(&stem1));
+        let mut buf = StemBuf::new();
+        let stem1 = suffix1.to_stem_into(word, &mut buf);
+        assert_eq!(stem1, "ace");
+        assert!(suffix1.condition_matches(stem1));
 
-        let stem3 = suffix3.to_stem(word);
-        assert_eq!(&stem3, "ac");
-        assert!(suffix3.condition_matches(&stem3));
+        let mut buf = StemBuf::new();
+        let stem3 = suffix3.to_stem_into(word, &mut buf);
+        assert_eq!(stem3, "ac");
+        assert!(suffix3.condition_matches(stem3));
 
-        let stem4 = suffix4.to_stem(word);
-        assert_eq!(&stem4, "ac");
-        assert!(!suffix4.condition_matches(&stem4));
+        let mut buf = StemBuf::new();
+        let stem4 = suffix4.to_stem_into(word, &mut buf);
+        assert_eq!(stem4, "ac");
+        assert!(!suffix4.condition_matches(stem4));
     }
 
     fn compound_rule_matches(pattern: &[CompoundRuleElement], data: &str) -> bool {
