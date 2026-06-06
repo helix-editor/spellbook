@@ -1682,7 +1682,10 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         if prev_cp_idx == 0 {
             return None;
         }
-        let (_, prev_cp2) = prev_codepoint(word, i)?;
+        // The codepoint *before* `prev_cp` - this gate verifies the two characters at the boundary
+        // are equal (the premise of a "simplified triple"). Nuspell: `valid_u8_prev_cp(word,
+        // prev_cp.begin_i)`.
+        let (_, prev_cp2) = prev_codepoint(word, prev_cp_idx)?;
         if prev_cp != prev_cp2 {
             return None;
         }
@@ -2398,6 +2401,43 @@ mod test {
 
         assert!(!are_three_chars_equal("", 0));
         assert!(!are_three_chars_equal("ab", 1));
+    }
+
+    #[test]
+    fn simplified_triple_requires_doubled_boundary_char() {
+        // Regression test for a bug where the classic "simplified triple" compound check
+        // (SIMPLIFIEDTRIPLE) re-fetched the same codepoint instead of the one before it, so the
+        // gate verifying that the two characters at the boundary are equal never fired. The
+        // simplified-triple insertion was then attempted at *any* boundary, not just doubled ones.
+        //
+        // With CHECKCOMPOUNDTRIPLE + SIMPLIFIEDTRIPLE, "press" + "ski" = "pressski" has a triple
+        // 's' at the boundary and is forbidden; its simplified form "presski" (doubled "ss") is
+        // accepted by reinserting the dropped 's' to recover "pressski" and splitting into valid
+        // parts.
+        //
+        // "buski" must NOT be accepted: splitting "bus" | "ki" leaves "ki" (not a word), and the
+        // boundary character 's' is not doubled ("us"), so there is nothing to simplify. The buggy
+        // gate skipped that check and wrongly reinserted 's' to form the valid "bus" + "ski".
+        let aff = "\
+CHECKCOMPOUNDTRIPLE
+SIMPLIFIEDTRIPLE
+COMPOUNDMIN 2
+COMPOUNDFLAG A
+";
+        let dic = "\
+3
+press/A
+bus/A
+ski/A
+";
+        let dict = crate::Dictionary::new(aff, dic).unwrap();
+
+        // Genuine simplified-triple form is accepted...
+        assert!(dict.check("presski"));
+        // ...but the unsimplified triple form is forbidden.
+        assert!(!dict.check("pressski"));
+        // The discriminator: the boundary character is not doubled, so no simplification applies.
+        assert!(!dict.check("buski"));
     }
 
     #[test]
