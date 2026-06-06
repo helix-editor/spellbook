@@ -1056,8 +1056,9 @@ impl StrPair {
 #[derive(Debug, Clone)]
 pub(crate) struct CompoundPattern {
     pub begin_end_chars: StrPair,
-    // TODO: unimplemented. See Checker::check_compound_with_pattern_replacements.
-    #[allow(dead_code)]
+    /// The optional third field of a `CHECKCOMPOUNDPATTERN` entry: the substring that appears in
+    /// the surface word in place of `begin_end_chars`. See
+    /// `Checker::check_compound_with_pattern_replacements`.
     pub replacement: Option<Box<str>>,
     pub first_word_flag: Option<Flag>,
     pub second_word_flag: Option<Flag>,

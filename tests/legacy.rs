@@ -91,10 +91,9 @@ check!(check_checkcompoundcase2);
 check!(check_checkcompoundcase);
 check!(check_checkcompoundcaseutf);
 check!(check_checkcompounddup);
-// Use CHECKCOMPOUNDPATTERN replacements which aren't implemented yet:
-// check!(check_checkcompoundpattern2);
-// check!(check_checkcompoundpattern3);
-// check!(check_checkcompoundpattern4);
+check!(check_checkcompoundpattern2);
+check!(check_checkcompoundpattern3);
+check!(check_checkcompoundpattern4);
 check!(check_checkcompoundpattern);
 check!(check_checkcompoundrep);
 check!(check_checkcompoundtriple);

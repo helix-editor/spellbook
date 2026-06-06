@@ -1897,17 +1897,250 @@ impl<'a, S: BuildHasher> Checker<'a, S> {
         false
     }
 
+    /// A port of Nuspell's `check_compound_with_pattern_replacements`.
+    ///
+    /// Unlike the "classic" compound path, this one only fires for `CHECKCOMPOUNDPATTERN` entries
+    /// that carry a replacement (the optional third field). Such a pattern describes a compound
+    /// whose written form differs from the concatenation of its parts: the replacement string
+    /// appears in the surface word where the parts' boundary characters (`begin_end_chars`) would
+    /// otherwise be. For example `CHECKCOMPOUNDPATTERN o b z` with stems "foo" and "bar" forbids
+    /// the plain compound "foobar" but accepts the written form "fozar", which we expand back to
+    /// "foobar" before checking the parts. This is used for German and some Indian languages (and
+    /// sandhi in writing systems like Telugu).
+    ///
+    /// Nuspell mutates a single `String` buffer in place and uses `goto` labels. We instead build
+    /// a local `scratch` String with the replacement expanded and recurse by subslicing it; the
+    /// `goto` labels become labeled blocks. The returned `CompoundingResult` borrows from the
+    /// dictionary (lifetime `'a`), not from `scratch`, so it outlives the buffer - the same trick
+    /// `check_compound_classic_try_simplified_triple` uses for its `word_with_triple` buffer.
+    ///
+    /// One simplification worth noting: where Nuspell checks REP similarity against the surface
+    /// form, it reconstructs it by reversing `begin_end_chars` back to the replacement. Reversing
+    /// that substitution in `scratch[start_pos..]` yields exactly the original `word[start_pos..]`,
+    /// so we can pass the original slice directly instead of rebuilding it.
     fn check_compound_with_pattern_replacements<const MODE: AffixingMode>(
         &self,
-        _word: &str,
-        _start_pos: usize,
-        _i: usize,
-        _num_parts: usize,
-        _allow_bad_forceucase: Forceucase,
+        word: &str,
+        start_pos: usize,
+        i: usize,
+        num_parts: usize,
+        allow_bad_forceucase: Forceucase,
     ) -> Option<CompoundingResult<'_>> {
-        // TODO: find a dictionary that uses CHECKCOMPOUNDPATTERN with replacements.
-        // This function does nothing unless we have a compound pattern with a replacement (as
-        // you might guess from the function name).
+        for pattern in self.aff.compound_patterns.iter() {
+            let Some(replacement) = pattern.replacement.as_deref() else {
+                continue;
+            };
+            if !word[i..].starts_with(replacement) {
+                continue;
+            }
+
+            // Expand the replacement back into the parts' boundary characters. `j` then points at
+            // the byte boundary between the two parts within `scratch`.
+            let begin_end_chars = pattern.begin_end_chars.full_str();
+            let mut scratch =
+                String::with_capacity(word.len() - replacement.len() + begin_end_chars.len());
+            scratch.push_str(&word[..i]);
+            scratch.push_str(begin_end_chars);
+            scratch.push_str(&word[i + replacement.len()..]);
+            let j = i + pattern.begin_end_chars.partition();
+
+            let Some(part1_entry) = self.check_word_in_compound::<MODE>(&scratch[start_pos..j])
+            else {
+                continue;
+            };
+            if part1_entry
+                .flags
+                .contains(&self.aff.options.forbidden_word_flag)
+            {
+                continue;
+            }
+            if pattern
+                .first_word_flag
+                .is_some_and(|flag| !part1_entry.flags.contains(&flag))
+            {
+                continue;
+            }
+            if self.aff.options.compound_check_triple && are_three_chars_equal(&scratch, j) {
+                continue;
+            }
+
+            // First attempt: the second part is a plain dictionary word. Breaking out of this
+            // block falls through to the recursive attempt below.
+            'plain_second_word: {
+                let Some(part2_entry) =
+                    self.check_word_in_compound::<AT_COMPOUND_END>(&scratch[j..])
+                else {
+                    break 'plain_second_word;
+                };
+                if part2_entry
+                    .flags
+                    .contains(&self.aff.options.forbidden_word_flag)
+                {
+                    break 'plain_second_word;
+                }
+                if pattern
+                    .second_word_flag
+                    .is_some_and(|flag| !part2_entry.flags.contains(&flag))
+                {
+                    break 'plain_second_word;
+                }
+                if self.aff.options.compound_check_duplicate && part1_entry == part2_entry {
+                    break 'plain_second_word;
+                }
+                if self.aff.options.compound_check_rep && self.is_rep_similar(&word[start_pos..]) {
+                    break 'plain_second_word;
+                }
+                if allow_bad_forceucase.forbid()
+                    && has_flag!(
+                        part2_entry.flags,
+                        self.aff.options.compound_force_uppercase_flag
+                    )
+                {
+                    break 'plain_second_word;
+                }
+                if self
+                    .aff
+                    .options
+                    .compound_max_word_count
+                    .is_some_and(|max| num_parts + 1 >= usize::from(max.get()))
+                {
+                    return None;
+                }
+                return Some(part1_entry);
+            }
+
+            // Second attempt: the second part is itself a compound. Breaking out falls through to
+            // the simplified-triple attempt.
+            'recursive_second_word: {
+                let Some(part2_entry) = self.check_compound_impl::<AT_COMPOUND_MIDDLE>(
+                    &scratch,
+                    j,
+                    num_parts + 1,
+                    allow_bad_forceucase,
+                ) else {
+                    break 'recursive_second_word;
+                };
+                if pattern
+                    .second_word_flag
+                    .is_some_and(|flag| !part2_entry.flags.contains(&flag))
+                {
+                    break 'recursive_second_word;
+                }
+                // Nuspell comments out the duplicate check here.
+                if self.aff.options.compound_check_rep {
+                    if self.is_rep_similar(&word[start_pos..]) {
+                        break 'recursive_second_word;
+                    }
+                    let part2_word = part2_entry.stem.as_ref();
+                    if scratch[j..].starts_with(part2_word)
+                        && self.is_rep_similar(&scratch[start_pos..j + part2_word.len()])
+                    {
+                        break 'recursive_second_word;
+                    }
+                }
+                return Some(part1_entry);
+            }
+
+            // Third attempt: simplified triple. A tripled character at the boundary may have been
+            // written as a double; re-insert the dropped character and retry.
+            if !self.aff.options.compound_simplified_triple {
+                continue;
+            }
+            let Some((prev_cp_idx, prev_cp)) = prev_codepoint(&scratch, j) else {
+                continue;
+            };
+            if prev_cp_idx == 0 {
+                continue;
+            }
+            let Some((_, prev_cp2)) = prev_codepoint(&scratch, prev_cp_idx) else {
+                continue;
+            };
+            if prev_cp != prev_cp2 {
+                continue;
+            }
+            let enc_cp_len = prev_cp.len_utf8();
+            let mut scratch_triple = String::with_capacity(scratch.len() + enc_cp_len);
+            scratch_triple.push_str(&scratch[..j]);
+            scratch_triple.push(prev_cp);
+            scratch_triple.push_str(&scratch[j..]);
+
+            'simplified_triple: {
+                let Some(part2_entry) =
+                    self.check_word_in_compound::<AT_COMPOUND_END>(&scratch_triple[j..])
+                else {
+                    break 'simplified_triple;
+                };
+                if part2_entry
+                    .flags
+                    .contains(&self.aff.options.forbidden_word_flag)
+                {
+                    break 'simplified_triple;
+                }
+                if pattern
+                    .second_word_flag
+                    .is_some_and(|flag| !part2_entry.flags.contains(&flag))
+                {
+                    break 'simplified_triple;
+                }
+                if self.aff.options.compound_check_duplicate && part1_entry == part2_entry {
+                    break 'simplified_triple;
+                }
+                if self.aff.options.compound_check_rep && self.is_rep_similar(&word[start_pos..]) {
+                    break 'simplified_triple;
+                }
+                if allow_bad_forceucase.forbid()
+                    && has_flag!(
+                        part2_entry.flags,
+                        self.aff.options.compound_force_uppercase_flag
+                    )
+                {
+                    break 'simplified_triple;
+                }
+                if self
+                    .aff
+                    .options
+                    .compound_max_word_count
+                    .is_some_and(|max| num_parts + 1 >= usize::from(max.get()))
+                {
+                    return None;
+                }
+                return Some(part1_entry);
+            }
+
+            // Final attempt: simplified triple where the second part is itself a compound.
+            let Some(part2_entry) = self.check_compound_impl::<AT_COMPOUND_MIDDLE>(
+                &scratch_triple,
+                j,
+                num_parts + 1,
+                allow_bad_forceucase,
+            ) else {
+                continue;
+            };
+            if pattern
+                .second_word_flag
+                .is_some_and(|flag| !part2_entry.flags.contains(&flag))
+            {
+                continue;
+            }
+            if self.aff.options.compound_check_rep {
+                if self.is_rep_similar(&word[start_pos..]) {
+                    continue;
+                }
+                let part2_word = part2_entry.stem.as_ref();
+                if scratch_triple[j..].starts_with(part2_word) {
+                    // Drop the inserted character to recover the surface prefix.
+                    let end = j + part2_word.len() - enc_cp_len;
+                    if scratch
+                        .get(start_pos..end)
+                        .is_some_and(|surface| self.is_rep_similar(surface))
+                    {
+                        continue;
+                    }
+                }
+            }
+            return Some(part1_entry);
+        }
+
         None
     }
 
