@@ -288,9 +288,13 @@ impl Prefix {
     ///
     /// This function `expect`s that the `Prefix`'s `add` is a prefix of the input `word`.
     pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
-        let stripped = word
-            .strip_prefix(&*self.add)
-            .expect("to_stem should only be called when the `add` is a prefix of the word");
+        debug_assert!(
+            word.starts_with(&*self.add),
+            "to_stem should only be called when the `add` is a prefix of the word"
+        );
+        // `AffixesIter` already proved `add` is a prefix of `word`, so slice off the known byte
+        // length rather than re-comparing the bytes with `strip_prefix`.
+        let stripped = &word[self.add.len()..];
 
         match &self.strip {
             Some(strip) => {
@@ -356,9 +360,13 @@ impl Suffix {
     ///
     /// This function `expect`s that the `Suffix`'s `add` is a suffix of the input `word`.
     pub fn to_stem<'a>(&self, word: &'a str) -> Cow<'a, str> {
-        let stripped = word
-            .strip_suffix(&*self.add)
-            .expect("to_stem should only be called when the `add` is a suffix of the word");
+        debug_assert!(
+            word.ends_with(&*self.add),
+            "to_stem should only be called when the `add` is a suffix of the word"
+        );
+        // `AffixesIter` already proved `add` is a suffix of `word`, so slice off the known byte
+        // length rather than re-comparing the bytes with `strip_suffix`.
+        let stripped = &word[..word.len() - self.add.len()];
 
         match self.strip.as_deref() {
             Some(strip) => {
