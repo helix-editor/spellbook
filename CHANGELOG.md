@@ -5,7 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- ## [Unreleased] -->
+## [Unreleased]
+
+### Added
+
+* Implemented `CHECKCOMPOUNDPATTERN` replacements when checking compound words,
+  bringing compound checking closer to Nuspell. Previously the replacement form
+  of these patterns was not applied.
+* `impl Debug for Dictionary<S>` is now generic over the hasher `S` instead of
+  being implemented only for the default hasher.
+
+### Fixed
+
+* Fixed a panic in `Dictionary::add` when given an input longer than `u16::MAX`
+  bytes. It now returns `ParseFlagError::WordTooLong` (a new variant), matching
+  the check the `.dic` file parser already applied.
+* Fixed incorrect checking of `SIMPLIFIEDTRIPLE` compound words. The simplified
+  triple rule was applied at any compound boundary rather than only where a
+  letter was actually doubled, so some non-words were wrongly accepted (for
+  example `buski` against a dictionary using `CHECKCOMPOUNDTRIPLE` and
+  `SIMPLIFIEDTRIPLE`).
+* `NOSPLITSUGS` is now honored: the suggester no longer proposes splitting a word
+  into two when the dictionary sets this flag.
+
+### Performance
+
+* Reduced allocations in the affix-stripping hot path by writing candidate stems
+  into a reused buffer instead of allocating a `String` for each stripped affix.
+* Avoided redundant comparisons when stemming a word by slicing off an
+  already-matched prefix or suffix instead of re-stripping it.
+* `AffixesIter` now compares affixes by byte rather than by character, indexing
+  directly into the word instead of walking the UTF-8 to the nth character.
+
+Together these speed up checking of words with affixes, with the largest gains
+on affix-rich dictionaries such as French.
+
+### Changed
+
+* The published crate no longer includes the vendored dictionaries, tests,
+  benchmarks, examples, or fuzz targets, substantially reducing its download
+  size. The source remains available in the repository.
+* Added crates.io `categories` and `docs.rs` metadata so the documentation on
+  docs.rs is built with all features.
 
 ## [v0.4.2] - 2026-06-03
 
