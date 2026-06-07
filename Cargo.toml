@@ -5,7 +5,9 @@ authors = ["Michael Davis <mcarsondavis@gmail.com>"]
 description = "A spellchecking library compatible with Hunspell dictionaries"
 readme = "README.md"
 repository = "https://github.com/helix-editor/spellbook"
+documentation = "https://docs.rs/spellbook"
 keywords = ["spellcheck", "no_std"]
+categories = ["text-processing", "no-std"]
 edition = "2021"
 license = "MPL-2.0"
 rust-version = "1.70"
@@ -18,6 +20,10 @@ exclude = [
   "/.github",
   "/.envrc",
 ]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 # Used for HashMap and HashTable for a custom bag structure.
