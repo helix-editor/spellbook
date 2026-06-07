@@ -781,6 +781,11 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             // Skip ch2.
             for (swap_idx, swap_ch) in word[idx2..].char_indices().skip(1) {
                 if remaining_attempts == 0 {
+                    // SAFETY: `ch1` has been walked rightward through `buffer` by adjacent swaps;
+                    // rotating these bytes right by `ch1`'s length moves it back to `idx1`,
+                    // restoring `buffer` to the original `word` (valid UTF-8, asserted below). The
+                    // rotation boundaries are char boundaries since `ch1` only ever swapped with
+                    // whole characters.
                     unsafe {
                         let bytes = buffer.as_bytes_mut();
                         bytes[idx1..swap_idx + idx2].rotate_right(ch1.len_utf8());
@@ -795,6 +800,8 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             }
 
             // Rotate the character back to the beginning of the slice to restore the word.
+            // SAFETY: `ch1` has been walked to the end of `buffer`; rotating right by its length
+            // moves it back to `idx1`, restoring the original `word` (valid UTF-8, asserted below).
             unsafe {
                 let bytes = buffer.as_bytes_mut();
                 bytes[idx1..].rotate_right(ch1.len_utf8());
@@ -811,6 +818,10 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
             swap_adjacent_chars(buffer, idx2, ch2, ch1);
             for (swap_idx, swap_ch) in word[..idx2].char_indices().rev() {
                 if remaining_attempts == 0 {
+                    // SAFETY: this is the reverse of the forward pass above - `ch1` has been walked
+                    // leftward, so rotating these bytes left by its length moves it back into
+                    // place, restoring the original `word` (valid UTF-8, asserted below). The
+                    // boundaries are char boundaries as `ch1` only swapped with whole characters.
                     unsafe {
                         let bytes = buffer.as_bytes_mut();
                         bytes[swap_idx + swap_ch.len_utf8()..end].rotate_left(ch1.len_utf8());
@@ -822,6 +833,8 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 swap_adjacent_chars(buffer, swap_idx, swap_ch, ch1);
                 self.add_suggestion_if_correct(&*buffer, out);
             }
+            // SAFETY: `ch1` has been walked to the start of `buffer`; rotating left by its length
+            // moves it back into place, restoring the original `word` (valid UTF-8, asserted below).
             unsafe {
                 let bytes = buffer.as_bytes_mut();
                 bytes[..end].rotate_left(ch1.len_utf8());
@@ -941,6 +954,8 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
                 && self.checker.aff.try_chars.contains(['a', '-'])
             {
                 let mut hyphen_suggestion = out.last().unwrap().clone();
+                // SAFETY: `idx` holds the ASCII space joining the two words (asserted); overwriting
+                // it with another single-byte ASCII char ('-') keeps the buffer valid UTF-8.
                 unsafe {
                     let bytes = hyphen_suggestion.as_bytes_mut();
                     debug_assert_eq!(bytes[idx], b' ');
@@ -1020,6 +1035,10 @@ fn swap_adjacent_chars(string: &mut str, idx1: usize, ch1: char, ch2: char) -> u
     // Because the characters are adjacent we can simply rewrite the bytes: this will not mess up
     // any other indices into the string. The index of the second character may change if the
     // UTF-8 length of the characters is unequal so we return that index.
+    //
+    // SAFETY: `bytes[idx1..end]` exactly spans the adjacent `ch1` then `ch2` (lengths asserted
+    // above), and we overwrite the whole region with valid UTF-8 encodings of `ch2` then `ch1`, so
+    // the buffer is valid UTF-8 when the borrow ends.
     unsafe {
         // PERF: would it be smarter to rotate the slice by whichever is shorter like in
         // `swap_distant_chars`? On the other hand UTF-8 encoding looks very fast.
@@ -1055,6 +1074,11 @@ fn swap_distant_chars(string: &mut str, idx1: usize, ch1: char, idx2: usize, ch2
         Equal => {
             // If the two characters have the same length then we don't need to move any
             // characters that come in between. Simply swap the values:
+            //
+            // SAFETY: `idx1 != idx2` (asserted) and both characters have length `len1 == len2`, so
+            // the two `len1`-byte ranges lie within the string, are non-overlapping, and each holds
+            // one complete character. `u8` is always aligned. Swapping two whole-character
+            // encodings leaves the buffer valid UTF-8.
             unsafe {
                 let ptr = string.as_mut_ptr();
                 // This is essentially `core::mem::swap` of the two subslices containing the
@@ -1072,6 +1096,11 @@ fn swap_distant_chars(string: &mut str, idx1: usize, ch1: char, idx2: usize, ch2
         Less => {
             // Guaranteed to not underflow because `len1 < len2`.
             let rotation = len2 - len1;
+            // SAFETY: `idx1..end` spans from the start of `ch1` through the end of `ch2`. Rotating
+            // right by `rotation` shifts the in-between characters toward `idx2` to make room, then
+            // both swap slots are overwritten with valid encodings of `ch2` (at `idx1`) and `ch1`
+            // (at `new_idx2`). Any bytes left temporarily invalid by the rotate are overwritten
+            // before the borrow ends, so the buffer is valid UTF-8 afterward.
             unsafe {
                 let bytes = string.as_bytes_mut();
                 bytes[idx1..end].rotate_right(rotation);
@@ -1084,6 +1113,11 @@ fn swap_distant_chars(string: &mut str, idx1: usize, ch1: char, idx2: usize, ch2
         Greater => {
             // Guaranteed to not underflow because `len1 > len2`.
             let rotation = len1 - len2;
+            // SAFETY: mirror of the `Less` branch. `idx1..end` spans `ch1` through `ch2`; rotating
+            // left by `rotation` closes the gap left by the shorter `ch2`, then both swap slots are
+            // overwritten with valid encodings of `ch2` (at `idx1`) and `ch1` (at `new_idx2`). Any
+            // temporarily-invalid bytes are overwritten before the borrow ends, leaving valid
+            // UTF-8.
             unsafe {
                 let bytes = string.as_bytes_mut();
                 bytes[idx1..end].rotate_left(rotation);
@@ -1107,11 +1141,19 @@ fn replace_char_at(string: &mut String, idx: usize, ch1: char, ch2: char) {
     let len1 = ch1.len_utf8();
     let len2 = ch2.len_utf8();
     match len1.cmp(&len2) {
+        // SAFETY: `idx` is a char boundary holding `ch1` (asserted above) and `ch2` has the same
+        // UTF-8 length, so encoding it at `idx` exactly overwrites `ch1` with one complete
+        // character, leaving the buffer valid UTF-8.
         Equal => unsafe {
             // If both characters take the same number of bytes, overwrite the bytes.
             let bytes = string.as_bytes_mut();
             ch2.encode_utf8(&mut bytes[idx..]);
         },
+        // SAFETY: `as_mut_vec` requires valid UTF-8 when the borrow ends. We grow by `difference`
+        // (the extra width of `ch2`), rotate the tail from `idx` right to open exactly `difference`
+        // bytes after `idx`, then write `ch2`'s `len2` bytes over the old `ch1` plus those opened
+        // bytes. The following characters are preserved (just shifted), so the result is valid
+        // UTF-8 (asserted in debug).
         Less => unsafe {
             // The new character takes more bytes than the old.
             let difference = len2 - len1;
@@ -1125,6 +1167,10 @@ fn replace_char_at(string: &mut String, idx: usize, ch1: char, ch2: char) {
             ch2.encode_utf8(&mut bytes[idx..]);
             debug_assert!(String::from_utf8(bytes.to_vec()).is_ok());
         },
+        // SAFETY: mirror of the `Less` branch. We rotate the tail from `idx` left by `difference`
+        // (the bytes `ch2` saves over `ch1`), write `ch2`'s `len2` bytes at `idx`, then truncate
+        // the now-unused trailing bytes. The following characters are preserved (just shifted), so
+        // the buffer is valid UTF-8 when the borrow ends (asserted in debug).
         Greater => unsafe {
             // The new character takes fewer bytes than the old.
             // Shift the later characters in the
