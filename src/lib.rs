@@ -300,7 +300,7 @@ impl<S: BuildHasher> Dictionary<S> {
     }
 }
 
-impl fmt::Debug for Dictionary {
+impl<S> fmt::Debug for Dictionary<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Dictionary")
             .field("words", &self.words.len())
