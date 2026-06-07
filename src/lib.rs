@@ -106,11 +106,11 @@ type WordList<S> = HashBag<Stem, FlagSet, S>;
 /// check words in parallel, consider putting the dictionary behind an `Arc` (if immutable) or a
 /// `RwLock`.
 ///
-/// [`new`]: struct.Dictionary.html#method.new
-/// [`new_with_hasher`]: struct.Dictionary.html#method.new_with_hasher
-/// [`check`]: struct.Dictionary.html#method.check
-/// [`suggest`]: struct.Dictionary.html#method.suggest
-/// [`add`]: struct.Dictionary.html#method.add
+/// [`new`]: Dictionary::new
+/// [`new_with_hasher`]: Dictionary::new_with_hasher
+/// [`check`]: Dictionary::check
+/// [`suggest`]: Dictionary::suggest
+/// [`add`]: Dictionary::add
 // Allow passing down an Allocator too?
 #[derive(Clone)]
 pub struct Dictionary<S = DefaultHashBuilder> {
@@ -126,7 +126,7 @@ impl Dictionary<DefaultHashBuilder> {
     /// default). If the `default-hasher` feature is disabled then you must use
     /// [`new_with_hasher`] instead and provide a build hasher.
     ///
-    /// [`new_with_hasher`]: struct.Dictionary.html#method.new_with_hasher
+    /// [`new_with_hasher`]: Dictionary::new_with_hasher
     ///
     /// # Example
     ///
@@ -149,7 +149,7 @@ impl<S: BuildHasher + Clone> Dictionary<S> {
     /// as calling [`new`]. If possible, using a non-cryptographic hasher is highly recommended
     /// for the sake of performance.
     ///
-    /// [`new`]: struct.Dictionary.html#method.new
+    /// [`new`]: Dictionary::new
     ///
     /// # Example
     ///
@@ -219,7 +219,11 @@ impl<S: BuildHasher> Dictionary<S> {
     /// Adds a word to the dictionary.
     ///
     /// This function parses the input string the same way that Spellbook parses a line from a
-    /// dictionary's `.dic` file. TODO: describe how a `.dic` line is parsed.
+    /// dictionary's `.dic` file: a stem optionally followed by `/` and a set of flags (for example
+    /// `"foobarbaz/G"`, where `G` is a flag). The flags are interpreted according to the
+    /// dictionary's `FLAG` type and any flag aliases (`AF`) declared in the `.aff` file, and the
+    /// dictionary's `IGNORE` characters are stripped from the stem. An error is returned if the
+    /// flags cannot be parsed or the input is longer than `u16::MAX` bytes.
     ///
     /// This function can be used to support for "personal" dictionaries. While clicking a
     /// misspelled word you might present a user with an option to add a misspelled word to the
