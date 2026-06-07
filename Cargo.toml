@@ -9,6 +9,14 @@ keywords = ["spellcheck", "no_std"]
 edition = "2021"
 license = "MPL-2.0"
 rust-version = "1.70"
+exclude = [
+  "/vendor",
+  "/tests",
+  "/benches",
+  "/examples",
+  "/.github",
+  "/.envrc",
+]
 
 [dependencies]
 # Used for HashMap and HashTable for a custom bag structure.
