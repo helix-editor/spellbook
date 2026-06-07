@@ -41,7 +41,7 @@ jobs:
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "${{ env.MSRV }}"
+          toolchain: stable
 
       - uses: Swatinem/rust-cache@v2
 
