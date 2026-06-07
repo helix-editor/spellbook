@@ -62,3 +62,7 @@ harness = false
 [[bench]]
 name = "slice-contains"
 harness = false
+
+[[bench]]
+name = "throughput"
+harness = false
