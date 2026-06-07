@@ -4,12 +4,11 @@
 //!
 //! This builds a dictionary with a large conversion table and checks a word that matches none of
 //! the patterns (the common case) so that the whole table is consulted.
-#![feature(test)]
 
-extern crate test;
+use std::hint::black_box;
 
+use criterion::{criterion_group, criterion_main, Criterion};
 use spellbook::Dictionary;
-use test::{black_box, Bencher};
 
 type RandomState = foldhash::fast::FixedState;
 const HASHER: RandomState = RandomState::with_seed(16553733157538299820);
@@ -40,26 +39,23 @@ const WORD: &str = "abcdefghijklmnopqrstuvwxyzabcdef";
 // set's representation actually affects, since the whole word is probed against it.
 const NO_OVERLAP_WORD: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEF";
 
-#[bench]
-fn iconv_table_64(b: &mut Bencher) {
-    let dict = dict_with_iconv(64);
-    b.iter(|| dict.check(black_box(WORD)))
+fn conversion(c: &mut Criterion) {
+    let mut group = c.benchmark_group("conversion");
+
+    for n in [64usize, 1024] {
+        let dict = dict_with_iconv(n);
+        // The word shares first bytes with the patterns, so the table is consulted at each position.
+        group.bench_function(format!("iconv_table_{n}"), |b| {
+            b.iter(|| dict.check(black_box(WORD)))
+        });
+        // The word shares no first byte with any pattern: the `possible_start_bytes` filter rejects.
+        group.bench_function(format!("iconv_filter_reject_{n}"), |b| {
+            b.iter(|| dict.check(black_box(NO_OVERLAP_WORD)))
+        });
+    }
+
+    group.finish();
 }
 
-#[bench]
-fn iconv_table_1024(b: &mut Bencher) {
-    let dict = dict_with_iconv(1024);
-    b.iter(|| dict.check(black_box(WORD)))
-}
-
-#[bench]
-fn iconv_filter_reject_64(b: &mut Bencher) {
-    let dict = dict_with_iconv(64);
-    b.iter(|| dict.check(black_box(NO_OVERLAP_WORD)))
-}
-
-#[bench]
-fn iconv_filter_reject_1024(b: &mut Bencher) {
-    let dict = dict_with_iconv(1024);
-    b.iter(|| dict.check(black_box(NO_OVERLAP_WORD)))
-}
+criterion_group!(benches, conversion);
+criterion_main!(benches);

@@ -1,5 +1,3 @@
-#![feature(test)]
-
 /*
 A benchmark for the possible strategies of looking up a flag in a flagset:
 
@@ -105,19 +103,19 @@ worthwhile to switch to `contains`. `binary_search` though has much more predict
 when we hit these outliers that live in the low hundreds of flags.
 
 ```text
-$ cargo bench
-test binary_search_existing_flag_in_few_flags            ... bench:           1.11 ns/iter (+/- 0.06)
-test binary_search_existing_flag_in_many_flags           ... bench:           9.49 ns/iter (+/- 0.20)
-test binary_search_non_existing_flag_high_in_empty_flags ... bench:           0.69 ns/iter (+/- 0.00)
-test binary_search_non_existing_flag_high_in_few_flags   ... bench:           1.11 ns/iter (+/- 0.00)
-test binary_search_non_existing_flag_high_in_many_flags  ... bench:           9.48 ns/iter (+/- 0.30)
-test binary_search_non_existing_flag_low_in_many_flags   ... bench:           9.50 ns/iter (+/- 0.19)
-test contains_existing_flag_in_few_flags                 ... bench:           0.79 ns/iter (+/- 0.00)
-test contains_existing_flag_in_many_flags                ... bench:          31.61 ns/iter (+/- 1.28)
-test contains_non_existing_flag_high_in_empty_flags      ... bench:           0.46 ns/iter (+/- 0.00)
-test contains_non_existing_flag_high_in_few_flags        ... bench:           0.78 ns/iter (+/- 0.00)
-test contains_non_existing_flag_high_in_many_flags       ... bench:          45.23 ns/iter (+/- 1.17)
-test contains_non_existing_flag_low_in_many_flags        ... bench:          45.02 ns/iter (+/- 4.91)
+$ cargo bench --bench slice-contains
+slice-contains/many_flags/non_existing_high/contains       time:   [43.228 ns]
+slice-contains/many_flags/non_existing_high/binary_search  time:   [10.784 ns]
+slice-contains/many_flags/non_existing_low/contains        time:   [44.198 ns]
+slice-contains/many_flags/non_existing_low/binary_search   time:   [11.359 ns]
+slice-contains/many_flags/existing/contains                time:   [29.022 ns]
+slice-contains/many_flags/existing/binary_search           time:   [10.742 ns]
+slice-contains/few_flags/non_existing_high/contains        time:   [843.75 ps]
+slice-contains/few_flags/non_existing_high/binary_search   time:   [1.1391 ns]
+slice-contains/few_flags/existing/contains                 time:   [814.35 ps]
+slice-contains/few_flags/existing/binary_search            time:   [1.1094 ns]
+slice-contains/empty_flags/non_existing_high/contains      time:   [461.66 ps]
+slice-contains/empty_flags/non_existing_high/binary_search time:   [684.25 ps]
 ```
 
 I think the tradeoff is worthwhile: we pay very slightly more on average but have no
@@ -125,9 +123,9 @@ degenerate cases.
 
 */
 
-extern crate test;
+use std::hint::black_box;
 
-use test::{black_box, Bencher};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 type Flag = std::num::NonZeroU16;
 
@@ -158,72 +156,53 @@ const UNKNOWN_FLAG_LOW: Flag = flag_n(1);
 const FLAG_S: Flag = flag('S');
 const FLAG_1709: Flag = flag_n(1709);
 
-#[bench]
-fn contains_non_existing_flag_high_in_many_flags(b: &mut Bencher) {
-    b.iter(|| black_box(MANY_FLAGS).contains(black_box(&UNKNOWN_FLAG_HIGH)))
+fn slice_contains(c: &mut Criterion) {
+    let mut group = c.benchmark_group("slice-contains");
+
+    // Many flags (153): the outlier case where binary search's predictable scaling pays off.
+    group.bench_function("many_flags/non_existing_high/contains", |b| {
+        b.iter(|| black_box(MANY_FLAGS).contains(black_box(&UNKNOWN_FLAG_HIGH)))
+    });
+    group.bench_function("many_flags/non_existing_high/binary_search", |b| {
+        b.iter(|| black_box(MANY_FLAGS).binary_search(black_box(&UNKNOWN_FLAG_HIGH)))
+    });
+    group.bench_function("many_flags/non_existing_low/contains", |b| {
+        b.iter(|| black_box(MANY_FLAGS).contains(black_box(&UNKNOWN_FLAG_LOW)))
+    });
+    group.bench_function("many_flags/non_existing_low/binary_search", |b| {
+        b.iter(|| black_box(MANY_FLAGS).binary_search(black_box(&UNKNOWN_FLAG_LOW)))
+    });
+    group.bench_function("many_flags/existing/contains", |b| {
+        b.iter(|| black_box(MANY_FLAGS).contains(black_box(&FLAG_1709)))
+    });
+    group.bench_function("many_flags/existing/binary_search", |b| {
+        b.iter(|| black_box(MANY_FLAGS).binary_search(black_box(&FLAG_1709)))
+    });
+
+    // Few flags (2): the common case, where `contains` is slightly faster.
+    group.bench_function("few_flags/non_existing_high/contains", |b| {
+        b.iter(|| black_box(FEW_FLAGS).contains(black_box(&UNKNOWN_FLAG_HIGH)))
+    });
+    group.bench_function("few_flags/non_existing_high/binary_search", |b| {
+        b.iter(|| black_box(FEW_FLAGS).binary_search(black_box(&UNKNOWN_FLAG_HIGH)))
+    });
+    group.bench_function("few_flags/existing/contains", |b| {
+        b.iter(|| black_box(FEW_FLAGS).contains(black_box(&FLAG_S)))
+    });
+    group.bench_function("few_flags/existing/binary_search", |b| {
+        b.iter(|| black_box(FEW_FLAGS).binary_search(black_box(&FLAG_S)))
+    });
+
+    // Empty flags: the second most common case.
+    group.bench_function("empty_flags/non_existing_high/contains", |b| {
+        b.iter(|| black_box(EMPTY_FLAGS).contains(black_box(&UNKNOWN_FLAG_HIGH)))
+    });
+    group.bench_function("empty_flags/non_existing_high/binary_search", |b| {
+        b.iter(|| black_box(EMPTY_FLAGS).binary_search(black_box(&UNKNOWN_FLAG_HIGH)))
+    });
+
+    group.finish();
 }
 
-#[bench]
-fn binary_search_non_existing_flag_high_in_many_flags(b: &mut Bencher) {
-    b.iter(|| black_box(MANY_FLAGS).binary_search(black_box(&UNKNOWN_FLAG_HIGH)))
-}
-
-//---
-
-#[bench]
-fn contains_non_existing_flag_low_in_many_flags(b: &mut Bencher) {
-    b.iter(|| black_box(MANY_FLAGS).contains(black_box(&UNKNOWN_FLAG_LOW)))
-}
-
-#[bench]
-fn binary_search_non_existing_flag_low_in_many_flags(b: &mut Bencher) {
-    b.iter(|| black_box(MANY_FLAGS).binary_search(black_box(&UNKNOWN_FLAG_LOW)))
-}
-
-//---
-
-#[bench]
-fn contains_existing_flag_in_many_flags(b: &mut Bencher) {
-    b.iter(|| black_box(MANY_FLAGS).contains(black_box(&FLAG_1709)))
-}
-
-#[bench]
-fn binary_search_existing_flag_in_many_flags(b: &mut Bencher) {
-    b.iter(|| black_box(MANY_FLAGS).binary_search(black_box(&FLAG_1709)))
-}
-
-//---
-
-#[bench]
-fn contains_non_existing_flag_high_in_few_flags(b: &mut Bencher) {
-    b.iter(|| black_box(FEW_FLAGS).contains(black_box(&UNKNOWN_FLAG_HIGH)))
-}
-
-#[bench]
-fn binary_search_non_existing_flag_high_in_few_flags(b: &mut Bencher) {
-    b.iter(|| black_box(FEW_FLAGS).binary_search(black_box(&UNKNOWN_FLAG_HIGH)))
-}
-
-//---
-
-#[bench]
-fn contains_existing_flag_in_few_flags(b: &mut Bencher) {
-    b.iter(|| black_box(FEW_FLAGS).contains(black_box(&FLAG_S)))
-}
-
-#[bench]
-fn binary_search_existing_flag_in_few_flags(b: &mut Bencher) {
-    b.iter(|| black_box(FEW_FLAGS).binary_search(black_box(&FLAG_S)))
-}
-
-//---
-
-#[bench]
-fn contains_non_existing_flag_high_in_empty_flags(b: &mut Bencher) {
-    b.iter(|| black_box(EMPTY_FLAGS).contains(black_box(&UNKNOWN_FLAG_HIGH)))
-}
-
-#[bench]
-fn binary_search_non_existing_flag_high_in_empty_flags(b: &mut Bencher) {
-    b.iter(|| black_box(EMPTY_FLAGS).binary_search(black_box(&UNKNOWN_FLAG_HIGH)))
-}
+criterion_group!(benches, slice_contains);
+criterion_main!(benches);

@@ -25,8 +25,32 @@ once_cell = "1.19"
 # with odd encodings.
 encoding_rs = "0.8"
 chardetng = "0.1"
+# Benchmark harness.
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 
 [features]
 default = ["default-hasher"]
 # Sets a default hasher (currently foldhash).
 default-hasher = ["dep:foldhash"]
+
+# Benchmarks use the Criterion harness, so `harness = false` tells Cargo not to
+# also link the libtest benchmark harness.
+[[bench]]
+name = "check"
+harness = false
+
+[[bench]]
+name = "compilation"
+harness = false
+
+[[bench]]
+name = "conversion"
+harness = false
+
+[[bench]]
+name = "suggest"
+harness = false
+
+[[bench]]
+name = "slice-contains"
+harness = false

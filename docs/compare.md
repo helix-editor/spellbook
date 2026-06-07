@@ -8,20 +8,20 @@ Spellbook is mainly a rewrite of Nuspell so the ways Spellbook diverges from Nus
 
 ## Performance comparisons of "Hunspell-like" `check`
 
-When it comes to performance I mainly care about the time it takes to check a word - dictionary initialization (`new`) and suggestion (`suggest`) don't happen often enough to be really concerning. To measure `check`/`spell` we use `cargo bench` benchmarks as of Rust nightly-2024-08-21 (arbitrarily). Benchmarks for Spellbook can be seen in the `benches/check.rs` file in this repository. Benchmarks for Hunspell and Nuspell can be found in [`the-mikedavis/ffi-dictionaries`](https://github.com/the-mikedavis/ffi-dictionaries/tree/3b1dc8fb4caf1961a958011d0255ed7d31696616/benches)'s `benches` directory. Note that these use `c"word"` sigils so the benchmark doesn't pay the cost of converting from a Rust string to a C/C++ string. These tests are run against the stock en_US dictionary.
+When it comes to performance I mainly care about the time it takes to check a word - dictionary initialization (`new`) and suggestion (`suggest`) don't happen often enough to be really concerning. To measure `check`/`spell` we use [Criterion](https://github.com/bheisler/criterion.rs) `cargo bench` benchmarks; the figures below are Criterion's median point estimate. Benchmarks for Spellbook can be seen in the `benches/check.rs` file in this repository. Benchmarks for Hunspell and Nuspell can be found in [`the-mikedavis/ffi-dictionaries`](https://github.com/the-mikedavis/ffi-dictionaries/tree/main/benches)'s `benches` directory. Note that these use `c"word"` sigils so the benchmark doesn't pay the cost of converting from a Rust string to a C/C++ string. These tests are run against the stock en_US dictionary.
 
-| Test name                      | Word              | Hunspell                     | Nuspell                      | Spellbook                  |
-|--------------------------------|-------------------|------------------------------|------------------------------|----------------------------|
-| `breaks`                       | light-weight-like | 4,433.77 ns/iter (+/- 44.80) | 1,250.27 ns/iter (+/- 23.00) | 865.61 ns/iter (+/- 31.54) |
-| `compound_word`                | 20000th           | 3,432.38 ns/iter (+/- 49.68) |   736.53 ns/iter (+/- 15.57) | 708.11 ns/iter (+/- 20.72) |
-| `in_dictionary_word`           | earth             |   212.30 ns/iter (+/- 3.67)  |   126.97 ns/iter (+/- 7.39)  |  65.84 ns/iter (+/- 2.12)  |
-| `incorrect_prefix`             | reearth           | 1,175.15 ns/iter (+/- 12.86) |   520.51 ns/iter (+/- 19.37) | 493.24 ns/iter (+/- 18.18) |
-| `number`                       | 8675,309.0        |   239.64 ns/iter (+/- 6.47)  |    92.12 ns/iter (+/- 1.29)  |  41.10 ns/iter (+/- 1.13)  |
-| `titlecase_in_dictionary_word` | Earth             |   827.88 ns/iter (+/- 13.48) |   513.78 ns/iter (+/- 9.10)  | 314.48 ns/iter (+/- 8.61)  |
-| `uppercase_in_dictionary_word` | EARTH             | 1,426.46 ns/iter (+/- 15.70) |   280.78 ns/iter (+/- 8.03)  | 182.43 ns/iter (+/- 6.41)  |
-| `word_with_prefix`             | unearth           |   288.74 ns/iter (+/- 7.82)  |   924.66 ns/iter (+/- 35.69) | 539.69 ns/iter (+/- 10.97) |
-| `word_with_prefix_and_suffix`  | unearthed         |   448.48 ns/iter (+/- 9.64)  |   534.85 ns/iter (+/- 14.11) | 395.25 ns/iter (+/- 9.71)  |
-| `word_with_suffix`             | earthly           |   236.94 ns/iter (+/- 6.17)  |   141.47 ns/iter (+/- 2.98)  |  69.81 ns/iter (+/- 7.60)  |
+| Test name                      | Word              | Hunspell    | Nuspell     | Spellbook |
+|--------------------------------|-------------------|-------------|-------------|-----------|
+| `breaks`                       | light-weight-like | 4,329.10 ns | 1,248.90 ns | 779.06 ns |
+| `compound_word`                | 20000th           | 3,204.10 ns |   656.35 ns | 676.08 ns |
+| `in_dictionary_word`           | earth             |   197.25 ns |   125.89 ns |  42.82 ns |
+| `incorrect_prefix`             | reearth           | 1,161.30 ns |   527.68 ns | 346.36 ns |
+| `number`                       | 8675,309.0        |   220.89 ns |   112.92 ns |  14.14 ns |
+| `titlecase_in_dictionary_word` | Earth             |   797.59 ns |   497.56 ns | 224.63 ns |
+| `uppercase_in_dictionary_word` | EARTH             | 1,430.00 ns |   882.94 ns | 433.00 ns |
+| `word_with_prefix`             | unearth           |   264.06 ns |   283.38 ns | 123.08 ns |
+| `word_with_prefix_and_suffix`  | unearthed         |   405.81 ns |   521.53 ns | 264.98 ns |
+| `word_with_suffix`             | earthed           |   353.01 ns |   273.76 ns | 100.23 ns |
 
 When it comes to memory, Valgrind's [DHAT](https://valgrind.org/docs/manual/dh-manual.html) is a good tool for reporting total allocations and breaking down heap interaction. We'll run `vaglind --tool=dhat <check-binary> hello` for an example binary that checks the given word against en_US.
 

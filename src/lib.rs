@@ -81,7 +81,7 @@ type WordList<S> = HashBag<Stem, FlagSet, S>;
 ///
 /// ## Performance considerations
 ///
-/// Note: Spellbook's repository contains benchmarks under `benches/`. Use `cargo +nightly bench`
+/// Note: Spellbook's repository contains benchmarks under `benches/`. Use `cargo bench`
 /// to get an idea of how the API can perform on your system.
 ///
 /// When using Spellbook in an application you should avoid initializing dictionaries (via
