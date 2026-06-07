@@ -38,10 +38,8 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install MSRV toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
 
@@ -51,6 +49,50 @@ jobs:
       - name: Run cargo test
         run: cargo test
 
+  no-std:
+    name: no_std
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Building for a bare-metal target proves the crate is really no_std. This protects against
+      # a regression where we use std for testing and forget to reset before committing.
+      - name: Build with default features
+        run: cargo build --target thumbv7em-none-eabi
+
+      - name: Build with no default features
+        run: cargo build --target thumbv7em-none-eabi --no-default-features
+
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Miri is an interpreter and runs much slower than native code, and most of the suite parses
+      # full dictionaries, so we scope it to the self-contained unsafe-heavy tests, which load no
+      # dictionary: the `umbra_slice` tests (the repr(C) punning, MaybeUninit reads,
+      # from_utf8_unchecked, and the usize-punning PartialEq) and the `unsafe_`-prefixed suggester
+      # tests (the in-place UTF-8 buffer rewrites). The two filters are OR'd by the test harness.
+      - name: Run Miri on the unsafe-heavy tests
+        run: cargo miri test -- umbra_slice unsafe_
+
   lints:
     name: Lints
     runs-on: ubuntu-latest
@@ -58,7 +100,9 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install MSRV toolchain
+      # Lints run on the pinned MSRV toolchain, not stable, so that new lints introduced by a
+      # later Rust release cannot fail CI without any code change.
+      - name: Install toolchain
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "${{ env.MSRV }}"
@@ -72,6 +116,8 @@ jobs:
       - name: Run cargo fmt
         run: cargo fmt --check
 
+      # Lib only (not --all-targets): the benches pull in the criterion dev-dependency, which needs
+      # a newer Rust than the MSRV this job runs on.
       - name: Run cargo clippy with default features
         run: cargo clippy -- -D warnings
 
@@ -79,6 +125,6 @@ jobs:
         run: cargo clippy --no-default-features -- -D warnings
 
       - name: Run cargo doc
-        run: cargo doc --no-deps --document-private-items
+        run: cargo doc --no-deps --document-private-items --all-features
         env:
           RUSTDOCFLAGS: -D warnings

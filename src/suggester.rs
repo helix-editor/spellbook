@@ -914,6 +914,11 @@ impl<'a, S: BuildHasher> Suggester<'a, S> {
     fn two_words_suggest(&self, word: &str, out: &mut Vec<String>) {
         debug_assert!(!word.is_empty());
 
+        // `NOSPLITSUGS` asks the suggester not to propose splitting the input into two words.
+        if self.checker.aff.options.no_split_suggestions {
+            return;
+        }
+
         for (n, (idx, _)) in word.char_indices().enumerate() {
             // Note Nuspell has a TODO to consider switching these to `check_word` which would
             // also allow suggesting that either of these words is a compound.
@@ -1217,7 +1222,7 @@ mod test {
     }
 
     #[test]
-    fn swap_adjacent_chars_test() {
+    fn unsafe_swap_adjacent_chars() {
         fn swap_adjacent_chars(word: &str, idx: usize) -> String {
             let mut buffer = String::from(word);
             let mut chars = word[idx..].chars();
@@ -1232,7 +1237,7 @@ mod test {
     }
 
     #[test]
-    fn swap_distant_chars_test() {
+    fn unsafe_swap_distant_chars() {
         fn swap_distant_chars(word: &str, idx1: usize, idx2: usize) -> String {
             let mut buffer = String::from(word);
             let ch1 = word[idx1..].chars().next().unwrap();
@@ -1248,7 +1253,7 @@ mod test {
     }
 
     #[test]
-    fn replace_char_at_test() {
+    fn unsafe_replace_char_at() {
         fn replace_char_at<S: ToString>(s: S, idx: usize, ch1: char, ch2: char) -> String {
             let mut s = s.to_string();
             super::replace_char_at(&mut s, idx, ch1, ch2);
@@ -1259,6 +1264,29 @@ mod test {
         assert_eq!(replace_char_at("hello", 1, 'e', 'é'), "héllo".to_string());
         assert_eq!(replace_char_at("héllo", 1, 'é', 'e'), "hello".to_string());
         assert_eq!(replace_char_at("épée", 0, 'é', 'e'), "epée".to_string());
+    }
+
+    // `move_char_suggest` rewrites a buffer in place with `unsafe` byte rotations. This drives it
+    // against a tiny dictionary (no en_US) so it stays fast enough to run under Miri, which checks
+    // those rotations for undefined behavior. The stem uses each possible UTF-8 length so the
+    // rotations move characters of 1, 2, 3 and 4 bytes.
+    #[test]
+    fn unsafe_move_char_suggest() {
+        let dict = Dictionary::new("", "1\n+×፠𝄎\n").unwrap();
+        assert!(suggest(&dict, "×+፠𝄎").contains(&"+×፠𝄎".to_string()));
+        assert!(suggest(&dict, "+፠𝄎×").contains(&"+×፠𝄎".to_string()));
+        assert!(suggest(&dict, "፠+×𝄎").contains(&"+×፠𝄎".to_string()));
+    }
+
+    // `two_words_suggest` overwrites the joining ASCII space with a hyphen via `unsafe`. This drives
+    // it against a tiny dictionary (no en_US) so Miri can validate that rewrite. `TRY` must contain
+    // 'a' or '-' for the hyphenated form to be produced.
+    #[test]
+    fn unsafe_two_words_suggest() {
+        let dict = Dictionary::new("TRY abfor-\n", "2\nfoo\nbar\n").unwrap();
+        let suggestions = suggest(&dict, "foobar");
+        assert!(suggestions.contains(&"foo bar".to_string()));
+        assert!(suggestions.contains(&"foo-bar".to_string()));
     }
 
     fn suggest(dict: &Dictionary, word: &str) -> Vec<String> {

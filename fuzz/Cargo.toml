@@ -1,0 +1,31 @@
+[package]
+name = "spellbook-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.spellbook]
+path = ".."
+
+# Keep this crate out of the parent package: it is a development-only fuzzing harness.
+[workspace]
+
+[[bin]]
+name = "parse_dictionary"
+path = "fuzz_targets/parse_dictionary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "check_word"
+path = "fuzz_targets/check_word.rs"
+test = false
+doc = false
+bench = false
