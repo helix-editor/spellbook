@@ -46,7 +46,7 @@ If you wish to use a different hasher you may turn this default feature off:
 
 ```toml
 [dependencies]
-spellbook = { version = "1.0", default-features = false }
+spellbook = { version = "0.4", default-features = false }
 ```
 
 and specify a hasher of your choosing instead:

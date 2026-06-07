@@ -53,4 +53,4 @@ For this to work you also need `llvm-tools-preview` which can be installed by `r
 
 ## Benchmarking
 
-There are a few benchmarks in the `examples/` directory which use the nightly benchmarking feature. When using Rustup, use `cargo +nightly bench` before and after a change to see the difference in timings. Note that the timing each benchmark might vary slightly between runs: the timing of a case swaying plus or minus 5% is not unusual. Run the benchmark multiple times to get a feel for how a change impacted performance.
+There are a few benchmarks in the `benches/` directory which use the nightly benchmarking feature. When using Rustup, use `cargo +nightly bench` before and after a change to see the difference in timings. Note that the timing each benchmark might vary slightly between runs: the timing of a case swaying plus or minus 5% is not unusual. Run the benchmark multiple times to get a feel for how a change impacted performance.

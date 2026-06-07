@@ -81,8 +81,8 @@ type WordList<S> = HashBag<Stem, FlagSet, S>;
 ///
 /// ## Performance considerations
 ///
-/// Note: Spellbook's repository contains benchmarking examples. Use `cargo run --release
-/// --example bench-api` to get an idea of how the API can perform on your system.
+/// Note: Spellbook's repository contains benchmarks under `benches/`. Use `cargo +nightly bench`
+/// to get an idea of how the API can perform on your system.
 ///
 /// When using Spellbook in an application you should avoid initializing dictionaries (via
 /// [`new`] or [`new_with_hasher`]) in a render loop or main thread to prevent pauses in your UI
@@ -97,7 +97,9 @@ type WordList<S> = HashBag<Stem, FlagSet, S>;
 /// you're checking an arbitrarily large text you should delegate checking to a background thread
 /// to prevent UI hiccups.
 ///
-/// <!-- TODO: talk about suggest once implemented. Suggest performance is not so crucial. -->
+/// The [`suggest`] API is much slower than [`check`]: it generates many candidate edits of the
+/// input word and checks each one. This is expected and not usually a concern - you typically only
+/// call [`suggest`] for a word that [`check`] has already rejected, not in a hot loop.
 ///
 /// You should avoid cloning this type if possible. `Clone` is only implemented in case you
 /// absolutely need it. Consider that a dictionary can take megabytes of memory. If you need to
@@ -107,6 +109,7 @@ type WordList<S> = HashBag<Stem, FlagSet, S>;
 /// [`new`]: struct.Dictionary.html#method.new
 /// [`new_with_hasher`]: struct.Dictionary.html#method.new_with_hasher
 /// [`check`]: struct.Dictionary.html#method.check
+/// [`suggest`]: struct.Dictionary.html#method.suggest
 /// [`add`]: struct.Dictionary.html#method.add
 // Allow passing down an Allocator too?
 #[derive(Clone)]

@@ -64,15 +64,17 @@ A [prefix tree](https://en.wikipedia.org/wiki/Trie) would allow very quick looku
 
 ## Unsafe code
 
-Spellbook uses `unsafe` in three ways:
+Spellbook uses `unsafe` in three main ways:
 
 1. Small-string/slice optimizations. The `umbra_slice` module uses `unsafe` to interpret itself as either an inline or allocated string/slice.
-2. UTF-8 manipulation. Spellbook manipulates UTF-8 encoded strings as bytes in some cases for performance reasons. For example when checking German sharps, Spellbook might replace "ss" with "ß". These two strings have the same UTF-8 length (2) so the bytes can be overwritten directly. This kind of edit can't be done as efficiently in safe Rust.
+2. UTF-8 manipulation. Spellbook manipulates UTF-8 encoded strings as bytes in some cases for performance reasons. For example when checking German sharps the checker might replace "ss" with "ß" - these two strings have the same UTF-8 length (2) so the bytes can be overwritten directly - and the suggester rewrites bytes in place when generating swap/transposition candidates. Building a stem into the inline buffer of a `StemBuf` (`src/aff.rs`) similarly writes bytes known to be valid UTF-8. These kinds of edits can't be done as efficiently in safe Rust.
 3. A `CharsStr` type in the ngram suggester (`src/suggester/ngram.rs`) indexes into its underlying `str` without bounds checks for performance reasons.
+
+(There are also a couple of `NonZeroU16::new_unchecked` calls used to build `const` sentinel flags.)
 
 These uses of `unsafe` could theoretically be eliminated:
 
-1. The `Stem` and `FlagSlice` types could switch from `umbra_slice` types to `Box<str>` and `Box<[Flag]>` respectively with the tradeoff of significantly higher total dictionary memory size (around 25% more for `en_US`).
+1. The `Stem` and `FlagSet` types could switch from `umbra_slice` types to `Box<str>` and `Box<[Flag]>` respectively with the tradeoff of significantly higher total dictionary memory size (around 25% more for `en_US`).
 2. String edits could be done using safe methods only for an unknown performance hit to the checker and likely a larger hit to the suggester.
 3. `CharsStr` could use checked lookups into its underlying `str` for a small performance hit.
 
