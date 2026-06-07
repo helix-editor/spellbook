@@ -1209,6 +1209,15 @@ pub(crate) fn parse_dic_line(
     aliases: &[FlagSet],
     ignore: &[char],
 ) -> core::result::Result<(Stem, FlagSet), ParseFlagError> {
+    // The stem is stored in an `UmbraString`, which can hold at most `u16::MAX` bytes (and the
+    // stem is never longer than `input`). When parsing a `.dic` file this is checked at the call
+    // site before we get here, but `Dictionary::add` calls us directly, so guard here too rather
+    // than letting the conversion below panic. Stripping `ignore` chars only shrinks the stem, so
+    // checking `input` is sufficient.
+    if input.len() > u16::MAX as usize {
+        return Err(ParseFlagError::WordTooLong);
+    }
+
     fn ignore_chars(s: &str, ignore: &[char]) -> Stem {
         if ignore.is_empty() {
             s.into()
@@ -1644,6 +1653,11 @@ pub enum ParseFlagError {
     DuplicateComma,
     ZeroFlag,
     FlagAbove65535,
+    /// The input line was longer than `u16::MAX` bytes, which is the maximum length Spellbook can
+    /// store. This mirrors the [`WordTooLong`] check applied when parsing a `.dic` file.
+    ///
+    /// [`WordTooLong`]: ParseDictionaryErrorKind::WordTooLong
+    WordTooLong,
 }
 
 impl fmt::Display for ParseFlagError {
@@ -1655,6 +1669,7 @@ impl fmt::Display for ParseFlagError {
             Self::DuplicateComma => f.write_str("unexpected extra comma"),
             Self::ZeroFlag => f.write_str("flag cannot be zero"),
             Self::FlagAbove65535 => f.write_str("flag's binary representation exceeds 65535"),
+            Self::WordTooLong => f.write_str("word is too long (longer than u16::MAX bytes)"),
         }
     }
 }

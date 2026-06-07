@@ -631,6 +631,15 @@ mod test {
     }
 
     #[test]
+    fn add_overlong_word_is_err_not_panic() {
+        // Regression: `add` used to panic in `UmbraString::from` on inputs longer than
+        // `u16::MAX` bytes because, unlike the `.dic` parse path, it had no length guard.
+        let mut dict = Dictionary::new(EN_US_AFF, EN_US_DIC).unwrap();
+        let overlong = "a".repeat(u16::MAX as usize + 1);
+        assert_eq!(dict.add(&overlong), Err(ParseFlagError::WordTooLong));
+    }
+
+    #[test]
     fn clone() {
         let aff = r#"
         "#;
